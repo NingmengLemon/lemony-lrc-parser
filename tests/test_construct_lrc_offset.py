@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from lemony_lrc_parser.parser import parse_file
-from lemony_lrc_parser.serializer import construct_lrc
+from lemony_lrc_parser.parser import parse_lrc as parse_file
+from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
 
 _SAMPLE_LRC = """\
 [ti: test]

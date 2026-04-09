@@ -1,5 +1,3 @@
-import pytest
-
 from lemony_lrc_parser.models import LyricWord
 from lemony_lrc_parser.parser import parse_line
 
@@ -232,19 +230,3 @@ class TestParseLine:
         assert s == 91000  # 01:31.000
         assert e == 94000  # 01:34.000
         assert lyric_word_eq(result, expected_words)
-
-
-# 运行测试的便捷函数
-def run_tests() -> None:
-    """运行所有测试"""
-    import os
-    import sys
-
-    sys.path.append(os.path.dirname(__file__))
-
-    # 使用 pytest 运行测试
-    pytest.main([__file__, "-v"])
-
-
-if __name__ == "__main__":
-    run_tests()
