@@ -1,13 +1,14 @@
 import pytest
 
-from karakara.spl_parser import LyricWord, parse_line
+from lemony_lrc_parser.models import LyricWord
+from lemony_lrc_parser.parser import parse_line
 
 
-def pydantic_eq(a: list[LyricWord], b: list[LyricWord]) -> bool:
+def lyric_word_eq(a: list[LyricWord], b: list[LyricWord]) -> bool:
     if len(a) != len(b):
         return False
     for j, k in zip(a, b):
-        if j.model_dump_json() != k.model_dump_json():
+        if j.content != k.content or j.start != k.start or j.end != k.end:
             return False
     return True
 
@@ -24,7 +25,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 5000
         assert e is None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_explicit_end_same_line(self) -> None:
         """测试同一行内的显式行结尾"""
@@ -37,7 +38,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 15000
         assert e == 17000
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_empty_line_timestamp(self) -> None:
         """测试空行时间戳（清空歌词）"""
@@ -48,7 +49,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 10500
         assert e is None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_timestamp_format_variations(self) -> None:
         """测试时间戳格式变体"""
@@ -87,7 +88,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 40000
         assert e == 44000
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_delayed_byword_start(self) -> None:
         """测试延迟开始的逐字标记"""
@@ -107,7 +108,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 40000
         assert e == 44000
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_mixed_byword_brackets(self) -> None:
         """测试混合使用 [] 和 <> 的逐字标记"""
@@ -128,7 +129,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 40000
         assert e == 44000
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_special_characters(self) -> None:
         """测试特殊字符和颜文字"""
@@ -138,7 +139,7 @@ class TestParseLine:
         ]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_invalid_byword_timestamp(self) -> None:
         """测试错误的逐字时间戳（时间倒序）"""
@@ -149,7 +150,7 @@ class TestParseLine:
         ]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_only_start_and_end(self) -> None:
         """测试只有开始和结束时间戳的情况"""
@@ -157,7 +158,7 @@ class TestParseLine:
         expected_words = [LyricWord(content="简单的歌词行", start=50000, end=52000)]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     # 新增的边界测试用例
     def test_whitespace_handling(self) -> None:
@@ -166,7 +167,7 @@ class TestParseLine:
         expected_words = [LyricWord(content="  前后有空格  ", start=30000, end=None)]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_multiple_spaces_in_text(self) -> None:
         """测试文本中的多个连续空格"""
@@ -176,7 +177,7 @@ class TestParseLine:
         ]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_unicode_characters(self) -> None:
         """测试Unicode字符"""
@@ -184,7 +185,7 @@ class TestParseLine:
         expected_words = [LyricWord(content="🎵音乐🎶和😺表情", start=32000, end=None)]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_edge_case_timestamps(self) -> None:
         """测试边界情况的时间戳"""
@@ -206,7 +207,7 @@ class TestParseLine:
         expected_words = [LyricWord(content="测试", start=45000, end=46000)]
 
         assert result is not None
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_only_byword_no_text(self) -> None:
         """测试只有逐字标记没有实际文本的情况"""
@@ -215,7 +216,7 @@ class TestParseLine:
 
         assert result is not None
         assert result[0].start == 47000
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
     def test_complex_mixed_scenario(self) -> None:
         """测试复杂的混合场景"""
@@ -230,7 +231,7 @@ class TestParseLine:
         s, e = result[0].start, result[-1].end
         assert s == 91000  # 01:31.000
         assert e == 94000  # 01:34.000
-        assert pydantic_eq(result, expected_words)
+        assert lyric_word_eq(result, expected_words)
 
 
 # 运行测试的便捷函数

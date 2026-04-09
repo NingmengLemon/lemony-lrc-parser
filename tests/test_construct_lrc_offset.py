@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from karakara.spl_parser import construct_lrc, parse_file
-
+from lemony_lrc_parser.parser import parse_file
+from lemony_lrc_parser.serializer import construct_lrc
 
 _SAMPLE_LRC = """\
 [ti: test]
