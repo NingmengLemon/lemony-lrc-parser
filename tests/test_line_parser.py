@@ -39,7 +39,7 @@ class TestParseLine:
         assert lyric_word_eq(result, expected_words)
 
     def test_empty_line_timestamp(self) -> None:
-        """测试空行时间戳（清空歌词）"""
+        """测试空行时间戳 (清空歌词)"""
         result = parse_line("[00:10.500]")
         expected_words = [LyricWord(content="", start=10500, end=None)]
 
@@ -140,9 +140,9 @@ class TestParseLine:
         assert lyric_word_eq(result, expected_words)
 
     def test_invalid_byword_timestamp(self) -> None:
-        """测试错误的逐字时间戳（时间倒序）"""
+        """测试错误的逐字时间戳 (时间倒序)"""
         result = parse_line("[00:50.000]第一遍<00:49.000>正常<00:52.000>")
-        # 应该忽略 <00:49.000>，因为小于开始时间
+        # 应该忽略 <00:49.000>, 因为小于开始时间
         expected_words = [
             LyricWord(content="第一遍正常", start=50000, end=52000),
         ]

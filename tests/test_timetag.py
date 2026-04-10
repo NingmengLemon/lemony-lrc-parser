@@ -66,7 +66,7 @@ class TestParseTimetag:
 
     def test_invalid_formats(self) -> None:
         """测试无效格式应该返回 None."""
-        # 尖括号（parse_timetag 只接受方括号）
+        # 尖括号 (parse_timetag 只接受方括号)
         assert parse_timetag("<00:05.000>") is None
         # 缺少毫秒
         assert parse_timetag("[00:05]") is None

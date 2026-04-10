@@ -121,11 +121,11 @@ class TestLyricsCombine:
             LyricLine(start=3000, content=[LyricWord(content="额外的行")]),
         ]
 
-        # 默认 other_as_refline_only=True，额外的行应该被丢弃
+        # 默认 other_as_refline_only=True, 额外的行应该被丢弃
         combined = main.combine(translation, other_as_refline_only=True)
         assert len(combined.lines) == 1
 
-        # other_as_refline_only=False，额外的行应该被保留
+        # other_as_refline_only=False, 额外的行应该被保留
         combined = main.combine(translation, other_as_refline_only=False)
         assert len(combined.lines) == 2
 
@@ -191,7 +191,7 @@ class TestLyricsAdd:
     def test_add_with_non_lyrics(self) -> None:
         """测试与非 Lyrics 对象相加应该返回 NotImplemented."""
         lyrics = Lyrics()
-        result = lyrics.__add__("not lyrics")
+        result = lyrics.__add__("not lyrics")  # type: ignore
         assert result is NotImplemented
 
 

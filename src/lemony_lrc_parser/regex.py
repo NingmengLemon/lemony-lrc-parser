@@ -1,7 +1,7 @@
 """正则表达式常量与编译缓存.
 
-本模块集中存放 LRC 语法所需的正则模式，并提供带缓存的 :func:`compile_regex`。
-这些常量会被 :mod:`.parser`、:mod:`.timetag` 等模块消费，不建议外部直接依赖。
+本模块集中存放 LRC 语法所需的正则模式, 并提供带缓存的 :func:`compile_regex`.
+这些常量会被 :mod:`.parser`、:mod:`.timetag` 等模块消费, 不建议外部直接依赖.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ _REGEX_PATTERN_CACHE: dict[str, re.Pattern[str]] = {}
 
 
 def compile_regex(pattern: str) -> re.Pattern[str]:
-    """使用 ``re.VERBOSE`` 编译正则，并以模式字符串为 key 做进程级缓存。"""
+    """使用 ``re.VERBOSE`` 编译正则, 并以模式字符串为 key 做进程级缓存."""
     compiled = _REGEX_PATTERN_CACHE.get(pattern)
     if compiled is None:
         compiled = re.compile(pattern, flags=re.VERBOSE)
@@ -29,9 +29,7 @@ def compile_regex(pattern: str) -> re.Pattern[str]:
     return compiled
 
 
-# --- LRC 时间标签模式 --------------------------------------------------------
-
-#: 行时间标签 ``[mm:ss.xxx]``，命名组：``min`` / ``sec`` / ``tail``。
+#: 行时间标签 ``[mm:ss.xxx]``, 命名组: ``min`` / ``sec`` / ``tail``.
 LINE_TIMETAG_REGEX: str = r"""
     (?:
         \[
@@ -52,7 +50,7 @@ LINE_TIMETAG_REGEX: str = r"""
     )
 """
 
-#: 逐字时间标签 ``<mm:ss.xxx>``，命名组：``min`` / ``sec`` / ``tail``。
+#: 逐字时间标签 ``<mm:ss.xxx>``, 命名组: ``min`` / ``sec`` / ``tail``.
 WORD_TIMETAG_REGEX: str = r"""
     (?:
         \<
@@ -73,7 +71,7 @@ WORD_TIMETAG_REGEX: str = r"""
     )
 """
 
-#: 严格行时间标签 ``[mm:ss.xxx]``，要求三段齐全、毫秒 1-3 位、无多余空白。
+#: 严格行时间标签 ``[mm:ss.xxx]``, 要求三段齐全、毫秒 1-3 位、无多余空白.
 TIMETAG_REGEX_STRICT: str = r"""
     (?:
         \[
@@ -86,12 +84,12 @@ TIMETAG_REGEX_STRICT: str = r"""
     )
 """
 
-#: 元数据标签 ``[key: value]``，命名组：``key`` / ``value``。
+#: 元数据标签 ``[key: value]``, 命名组: ``key`` / ``value``.
 METATAG_REGEX: str = r"""
     (?:
         \[
             \s*
-            (?P<key>[a-zA-Z#]{2,16})  # `#` 用于注释标签，见 LRC 规范
+            (?P<key>[a-zA-Z#]{2,16})  # `#` 用于注释标签, 见 LRC 规范
             \s*
             :
             \s*
@@ -101,10 +99,10 @@ METATAG_REGEX: str = r"""
     )
 """
 
-#: 通用时间标签（同时匹配方括号行标签与尖括号逐字标签）。
+#: 通用时间标签 (同时匹配方括号行标签与尖括号逐字标签) .
 #:
-#: 为避免同名命名组冲突，方括号分支使用 ``line_*`` 前缀，
-#: 尖括号分支使用 ``word_*`` 前缀。消费方应使用 :func:`._match_to_ms` 抹平差异。
+#: 为避免同名命名组冲突, 方括号分支使用 ``line_*`` 前缀,
+#: 尖括号分支使用 ``word_*`` 前缀. 消费方应使用 :func:`._match_to_ms` 抹平差异.
 GENERIC_TIMETAG_REGEX: str = r"""
     (?:
         (?:
@@ -147,7 +145,7 @@ GENERIC_TIMETAG_REGEX: str = r"""
 
 
 def _warmup_cache() -> None:
-    """在模块导入期预热编译缓存，避免首次使用时的抖动."""
+    """在模块导入期预热编译缓存, 避免首次使用时的抖动."""
     for pattern in (
         LINE_TIMETAG_REGEX,
         WORD_TIMETAG_REGEX,

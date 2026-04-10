@@ -106,7 +106,7 @@ class TestModuleImports:
 
     def test_old_names_removed(self) -> None:
         """测试旧名称已被移除."""
-        # 这些名称在旧版本中存在，现在应该被移除
+        # 这些名称在旧版本中存在, 现在应该被移除
         assert not hasattr(llp, "NullableStartEndModel")
         assert not hasattr(llp, "StartEndModel")
         # parse_file 被重命名为 parse_lrc

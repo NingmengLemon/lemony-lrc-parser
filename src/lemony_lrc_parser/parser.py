@@ -1,11 +1,11 @@
 """LRC 解析器.
 
-将 LRC 文本转换为 :class:`.models.Lyrics`。公共入口有：
+将 LRC 文本转换为 :class:`.models.Lyrics`. 公共入口有:
 
-* :func:`parse_line` —— 解析单行歌词（不含行首的重复时间标签）。
-* :func:`parse_lrc`  —— 解析整份 LRC 文本。
+* :func:`parse_line` —— 解析单行歌词 (不含行首的重复时间标签) .
+* :func:`parse_lrc`  —— 解析整份 LRC 文本.
 
-其它以下划线开头的函数均为内部实现细节，后续版本可能调整。
+其它以下划线开头的函数均为内部实现细节, 后续版本可能调整.
 """
 
 from __future__ import annotations
@@ -32,23 +32,20 @@ __all__ = [
 ]
 
 
-# --------------------------------------------------------------------------- #
-# 行级解析
-# --------------------------------------------------------------------------- #
 def parse_line(line: str) -> BasicLyricLine | None:
     """解析单行歌词为 :data:`.models.BasicLyricLine`.
 
-    输入行应已经去除了行首的重复行时间标签（见 :func:`_split_leading_line_timetags`）。
-    若该行为空或只含空白，返回 ``None``。
+    输入行应已经去除了行首的重复行时间标签 (见 :func:`_split_leading_line_timetags`) .
+    若该行为空或只含空白, 返回 ``None``.
 
-    内部算法：
-        1. 用通用时间标签正则把原行拆成 ``text/match`` 交替序列。
-        2. 把序列拆成 ``texts``（长度 N）与 ``times``（长度 N-1）两条平行数组。
-        3. 丢弃非单调递增的时间标签（视为误写并合并相邻文本）。
+    内部算法:
+        1. 用通用时间标签正则把原行拆成 ``text/match`` 交替序列.
+        2. 把序列拆成 ``texts`` (长度 N) 与 ``times`` (长度 N-1) 两条平行数组.
+        3. 丢弃非单调递增的时间标签 (视为误写并合并相邻文本) .
         4. 用滑动窗口方式把 ``texts[i]`` 和 ``times[i-1] / times[i]`` 绑成
-           单个 :class:`LyricWord`。
-        5. 去掉首尾的空词，使 ``result[0].start`` 成为行首、
-           ``result[-1].end`` 成为行尾。
+           单个 :class:`LyricWord`.
+        5. 去掉首尾的空词, 使 ``result[0].start`` 成为行首、
+           ``result[-1].end`` 成为行尾.
     """
     if not line.strip():
         return None
@@ -95,7 +92,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
             f"Expected at least 2 preprocessed elements, got {len(result)}"
         )
 
-    # 去除空头/空尾，使 [0].start 与 [-1].end 分别对应行首/行尾
+    # 去除空头/空尾, 使 [0].start 与 [-1].end 分别对应行首/行尾
     if not result[0].content:
         result.pop(0)
     if not result[-1].content and len(result) > 1:
@@ -107,8 +104,8 @@ def parse_line(line: str) -> BasicLyricLine | None:
 def _split_on_timetags(text: str) -> list[str | re.Match[str]]:
     """按通用时间标签把一行文本拆分为 ``[text, match, text, match, ..., text]``.
 
-    返回结果长度始终为奇数：以文本开头、以文本结尾，中间夹杂 match 对象。
-    若相邻的两个 match 之间没有文本，会插入空字符串，保证 text/match 严格交替。
+    返回结果长度始终为奇数: 以文本开头、以文本结尾, 中间夹杂 match 对象.
+    若相邻的两个 match 之间没有文本, 会插入空字符串, 保证 text/match 严格交替.
     """
     pattern = compile_regex(GENERIC_TIMETAG_REGEX)
     result: list[str | re.Match[str]] = []
@@ -142,7 +139,7 @@ def _unzip_sequence(
 def _drop_nonmonotonic_times(
     texts: list[str], times: list[int]
 ) -> tuple[list[str], list[int]]:
-    """丢弃非严格递增的时间标签，并把它们前后的文本合并."""
+    """丢弃非严格递增的时间标签, 并把它们前后的文本合并."""
     texts = list(texts)
     times = list(times)
     removed = 0
@@ -162,19 +159,16 @@ def _drop_nonmonotonic_times(
     return texts, times
 
 
-# --------------------------------------------------------------------------- #
-# 文件级解析
-# --------------------------------------------------------------------------- #
 def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
     """解析一份完整的 LRC 文本.
 
     Args:
-        lrc: LRC 源文本。
-        fill_implicit_line_end: 若为 ``True``，则对没有显式结束时间的行，
-            用紧随其后的行开始时间作为隐式结束时间。
+        lrc: LRC 源文本.
+        fill_implicit_line_end: 若为 ``True``, 则对没有显式结束时间的行,
+            用紧随其后的行开始时间作为隐式结束时间.
 
     Returns:
-        组装完毕的 :class:`Lyrics` 对象。
+        组装完毕的 :class:`Lyrics` 对象.
     """
     metadata: dict[str, str] = {}
     line_pool: dict[int, LyricLine] = {}
@@ -183,7 +177,7 @@ def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
     for raw_line in lrc.strip().splitlines():
         line_str = raw_line.strip()
 
-        # 1. metadata 行（如 [ti: ...]、[offset: 500]）
+        # 1. metadata 行 (如 [ti: ...]、[offset: 500])
         if meta := _extract_metadata(line_str):
             metadata.update(meta)
             logger.debug(f"Metadata line: {line_str!r}")
@@ -195,10 +189,10 @@ def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
         time_tags, line_str = _split_leading_line_timetags(line_str)
         line = parse_line(line_str)
 
-        # 2a. 行首没有时间标签 → 要么是参考行，要么是分隔符
+        # 2a. 行首没有时间标签 → 要么是参考行, 要么是分隔符
         if not time_tags:
             if not line:
-                # 空分隔行，重置参考行锚点
+                # 空分隔行, 重置参考行锚点
                 last_tag = None
                 logger.debug("Reference line marker reset")
                 continue
@@ -211,14 +205,14 @@ def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
             line_pool[last_tag].reference_lines.append(line)
             continue
 
-        # 2b. 行首有时间标签但没有正文 → 占位符（例如清空当前歌词）
+        # 2b. 行首有时间标签但没有正文 → 占位符 (例如清空当前歌词)
         if not line:
             t = time_tags[0]
             if t not in line_pool:
                 line_pool[t] = LyricLine(start=t, content=[LyricWord(content="")])
             continue
 
-        # 2c. 常规行：可能有多个重复时间标签，每个都生成一行
+        # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行
         _register_line_at_tags(line_pool, line, time_tags)
         last_tag = time_tags[0] if len(time_tags) == 1 else None
 
@@ -245,7 +239,7 @@ def _register_line_at_tags(
             # 同一个时间点已有行 → 当前行变为参考行
             line_pool[tag].reference_lines.append(line)
         else:
-            # 深拷贝 word 列表，避免多个 LyricLine 共享同一 LyricWord 实例
+            # 深拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricWord 实例
             line_pool[tag] = LyricLine(content=[deepcopy(word) for word in line])
 
 
@@ -267,7 +261,7 @@ def _finalize_lyrics(
         if last_word.end is not None:
             line.end, last_word.end = last_word.end, None
 
-        # 可选：用下一行的开始时间作为当前行的隐式结束
+        # 可选: 用下一行的开始时间作为当前行的隐式结束
         if fill_implicit_line_end and line.end is None and idx + 1 < len(sorted_items):
             line.end = sorted_items[idx + 1][0]
 
@@ -276,15 +270,12 @@ def _finalize_lyrics(
     return lyrics
 
 
-# --------------------------------------------------------------------------- #
-# 内部辅助
-# --------------------------------------------------------------------------- #
 def _split_leading_line_timetags(raw_line: str) -> tuple[list[int], str]:
     """从一行开头连续剥离 ``[mm:ss.xxx]`` 行时间标签.
 
     Returns:
-        ``(times, remainder)``，``times`` 为毫秒列表，``remainder`` 为剥离后
-        的剩余文本。
+        ``(times, remainder)``, ``times`` 为毫秒列表, ``remainder`` 为剥离后
+        的剩余文本.
     """
     pattern = compile_regex(f"^{LINE_TIMETAG_REGEX}")
     times: list[int] = []

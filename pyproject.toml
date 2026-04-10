@@ -1,12 +1,39 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.2.0"
+version = "0.2.1"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
-license = { file = "LICENSE" }
+license = "MIT"
 description = "A simple LRC parser for Python."
 readme = "README.md"
+keywords = ["LRC", "lyrics", "parser", "serializer", "SPL", "Enhanced LRC"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 requires-python = ">=3.9,<3.16"
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/NingmengLemon/lemony-lrc-parser"
+Repository = "https://github.com/NingmengLemon/lemony-lrc-parser.git"
+Issues = "https://github.com/NingmengLemon/lemony-lrc-parser/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [

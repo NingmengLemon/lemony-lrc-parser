@@ -1,4 +1,4 @@
-"""测试 parser 模块的完整功能，包括未覆盖的分支."""
+"""测试 parser 模块的完整功能, 包括未覆盖的分支."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class TestParseLrcMetadata:
 [00:01.000]歌词
 """
         lyrics = parse_lrc(lrc)
-        # 注意：metadata 的 value 会被 strip() 处理
+        # 注意: metadata 的 value 会被 strip() 处理
         assert lyrics.metadata.get("ti") == "Title with spaces"
 
 
@@ -59,7 +59,7 @@ class TestParseLrcReferenceLines:
 翻译2
 """
         lyrics = parse_lrc(lrc)
-        # 空行应该重置 last_tag，所以翻译2 应该挂到 主歌词2 上
+        # 空行应该重置 last_tag, 所以翻译2 应该挂到 主歌词2 上
         assert len(lyrics.lines) == 2
         assert lyrics.lines[1].reference_lines[0][0].content == "翻译2"
 
@@ -67,7 +67,7 @@ class TestParseLrcReferenceLines:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """测试孤儿参考行应该产生警告."""
-        lrc = """翻译行（没有主行）
+        lrc = """翻译行 (没有主行) 
 [00:01.000]主歌词
 """
         import logging
@@ -128,7 +128,7 @@ class TestParseLrcEmptyLines:
     """测试空行处理."""
 
     def test_empty_placeholder_line(self) -> None:
-        """测试空占位行（只有时间标签没有内容）."""
+        """测试空占位行 (只有时间标签没有内容) ."""
         lrc = """[00:01.000]第一行
 [00:05.000]
 [00:10.000]第三行
