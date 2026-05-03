@@ -31,7 +31,14 @@
 from __future__ import annotations
 
 from .exceptions import InvalidLyricsError, LyricsParserError
-from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord
+from .models import (
+    BasicLyricLine,
+    LyricLine,
+    Lyrics,
+    LyricWord,
+    ParseOptions,
+    SerializationOptions,
+)
 from .parser import parse_line, parse_lrc
 from .serializer import dump_lrc
 from .timetag import format_timetag, parse_timetag
@@ -43,6 +50,8 @@ __all__ = [
     "Lyrics",
     "InvalidLyricsError",
     "LyricsParserError",
+    "ParseOptions",
+    "SerializationOptions",
     "dumps",
     "loads",
     "dump_lrc",
@@ -53,27 +62,17 @@ __all__ = [
 ]
 
 
-def loads(s: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
+def loads(s: str, *, options: ParseOptions | None = None) -> Lyrics:
     """从 LRC 字符串解析出一份 :class:`Lyrics`.
 
     等价于 :meth:`Lyrics.loads`.
     """
-    return Lyrics.loads(s, fill_implicit_line_end=fill_implicit_line_end)
+    return Lyrics.loads(s, options=options)
 
 
-def dumps(
-    lyrics: Lyrics,
-    *,
-    with_metadata: bool = True,
-    use_bracket_for_byword_tag: bool = False,
-    apply_offset_from_metadata: bool = False,
-) -> str:
+def dumps(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> str:
     """把 :class:`Lyrics` 序列化为 LRC 字符串.
 
     等价于 ``lyrics.dumps(**kwargs)``
     """
-    return lyrics.dumps(
-        with_metadata=with_metadata,
-        use_bracket_for_byword_tag=use_bracket_for_byword_tag,
-        apply_offset_from_metadata=apply_offset_from_metadata,
-    )
+    return lyrics.dumps(options=options)

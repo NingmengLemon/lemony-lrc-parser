@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from io import StringIO
 from logging import getLogger
 
-from .models import BasicLyricLine, Lyrics
+from .models import BasicLyricLine, Lyrics, SerializationOptions
 from .timetag import format_timetag
 
 logger = getLogger(__name__)
@@ -20,22 +20,12 @@ __all__ = [
 ]
 
 
-def dump_lrc(
-    lyrics: Lyrics,
-    *,
-    with_metadata: bool = True,
-    use_bracket_for_byword_tag: bool = False,
-    apply_offset_from_metadata: bool = False,
-) -> str:
+def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> str:
     """把一份 :class:`Lyrics` 序列化为 LRC 文本.
 
     Args:
         lyrics: 待序列化的歌词对象.
-        with_metadata: 是否写出 metadata 段 (不影响 offset 的处理逻辑) .
-        use_bracket_for_byword_tag: 若为 ``True``, 逐字标签使用 ``[...]``;
-            否则使用 ``<...>``.
-        apply_offset_from_metadata: 是否读取并应用 ``metadata.offset``.
-            见下方“offset 语义”.
+        options: 序列化选项.
 
     offset 语义 (与 LRC 规范一致) :
         正 offset 会让歌词显示提前, 即 ``display_time = tag_time - offset``.
@@ -45,14 +35,19 @@ def dump_lrc(
     """
     buffer = StringIO()
 
+    options = options or SerializationOptions()
     # 拷贝 metadata 以免污染调用方传入的对象
     metadata = dict(lyrics.metadata)
     offset = _resolve_offset(
-        lyrics, metadata, apply_offset_from_metadata=apply_offset_from_metadata
+        lyrics,
+        metadata,
+        apply_offset_from_metadata=options.apply_offset_from_metadata,
     )
 
-    if with_metadata:
+    if options.with_metadata:
         for key, value in metadata.items():
+            if options.skip_empty_metadata and not value.strip():
+                continue
             buffer.write(f"[{key}: {value}]\n")
 
     for idx, line in enumerate(lyrics.lines):
@@ -71,22 +66,32 @@ def dump_lrc(
                 line.content,
                 line_start=line_start,
                 offset=offset,
-                use_bracket_for_byword_tag=use_bracket_for_byword_tag,
+                use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
+                tail_digits=options.word_tag_decimal_length,
             )
         )
         if line.end is not None:
-            buffer.write(format_timetag(line.end - offset))
+            buffer.write(
+                format_timetag(
+                    line.end - offset, tail_digits=options.line_tag_decimal_length
+                )
+            )
         buffer.write("\n")
 
         # 写参考行 (共享主行的 start)
         for refline in line.reference_lines:
-            buffer.write(format_timetag(line_start - offset))
+            buffer.write(
+                format_timetag(
+                    line_start - offset, tail_digits=options.line_tag_decimal_length
+                )
+            )
             buffer.write(
                 _format_words(
                     refline,
                     line_start=line_start,
                     offset=offset,
-                    use_bracket_for_byword_tag=use_bracket_for_byword_tag,
+                    use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
+                    tail_digits=options.word_tag_decimal_length,
                 )
             )
             buffer.write("\n")
@@ -100,6 +105,7 @@ def _format_words(
     line_start: int | None,
     offset: int,
     use_bracket_for_byword_tag: bool,
+    tail_digits: int,
 ) -> str:
     """把一行 :data:`BasicLyricLine` 格式化为字符串 (不含行首/行末标签) .
 
@@ -121,15 +127,23 @@ def _format_words(
             if idx == 0:
                 if word.start != line_start:
                     prefix = format_timetag(
-                        word.start - offset, use_angle_bracket=use_angle
+                        word.start - offset,
+                        use_angle_bracket=use_angle,
+                        tail_digits=tail_digits,
                     )
             elif words[idx - 1].end != word.start:
                 prefix = format_timetag(
-                    word.start - offset, use_angle_bracket=use_angle
+                    word.start - offset,
+                    use_angle_bracket=use_angle,
+                    tail_digits=tail_digits,
                 )
 
         if word.end is not None:
-            suffix = format_timetag(word.end - offset, use_angle_bracket=use_angle)
+            suffix = format_timetag(
+                word.end - offset,
+                use_angle_bracket=use_angle,
+                tail_digits=tail_digits,
+            )
 
         parts.append(f"{prefix}{word.content}{suffix}")
 

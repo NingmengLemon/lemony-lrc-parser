@@ -15,7 +15,7 @@ from copy import deepcopy
 from logging import getLogger
 
 from .exceptions import LyricsParserError
-from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord
+from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord, ParseOptions
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
@@ -159,7 +159,7 @@ def _drop_nonmonotonic_times(
     return texts, times
 
 
-def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
+def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     """解析一份完整的 LRC 文本.
 
     Args:
@@ -173,6 +173,7 @@ def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
     metadata: dict[str, str] = {}
     line_pool: dict[int, LyricLine] = {}
     last_tag: int | None = None
+    options = options or ParseOptions()
 
     for raw_line in lrc.strip().splitlines():
         line_str = raw_line.strip()
@@ -217,7 +218,7 @@ def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
         last_tag = time_tags[0] if len(time_tags) == 1 else None
 
     return _finalize_lyrics(
-        metadata, line_pool, fill_implicit_line_end=fill_implicit_line_end
+        metadata, line_pool, fill_implicit_line_end=options.fill_implicit_line_end
     )
 
 

@@ -13,14 +13,34 @@ from __future__ import annotations
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import overload
+from typing import Literal, overload
 
 __all__ = [
     "BasicLyricLine",
     "LyricLine",
     "LyricWord",
     "Lyrics",
+    "SerializationOptions",
 ]
+
+
+@dataclass
+class ParseOptions:
+    fill_implicit_line_end: bool = False
+
+
+@dataclass
+class SerializationOptions:
+    with_metadata: bool = True
+    use_bracket_for_byword_tag: bool = False
+    apply_offset_from_metadata: bool = False
+    skip_empty_metadata: bool = True
+    line_tag_decimal_length: int = 3
+    word_tag_decimal_length: int = 3
+
+
+class BehaviorConfig:
+    offset_semantics: Literal["add", "sub"] = "add"
 
 
 @dataclass
@@ -143,42 +163,26 @@ class Lyrics:
         return new
 
     @classmethod
-    def loads(cls, s: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
+    def loads(cls, s: str, *, options: ParseOptions | None = None) -> Lyrics:
         """从 LRC 字符串解析出一份 :class:`Lyrics`.
 
         Args:
             s: LRC 源文本.
-            fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
-                自动用下一行的开始时间作为其结束时间.
+            options: 解析选项.
         """
         from .parser import parse_lrc
 
-        return parse_lrc(s, fill_implicit_line_end=fill_implicit_line_end)
+        return parse_lrc(s, options=options)
 
-    def dumps(
-        self,
-        *,
-        with_metadata: bool = True,
-        use_bracket_for_byword_tag: bool = False,
-        apply_offset_from_metadata: bool = False,
-    ) -> str:
+    def dumps(self, *, options: SerializationOptions | None = None) -> str:
         """把当前对象序列化为 LRC 字符串.
 
         Args:
-            with_metadata: 是否写出 metadata 段.
-            use_bracket_for_byword_tag: 逐字标签是否使用 ``[...]``
-                 (默认 ``False`` 使用 ``<...>``) .
-            apply_offset_from_metadata: 是否读取并应用 ``metadata.offset``;
-                见 :func:`.serializer.dump_lrc` 的完整语义说明.
+            options: 序列化选项.
         """
         from .serializer import dump_lrc
 
-        return dump_lrc(
-            self,
-            with_metadata=with_metadata,
-            use_bracket_for_byword_tag=use_bracket_for_byword_tag,
-            apply_offset_from_metadata=apply_offset_from_metadata,
-        )
+        return dump_lrc(self, options=options)
 
     def __str__(self) -> str:
         return self.dumps()
