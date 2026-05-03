@@ -75,6 +75,6 @@ def loads(s: str, *, options: ParseOptions | None = None) -> Lyrics:
 def dumps(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> str:
     """把 :class:`Lyrics` 序列化为 LRC 字符串.
 
-    等价于 ``lyrics.dumps(**kwargs)``
+    等价于 ``lyrics.dumps(options=options)``
     """
     return lyrics.dumps(options=options)

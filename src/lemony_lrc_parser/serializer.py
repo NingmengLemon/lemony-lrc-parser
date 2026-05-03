@@ -68,7 +68,11 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
             continue
 
         # 写主行
-        buffer.write(format_timetag(line_start + delta))
+        buffer.write(
+            format_timetag(
+                line_start + delta, tail_digits=options.line_tag_decimal_length
+            )
+        )
         buffer.write(
             _format_words(
                 line.content,

@@ -109,9 +109,7 @@ class TestDumpLrcEmptyLyrics:
 
         lyrics = Lyrics()
         lyrics.metadata = {"ti": "Test", "ar": "Artist"}
-        result = dump_lrc(
-            lyrics, options=SerializationOptions(with_metadata=True)
-        )
+        result = dump_lrc(lyrics, options=SerializationOptions(with_metadata=True))
         assert "[ti: Test]" in result
         assert "[ar: Artist]" in result
 
@@ -205,3 +203,81 @@ class TestDumpLrcBywordFormatting:
         # 第二个词: start=1100(省略, 因为前一个end=1100) end=1200(输出)
         # 第三个词: start=1200(省略, 因为前一个end=1200) end=1300(输出)
         assert "[00:01.000]第<00:01.100>一<00:01.200>个<00:01.300>" in result
+
+
+class TestDumpLrcNewOptions:
+    """测试 v0.3.0 新增的序列化选项."""
+
+    def test_skip_empty_metadata_true(self) -> None:
+        """skip_empty_metadata=True 时跳过空值 metadata."""
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics()
+        lyrics.metadata = {"ti": "Test", "empty_key": "", "ar": "Artist"}
+        result = dump_lrc(
+            lyrics, options=SerializationOptions(skip_empty_metadata=True)
+        )
+        assert "[ti: Test]" in result
+        assert "[ar: Artist]" in result
+        assert "[empty_key:" not in result
+
+    def test_skip_empty_metadata_false(self) -> None:
+        """skip_empty_metadata=False 时保留空值 metadata."""
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics()
+        lyrics.metadata = {"ti": "Test", "empty_key": ""}
+        result = dump_lrc(
+            lyrics, options=SerializationOptions(skip_empty_metadata=False)
+        )
+        assert "[ti: Test]" in result
+        assert "[empty_key: ]" in result
+
+    def test_line_tag_decimal_length_2(self) -> None:
+        """line_tag_decimal_length=2 时行标签毫秒部分补齐到 2 位.
+
+        例如 5ms → ``05``, 50ms → ``50``, 500ms 仍显示 ``500`` (值宽度超过 N 时不截断).
+        """
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics()
+        lyrics.lines = [
+            LyricLine(
+                start=5005,  # 5 毫秒
+                end=5050,  # 50 毫秒
+                content=[LyricWord(content="Test")],
+            ),
+        ]
+        result = dump_lrc(
+            lyrics, options=SerializationOptions(line_tag_decimal_length=2)
+        )
+        # 5ms → "05", 50ms → "50"
+        assert "[00:05.05]" in result
+        assert "[00:05.50]" in result
+
+    def test_word_tag_decimal_length_2(self) -> None:
+        """word_tag_decimal_length=2 时逐字标签毫秒部分补齐到 2 位."""
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics()
+        lyrics.lines = [
+            LyricLine(
+                start=1005,  # 5 毫秒
+                content=[
+                    LyricWord(content="逐", start=1005, end=1055),
+                    LyricWord(content="字", start=1055, end=1500),
+                ],
+            ),
+        ]
+        result = dump_lrc(
+            lyrics, options=SerializationOptions(word_tag_decimal_length=2)
+        )
+        # 行标签: tail_digits=3 (默认)
+        assert "[00:01.005]" in result
+        # 逐字标签: tail_digits=2
+        # 第一个词 start=1005=5ms → "05" (不输出, 因为等于行首)
+        # 第一个词 end=1055=55ms → "55" → "<00:01.55>"
+        # 第二个词 start=1055=55ms → "55" (等于前一个end, 省略)
+        # 第二个词 end=1500=500ms → "500" (3位, 不截断)
+        assert "<00:01.55>" in result
+        assert "<00:01.500>" in result

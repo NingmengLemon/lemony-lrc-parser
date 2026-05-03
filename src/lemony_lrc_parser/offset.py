@@ -72,9 +72,7 @@ def resolve_offset_delta(
             elif offset_semantics == BehaviorConfig.positive_advances:
                 remaining = offset + safe_delta  # safe_delta 此时为负
             else:
-                raise ValueError(
-                    f"Unknown offset_semantics: {offset_semantics!r}"
-                )
+                raise ValueError(f"Unknown offset_semantics: {offset_semantics!r}")
             logger.warning(
                 f"Applying offset={offset}ms would make minimum "
                 f"timestamp {min_time}ms negative; "
