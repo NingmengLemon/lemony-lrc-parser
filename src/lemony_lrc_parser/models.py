@@ -13,20 +13,35 @@ from __future__ import annotations
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Literal, overload
+from typing import overload
 
 __all__ = [
     "BasicLyricLine",
+    "BehaviorConfig",
     "LyricLine",
     "LyricWord",
     "Lyrics",
+    "ParseOptions",
     "SerializationOptions",
 ]
+
+
+class BehaviorConfig:
+    """全局行为配置常量.
+
+    提供 ``offset_semantics`` 的字面量选项, 供 :class:`ParseOptions` 和
+    :class:`SerializationOptions` 引用.
+    """
+
+    positive_delays = "positive_delays"
+    positive_advances = "positive_advances"
 
 
 @dataclass
 class ParseOptions:
     fill_implicit_line_end: bool = False
+    apply_offset_from_metadata: bool = False
+    offset_semantics: str = BehaviorConfig.positive_delays
 
 
 @dataclass
@@ -37,10 +52,7 @@ class SerializationOptions:
     skip_empty_metadata: bool = True
     line_tag_decimal_length: int = 3
     word_tag_decimal_length: int = 3
-
-
-class BehaviorConfig:
-    offset_semantics: Literal["add", "sub"] = "add"
+    offset_semantics: str = BehaviorConfig.positive_delays
 
 
 @dataclass
@@ -100,6 +112,7 @@ class Lyrics:
 
     lines: list[LyricLine] = field(default_factory=list)
     metadata: dict[str, str] = field(default_factory=dict)
+    _offset_applied: bool = field(default=False, repr=False, compare=False)
 
     def __iter__(self) -> Iterator[LyricLine]:
         return iter(self.lines)

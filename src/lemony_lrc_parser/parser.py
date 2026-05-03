@@ -16,6 +16,7 @@ from logging import getLogger
 
 from .exceptions import LyricsParserError
 from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord, ParseOptions
+from .offset import apply_offset_to_lyrics
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
@@ -164,8 +165,8 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
 
     Args:
         lrc: LRC 源文本.
-        fill_implicit_line_end: 若为 ``True``, 则对没有显式结束时间的行,
-            用紧随其后的行开始时间作为隐式结束时间.
+        options: 解析选项. 当 ``apply_offset_from_metadata=True`` 时,
+            在解析完成后自动应用 ``metadata.offset`` 到所有时间戳.
 
     Returns:
         组装完毕的 :class:`Lyrics` 对象.
@@ -217,9 +218,15 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         _register_line_at_tags(line_pool, line, time_tags)
         last_tag = time_tags[0] if len(time_tags) == 1 else None
 
-    return _finalize_lyrics(
+    lyrics = _finalize_lyrics(
         metadata, line_pool, fill_implicit_line_end=options.fill_implicit_line_end
     )
+
+    if options.apply_offset_from_metadata:
+        apply_offset_to_lyrics(lyrics, offset_semantics=options.offset_semantics)
+        lyrics._offset_applied = True
+
+    return lyrics
 
 
 def _register_line_at_tags(

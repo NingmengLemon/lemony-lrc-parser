@@ -23,10 +23,12 @@ class TestLoadsFunction:
 
     def test_loads_with_fill_implicit_end(self) -> None:
         """测试带 fill_implicit_line_end 参数的 loads."""
+        from lemony_lrc_parser.models import ParseOptions
+
         lrc = """[00:01.000]第一行
 [00:05.000]第二行
 """
-        lyrics = loads(lrc, fill_implicit_line_end=True)
+        lyrics = loads(lrc, options=ParseOptions(fill_implicit_line_end=True))
         assert lyrics.lines[0].end == 5000
 
     def test_loads_equivalent_to_lyrics_loads(self) -> None:
@@ -52,6 +54,8 @@ class TestDumpsFunction:
 
     def test_dumps_with_options(self) -> None:
         """测试带参数的 dumps."""
+        from lemony_lrc_parser.models import SerializationOptions
+
         lyrics = Lyrics()
         lyrics.metadata = {"ti": "Test"}
         lyrics.lines = [
@@ -60,7 +64,12 @@ class TestDumpsFunction:
                 content=[LyricWord(content="逐", start=1000, end=1100)],
             ),
         ]
-        result = dumps(lyrics, with_metadata=True, use_bracket_for_byword_tag=True)
+        result = dumps(
+            lyrics,
+            options=SerializationOptions(
+                with_metadata=True, use_bracket_for_byword_tag=True
+            ),
+        )
         assert "[ti: Test]" in result
         # 检查是否使用了方括号
         assert "[00:01.000]逐" in result

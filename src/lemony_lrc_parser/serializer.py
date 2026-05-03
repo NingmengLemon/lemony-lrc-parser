@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from io import StringIO
 from logging import getLogger
 
 from .models import BasicLyricLine, Lyrics, SerializationOptions
+from .offset import resolve_offset_delta
 from .timetag import format_timetag
 
 logger = getLogger(__name__)
@@ -27,22 +27,30 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         lyrics: 待序列化的歌词对象.
         options: 序列化选项.
 
-    offset 语义 (与 LRC 规范一致) :
-        正 offset 会让歌词显示提前, 即 ``display_time = tag_time - offset``.
-        当 ``offset > 0`` 时, 最早的时间戳可能变为负数; 此时函数只应用
-        ``min(all_times)`` 这部分“安全” offset, 把剩余量写回
-        ``metadata.offset`` 交给播放器处理, 确保输出的所有时间标签 ``>= 0``.
+    在序列化时应用 offset 意味着时间标签会被整体偏移.
+    若 ``apply_offset_from_metadata=True``, 则从 ``metadata.offset`` 读入偏移量
+    并应用到输出的每个时间标签, **Lyrics 对象本身的时间戳不受影响**.
+
+    Offset 语义 (foobar2000 兼容) :
+        当 ``offset_semantics="positive_delays"`` (默认) 时:
+            ``display_time = tag_time + offset``
+            正 offset → 歌词延后显示.
+        当 ``offset_semantics="positive_advances"`` 时:
+            ``display_time = tag_time - offset``
+            正 offset → 歌词提前显示 (旧行为).
     """
     buffer = StringIO()
 
     options = options or SerializationOptions()
     # 拷贝 metadata 以免污染调用方传入的对象
     metadata = dict(lyrics.metadata)
-    offset = _resolve_offset(
-        lyrics,
-        metadata,
-        apply_offset_from_metadata=options.apply_offset_from_metadata,
-    )
+
+    if options.apply_offset_from_metadata and not lyrics._offset_applied:
+        delta = resolve_offset_delta(
+            lyrics, metadata, offset_semantics=options.offset_semantics
+        )
+    else:
+        delta = 0
 
     if options.with_metadata:
         for key, value in metadata.items():
@@ -60,12 +68,12 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
             continue
 
         # 写主行
-        buffer.write(format_timetag(line_start - offset))
+        buffer.write(format_timetag(line_start + delta))
         buffer.write(
             _format_words(
                 line.content,
                 line_start=line_start,
-                offset=offset,
+                delta=delta,
                 use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                 tail_digits=options.word_tag_decimal_length,
             )
@@ -73,7 +81,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         if line.end is not None:
             buffer.write(
                 format_timetag(
-                    line.end - offset, tail_digits=options.line_tag_decimal_length
+                    line.end + delta, tail_digits=options.line_tag_decimal_length
                 )
             )
         buffer.write("\n")
@@ -82,14 +90,14 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         for refline in line.reference_lines:
             buffer.write(
                 format_timetag(
-                    line_start - offset, tail_digits=options.line_tag_decimal_length
+                    line_start + delta, tail_digits=options.line_tag_decimal_length
                 )
             )
             buffer.write(
                 _format_words(
                     refline,
                     line_start=line_start,
-                    offset=offset,
+                    delta=delta,
                     use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                     tail_digits=options.word_tag_decimal_length,
                 )
@@ -103,7 +111,7 @@ def _format_words(
     words: BasicLyricLine,
     *,
     line_start: int | None,
-    offset: int,
+    delta: int,
     use_bracket_for_byword_tag: bool,
     tail_digits: int,
 ) -> str:
@@ -127,20 +135,20 @@ def _format_words(
             if idx == 0:
                 if word.start != line_start:
                     prefix = format_timetag(
-                        word.start - offset,
+                        word.start + delta,
                         use_angle_bracket=use_angle,
                         tail_digits=tail_digits,
                     )
             elif words[idx - 1].end != word.start:
                 prefix = format_timetag(
-                    word.start - offset,
+                    word.start + delta,
                     use_angle_bracket=use_angle,
                     tail_digits=tail_digits,
                 )
 
         if word.end is not None:
             suffix = format_timetag(
-                word.end - offset,
+                word.end + delta,
                 use_angle_bracket=use_angle,
                 tail_digits=tail_digits,
             )
@@ -148,82 +156,3 @@ def _format_words(
         parts.append(f"{prefix}{word.content}{suffix}")
 
     return "".join(parts)
-
-
-def _resolve_offset(
-    lyrics: Lyrics,
-    metadata: dict[str, str],
-    *,
-    apply_offset_from_metadata: bool,
-) -> int:
-    """决定实际应用的 offset 值, 必要时把剩余部分写回 ``metadata``.
-
-    Args:
-        lyrics: 原始歌词对象 (只读, 用于收集时间戳) .
-        metadata: 调用方已经拷贝出的 metadata 字典.
-            ``offset`` 键可能被 pop 出来 (``apply_offset_from_metadata=True``
-            时) 或更新为剩余 offset.
-        apply_offset_from_metadata: 是否启用 offset 处理.
-
-    Returns:
-        实际应从每个时间戳中扣除的毫秒数, 保证不会让任何时间戳变为负.
-    """
-    if not apply_offset_from_metadata:
-        return 0
-
-    offset_str = metadata.pop("offset", None)
-    if not offset_str:
-        return 0
-
-    try:
-        offset = int(offset_str)
-    except ValueError:
-        logger.warning(
-            f"Cannot parse metadata.offset as integer, ignoring: {offset_str!r}"
-        )
-        return 0
-
-    logger.info(f"Applying global time offset: {offset}ms (from metadata.offset)")
-
-    # 负 offset 只会让时间戳整体变大, 无需做越界保护
-    if offset <= 0:
-        return offset
-
-    all_times = list(_iter_all_timestamps(lyrics))
-    if not all_times:
-        return offset
-
-    min_time = min(all_times)
-    if min_time - offset >= 0:
-        return offset
-
-    # 正 offset 超过最小时间戳 → 只应用“安全”部分, 剩余写回 metadata
-    remaining = offset - min_time
-    logger.warning(
-        f"Applying offset={offset}ms would make minimum timestamp {min_time}ms "
-        f"negative; only applying {min_time}ms, remaining {remaining}ms kept in "
-        f"metadata.offset"
-    )
-    metadata["offset"] = str(remaining)
-    return min_time
-
-
-def _iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
-    """迭代 :class:`Lyrics` 中出现过的所有时间戳 (含参考行) ."""
-    for line in lyrics.lines:
-        if line.start is not None:
-            yield line.start
-        if line.end is not None:
-            yield line.end
-        yield from _iter_word_timestamps(line.content)
-        for refline in line.reference_lines:
-            yield from _iter_word_timestamps(refline)
-
-
-def _iter_word_timestamps(words: BasicLyricLine) -> Iterator[int]:
-    """从一个 word 序列中迭代出所有非空时间戳."""
-    for word in words:
-        if word.start is not None:
-            yield word.start
-        if word.end is not None:
-            yield word.end

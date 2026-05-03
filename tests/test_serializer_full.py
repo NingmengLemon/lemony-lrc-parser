@@ -49,6 +49,8 @@ class TestDumpLrcReferenceLines:
 
     def test_reference_lines_with_byword_tags(self) -> None:
         """测试带逐字标签的参考行."""
+        from lemony_lrc_parser.models import SerializationOptions
+
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
@@ -62,7 +64,10 @@ class TestDumpLrcReferenceLines:
         )
         lyrics.lines = [line]
 
-        result = dump_lrc(lyrics, use_bracket_for_byword_tag=False)
+        result = dump_lrc(
+            lyrics,
+            options=SerializationOptions(use_bracket_for_byword_tag=False),
+        )
         # 参考行也应该使用尖括号 (行首是方括号, 逐字标签是尖括号)
         assert "[00:01.000]逐<00:01.100>字<00:01.200>" in result
         assert "<00:01.100>" in result
@@ -100,9 +105,13 @@ class TestDumpLrcEmptyLyrics:
 
     def test_empty_lyrics_with_metadata(self) -> None:
         """测试只有 metadata 的空歌词."""
+        from lemony_lrc_parser.models import SerializationOptions
+
         lyrics = Lyrics()
         lyrics.metadata = {"ti": "Test", "ar": "Artist"}
-        result = dump_lrc(lyrics, with_metadata=True)
+        result = dump_lrc(
+            lyrics, options=SerializationOptions(with_metadata=True)
+        )
         assert "[ti: Test]" in result
         assert "[ar: Artist]" in result
 
@@ -112,6 +121,8 @@ class TestDumpLrcBywordFormatting:
 
     def test_byword_with_brackets(self) -> None:
         """测试使用方括号的逐字标签."""
+        from lemony_lrc_parser.models import SerializationOptions
+
         lyrics = Lyrics()
         lyrics.lines = [
             LyricLine(
@@ -123,13 +134,18 @@ class TestDumpLrcBywordFormatting:
             ),
         ]
 
-        result = dump_lrc(lyrics, use_bracket_for_byword_tag=True)
+        result = dump_lrc(
+            lyrics,
+            options=SerializationOptions(use_bracket_for_byword_tag=True),
+        )
         # 应该使用方括号
         assert "[00:01.000]逐" in result
         assert "[00:01.100]字" in result
 
     def test_byword_with_angle_brackets(self) -> None:
         """测试使用尖括号的逐字标签."""
+        from lemony_lrc_parser.models import SerializationOptions
+
         lyrics = Lyrics()
         lyrics.lines = [
             LyricLine(
@@ -141,7 +157,10 @@ class TestDumpLrcBywordFormatting:
             ),
         ]
 
-        result = dump_lrc(lyrics, use_bracket_for_byword_tag=False)
+        result = dump_lrc(
+            lyrics,
+            options=SerializationOptions(use_bracket_for_byword_tag=False),
+        )
         # 行首使用方括号, 逐字标签使用尖括号
         # 第一个词的开始时间等于行开始时间, 所以不输出逐字标签
         assert "[00:01.000]逐<00:01.100>字<00:01.200>" in result
