@@ -24,8 +24,8 @@ class TestDumpLrcReferenceLines:
         lyrics.lines = [line]
 
         result = dump_lrc(lyrics)
-        assert "[00:01.000]Main" in result
-        assert "[00:01.000]翻译" in result
+        assert "[00:01.00]Main" in result
+        assert "[00:01.00]翻译" in result
 
     def test_multiple_reference_lines(self) -> None:
         """测试多个参考行."""
@@ -69,7 +69,8 @@ class TestDumpLrcReferenceLines:
             options=SerializationOptions(use_bracket_for_byword_tag=False),
         )
         # 参考行也应该使用尖括号 (行首是方括号, 逐字标签是尖括号)
-        assert "[00:01.000]逐<00:01.100>字<00:01.200>" in result
+        # word_tag_decimal_length=2 (默认): 毫秒值 >= 100 的不截断
+        assert "[00:01.00]逐<00:01.100>字<00:01.200>" in result
         assert "<00:01.100>" in result
 
 
@@ -137,7 +138,8 @@ class TestDumpLrcBywordFormatting:
             options=SerializationOptions(use_bracket_for_byword_tag=True),
         )
         # 应该使用方括号
-        assert "[00:01.000]逐" in result
+        # word_tag_decimal_length=2 (默认): 100ms 显示 "100" (不截断)
+        assert "[00:01.00]逐" in result
         assert "[00:01.100]字" in result
 
     def test_byword_with_angle_brackets(self) -> None:
@@ -161,7 +163,8 @@ class TestDumpLrcBywordFormatting:
         )
         # 行首使用方括号, 逐字标签使用尖括号
         # 第一个词的开始时间等于行开始时间, 所以不输出逐字标签
-        assert "[00:01.000]逐<00:01.100>字<00:01.200>" in result
+        # word_tag_decimal_length=2 (默认): 100ms 显示 "100" (不截断)
+        assert "[00:01.00]逐<00:01.100>字<00:01.200>" in result
         assert "<00:01.100>字" in result
 
     def test_omit_redundant_start_tag(self) -> None:
@@ -179,7 +182,7 @@ class TestDumpLrcBywordFormatting:
 
         result = dump_lrc(lyrics)
         # 第一个词的开始时间等于行开始时间, 不应该重复输出
-        assert result.count("[00:01.000]") == 1  # 只有行首标签
+        assert result.count("[00:01.00]") == 1  # 只有行首标签
 
     def test_omit_continuous_tags(self) -> None:
         """测试省略与前一词结束时间相接的标签."""
@@ -202,7 +205,8 @@ class TestDumpLrcBywordFormatting:
         # 第一个词: start=1000(省略) end=1100(输出)
         # 第二个词: start=1100(省略, 因为前一个end=1100) end=1200(输出)
         # 第三个词: start=1200(省略, 因为前一个end=1200) end=1300(输出)
-        assert "[00:01.000]第<00:01.100>一<00:01.200>个<00:01.300>" in result
+        # word_tag_decimal_length=2 (默认): 100ms 显示 "100" (不截断)
+        assert "[00:01.00]第<00:01.100>一<00:01.200>个<00:01.300>" in result
 
 
 class TestDumpLrcNewOptions:
@@ -272,12 +276,12 @@ class TestDumpLrcNewOptions:
         result = dump_lrc(
             lyrics, options=SerializationOptions(word_tag_decimal_length=2)
         )
-        # 行标签: tail_digits=3 (默认)
-        assert "[00:01.005]" in result
+        # 行标签: tail_digits=2 (默认)
+        assert "[00:01.05]" in result
         # 逐字标签: tail_digits=2
         # 第一个词 start=1005=5ms → "05" (不输出, 因为等于行首)
         # 第一个词 end=1055=55ms → "55" → "<00:01.55>"
         # 第二个词 start=1055=55ms → "55" (等于前一个end, 省略)
-        # 第二个词 end=1500=500ms → "500" (3位, 不截断)
+        # 第二个词 end=1500=500ms → "500" (值宽度超过 2, 不截断)
         assert "<00:01.55>" in result
         assert "<00:01.500>" in result

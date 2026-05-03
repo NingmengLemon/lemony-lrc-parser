@@ -50,7 +50,7 @@ class TestDumpsFunction:
             LyricLine(start=1000, content=[LyricWord(content="Hello")]),
         ]
         result = dumps(lyrics)
-        assert "[00:01.000]Hello" in result
+        assert "[00:01.00]Hello" in result
 
     def test_dumps_with_options(self) -> None:
         """测试带参数的 dumps."""
@@ -72,7 +72,7 @@ class TestDumpsFunction:
         )
         assert "[ti: Test]" in result
         # 检查是否使用了方括号
-        assert "[00:01.000]逐" in result
+        assert "[00:01.00]逐" in result
 
     def test_dumps_equivalent_to_lyrics_dumps(self) -> None:
         """测试 dumps 等价于 lyrics.dumps."""

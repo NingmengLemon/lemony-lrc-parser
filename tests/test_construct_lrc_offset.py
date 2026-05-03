@@ -33,8 +33,8 @@ class TestConstructLrcOffset:
         # offset 字段仍在
         assert "[offset: 500]" in out
         # 时间标签保持原样
-        assert "[00:05.000]" in out
-        assert "[00:10.000]" in out
+        assert "[00:05.00]" in out
+        assert "[00:10.00]" in out
 
     def test_positive_offset_applied(self) -> None:
         """offset=500 (positive_delays) 时, 所有时间标签应增加 500ms."""
@@ -50,7 +50,7 @@ class TestConstructLrcOffset:
         # 原 10000ms -> 10500ms (line.start)
         assert "[00:10.500]" in out
         # 原 11500ms -> 12000ms (中间的 word tag, 保持尖括号)
-        assert "<00:12.000>" in out
+        assert "<00:12.00>" in out
         # 原 7000ms -> 7500ms (行尾标签, 方括号)
         assert "[00:07.500]" in out
         # 原 12000ms -> 12500ms (line.end)
@@ -65,9 +65,9 @@ class TestConstructLrcOffset:
         )
 
         # 5000 + (-2000) = 3000
-        assert "[00:03.000]" in out
+        assert "[00:03.00]" in out
         # 10000 + (-2000) = 8000
-        assert "[00:08.000]" in out
+        assert "[00:08.00]" in out
         # metadata 被 pop 掉
         assert "[offset:" not in out
 
@@ -85,11 +85,11 @@ class TestConstructLrcOffset:
         )
 
         # 最小时间标签被 clamp 到 0 (line.start)
-        assert "[00:00.000]" in out
+        assert "[00:00.00]" in out
         # 剩余 offset 应写回 metadata
         assert "[offset: -1000]" in out
         # 原 10000 + (-5000) = 5000 (line.start)
-        assert "[00:05.000]" in out
+        assert "[00:05.00]" in out
 
     def test_offset_exactly_equal_to_min_time_but_negative(self) -> None:
         """offset 恰好等于 -min_time 时, 最小标签应变为 0, 不需要保留剩余 offset."""
@@ -100,9 +100,9 @@ class TestConstructLrcOffset:
         )
 
         # 原 5000 + (-5000) = 0
-        assert "[00:00.000]" in out
+        assert "[00:00.00]" in out
         # 原 10000 + (-5000) = 5000
-        assert "[00:05.000]" in out
+        assert "[00:05.00]" in out
         # 不需要保留剩余 offset
         assert "[offset:" not in out
 
@@ -115,8 +115,8 @@ class TestConstructLrcOffset:
         )
 
         # 时间标签原样
-        assert "[00:05.000]" in out
-        assert "[00:10.000]" in out
+        assert "[00:05.00]" in out
+        assert "[00:10.00]" in out
         # offset 字段被 pop 掉了 (因为 apply_offset_from_metadata=True, 但内容无效)
         assert "[offset:" not in out
 
@@ -142,8 +142,8 @@ class TestConstructLrcOffset:
         )
 
         # 时间标签原样
-        assert "[00:05.000]" in out
-        assert "[00:10.000]" in out
+        assert "[00:05.00]" in out
+        assert "[00:10.00]" in out
 
     def test_roundtrip_equivalence(self) -> None:
         """
@@ -200,9 +200,9 @@ class TestConstructLrcOffset:
         )
 
         # 5000 - (-2000) = 7000
-        assert "[00:07.000]" in out
+        assert "[00:07.00]" in out
         # 10000 - (-2000) = 12000
-        assert "[00:12.000]" in out
+        assert "[00:12.00]" in out
         assert "[offset:" not in out
 
     def test_positive_advances_partial_application(self) -> None:
@@ -222,8 +222,8 @@ class TestConstructLrcOffset:
         )
 
         # 最小时间标签被 clamp 到 0
-        assert "[00:00.000]" in out
+        assert "[00:00.00]" in out
         # 剩余 offset 应写回 metadata
         assert "[offset: 1000]" in out
         # 原 10000 - 5000 = 5000 (line.start)
-        assert "[00:05.000]" in out
+        assert "[00:05.00]" in out

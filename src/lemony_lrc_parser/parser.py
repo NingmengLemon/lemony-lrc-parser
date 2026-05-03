@@ -224,7 +224,6 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
 
     if options.apply_offset_from_metadata:
         apply_offset_to_lyrics(lyrics, offset_semantics=options.offset_semantics)
-        lyrics._offset_applied = True
 
     return lyrics
 

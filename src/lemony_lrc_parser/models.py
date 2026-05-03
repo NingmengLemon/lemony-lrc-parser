@@ -51,8 +51,8 @@ class SerializationOptions:
     use_bracket_for_byword_tag: bool = False
     apply_offset_from_metadata: bool = False
     skip_empty_metadata: bool = True
-    line_tag_decimal_length: int = 3
-    word_tag_decimal_length: int = 3
+    line_tag_decimal_length: int = 2
+    word_tag_decimal_length: int = 2
     offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays
 
 
@@ -174,6 +174,7 @@ class Lyrics:
                 pool[line.start] = deepcopy(line)
 
         new.lines = list(pool.values())
+        new._offset_applied = self._offset_applied or other._offset_applied
         return new
 
     @classmethod

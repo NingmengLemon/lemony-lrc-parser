@@ -107,6 +107,7 @@ def apply_offset_to_lyrics(
             f"Applied delta={delta}ms to all timestamps "
             f"(semantics={offset_semantics!r})"
         )
+    lyrics._offset_applied = True
     return delta
 
 
