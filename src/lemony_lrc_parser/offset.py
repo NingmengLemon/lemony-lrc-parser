@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from logging import getLogger
 
-from .models import BasicLyricLine, BehaviorConfig, Lyrics
+from .models import BasicLyricLine, Lyrics, OffsetSemantics
 
 logger = getLogger(__name__)
 
@@ -22,7 +22,7 @@ def resolve_offset_delta(
     lyrics: Lyrics,
     metadata: dict[str, str],
     *,
-    offset_semantics: str = BehaviorConfig.positive_delays,
+    offset_semantics: str = OffsetSemantics.positive_delays,
 ) -> int:
     """从 ``metadata`` 中读取 ``offset``, 计算出应**加**到每个时间戳上的有符号增量.
 
@@ -50,15 +50,15 @@ def resolve_offset_delta(
         return 0
 
     # 根据语义确定符号方向
-    if offset_semantics == BehaviorConfig.positive_delays:
+    if offset_semantics == OffsetSemantics.positive_delays:
         delta = offset  # tag_time + offset → 正 offset 延后
-    elif offset_semantics == BehaviorConfig.positive_advances:
+    elif offset_semantics == OffsetSemantics.positive_advances:
         delta = -offset  # tag_time - offset → 正 offset 提前
     else:
         raise ValueError(
             f"Unknown offset_semantics: {offset_semantics!r}; "
-            f"expected one of {BehaviorConfig.positive_delays!r} "
-            f"or {BehaviorConfig.positive_advances!r}"
+            f"expected one of {OffsetSemantics.positive_delays!r} "
+            f"or {OffsetSemantics.positive_advances!r}"
         )
 
     # 裁剪: 确保没有任何时间戳 < 0
@@ -67,9 +67,9 @@ def resolve_offset_delta(
         min_time = min(all_times)
         if min_time + delta < 0:
             safe_delta = -min_time  # 使最小时间戳恰好变为 0
-            if offset_semantics == BehaviorConfig.positive_delays:
+            if offset_semantics == OffsetSemantics.positive_delays:
                 remaining = offset - safe_delta
-            elif offset_semantics == BehaviorConfig.positive_advances:
+            elif offset_semantics == OffsetSemantics.positive_advances:
                 remaining = offset + safe_delta  # safe_delta 此时为负
             else:
                 raise ValueError(f"Unknown offset_semantics: {offset_semantics!r}")
@@ -88,7 +88,7 @@ def resolve_offset_delta(
 def apply_offset_to_lyrics(
     lyrics: Lyrics,
     *,
-    offset_semantics: str = BehaviorConfig.positive_delays,
+    offset_semantics: str = OffsetSemantics.positive_delays,
 ) -> int:
     """从 ``lyrics.metadata`` 中读取 offset 并直接应用到所有时间戳 (原地修改).
 

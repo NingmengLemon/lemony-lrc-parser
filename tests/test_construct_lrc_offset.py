@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from lemony_lrc_parser.models import SerializationOptions
+from lemony_lrc_parser.models import OffsetSemantics, SerializationOptions
 from lemony_lrc_parser.parser import parse_lrc as parse_file
 from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
 
@@ -172,7 +172,7 @@ class TestConstructLrcOffset:
             ly,
             options=SerializationOptions(
                 apply_offset_from_metadata=True,
-                offset_semantics="positive_advances",
+                offset_semantics=OffsetSemantics.positive_advances,
             ),
         )
 
@@ -195,7 +195,7 @@ class TestConstructLrcOffset:
             ly,
             options=SerializationOptions(
                 apply_offset_from_metadata=True,
-                offset_semantics="positive_advances",
+                offset_semantics=OffsetSemantics.positive_advances,
             ),
         )
 
@@ -217,7 +217,7 @@ class TestConstructLrcOffset:
             ly,
             options=SerializationOptions(
                 apply_offset_from_metadata=True,
-                offset_semantics="positive_advances",
+                offset_semantics=OffsetSemantics.positive_advances,
             ),
         )
 

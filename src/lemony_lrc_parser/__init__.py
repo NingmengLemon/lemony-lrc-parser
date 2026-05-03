@@ -33,10 +33,10 @@ from __future__ import annotations
 from .exceptions import InvalidLyricsError, LyricsParserError
 from .models import (
     BasicLyricLine,
-    BehaviorConfig,
     LyricLine,
     Lyrics,
     LyricWord,
+    OffsetSemantics,
     ParseOptions,
     SerializationOptions,
 )
@@ -46,7 +46,7 @@ from .timetag import format_timetag, parse_timetag
 
 __all__ = [
     "BasicLyricLine",
-    "BehaviorConfig",
+    "OffsetSemantics",
     "LyricLine",
     "LyricWord",
     "Lyrics",

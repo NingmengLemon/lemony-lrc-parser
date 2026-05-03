@@ -13,14 +13,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Literal, overload
-
-
-OffsetSemantics = Literal["positive_delays", "positive_advances"]
+from enum import Enum
+from typing import overload
 
 __all__ = [
     "BasicLyricLine",
-    "BehaviorConfig",
+    "OffsetSemantics",
     "LyricLine",
     "LyricWord",
     "Lyrics",
@@ -30,7 +28,7 @@ __all__ = [
 ]
 
 
-class BehaviorConfig:
+class OffsetSemantics(str, Enum):
     """全局行为配置常量.
 
     提供 ``offset_semantics`` 的字面量选项, 供 :class:`ParseOptions` 和
@@ -45,7 +43,7 @@ class BehaviorConfig:
 class ParseOptions:
     fill_implicit_line_end: bool = False
     apply_offset_from_metadata: bool = False
-    offset_semantics: OffsetSemantics = "positive_delays"
+    offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays
 
 
 @dataclass
@@ -56,7 +54,7 @@ class SerializationOptions:
     skip_empty_metadata: bool = True
     line_tag_decimal_length: int = 3
     word_tag_decimal_length: int = 3
-    offset_semantics: OffsetSemantics = "positive_delays"
+    offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays
 
 
 @dataclass
