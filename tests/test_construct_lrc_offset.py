@@ -43,7 +43,7 @@ class TestConstructLrcOffset:
             ly, options=SerializationOptions(apply_offset_from_metadata=True)
         )
 
-        # offset 从 metadata 消失 (*_resolve_offset pop 掉了)
+        # offset 从 metadata 消失 (resolve_offset_delta pop 掉了)
         assert "[offset:" not in out
         # 原 5000ms -> 5500ms (line.start)
         assert "[00:05.500]" in out

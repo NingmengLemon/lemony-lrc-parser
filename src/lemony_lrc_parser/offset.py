@@ -22,7 +22,7 @@ def resolve_offset_delta(
     lyrics: Lyrics,
     metadata: dict[str, str],
     *,
-    offset_semantics: str = OffsetSemantics.positive_delays,
+    offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays,
 ) -> int:
     """从 ``metadata`` 中读取 ``offset``, 计算出应**加**到每个时间戳上的有符号增量.
 
@@ -88,7 +88,7 @@ def resolve_offset_delta(
 def apply_offset_to_lyrics(
     lyrics: Lyrics,
     *,
-    offset_semantics: str = OffsetSemantics.positive_delays,
+    offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays,
 ) -> int:
     """从 ``lyrics.metadata`` 中读取 offset 并直接应用到所有时间戳 (原地修改).
 

@@ -18,7 +18,6 @@ from typing import overload
 
 __all__ = [
     "BasicLyricLine",
-    "OffsetSemantics",
     "LyricLine",
     "LyricWord",
     "Lyrics",
