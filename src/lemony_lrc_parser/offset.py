@@ -43,7 +43,7 @@ def resolve_offset_delta(
 
     try:
         offset = int(offset_str)
-    except ValueError:
+    except (ValueError, OverflowError):
         logger.warning(
             f"Cannot parse metadata.offset as integer, ignoring: {offset_str!r}"
         )
@@ -52,8 +52,14 @@ def resolve_offset_delta(
     # 根据语义确定符号方向
     if offset_semantics == BehaviorConfig.positive_delays:
         delta = offset  # tag_time + offset → 正 offset 延后
-    else:
+    elif offset_semantics == BehaviorConfig.positive_advances:
         delta = -offset  # tag_time - offset → 正 offset 提前
+    else:
+        raise ValueError(
+            f"Unknown offset_semantics: {offset_semantics!r}; "
+            f"expected one of {BehaviorConfig.positive_delays!r} "
+            f"or {BehaviorConfig.positive_advances!r}"
+        )
 
     # 裁剪: 确保没有任何时间戳 < 0
     all_times = list(_iter_all_timestamps(lyrics))
@@ -63,8 +69,12 @@ def resolve_offset_delta(
             safe_delta = -min_time  # 使最小时间戳恰好变为 0
             if offset_semantics == BehaviorConfig.positive_delays:
                 remaining = offset - safe_delta
-            else:
+            elif offset_semantics == BehaviorConfig.positive_advances:
                 remaining = offset + safe_delta  # safe_delta 此时为负
+            else:
+                raise ValueError(
+                    f"Unknown offset_semantics: {offset_semantics!r}"
+                )
             logger.warning(
                 f"Applying offset={offset}ms would make minimum "
                 f"timestamp {min_time}ms negative; "

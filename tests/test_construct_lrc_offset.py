@@ -164,3 +164,66 @@ class TestConstructLrcOffset:
         new_offset = int(ly2.metadata.get("offset", "0"))
         assert new_first_start is not None
         assert new_first_start + new_offset == 5000 + (-6000)
+
+    def test_positive_advances_semantics(self) -> None:
+        """`positive_advances` 语义: 正 offset → 歌词提前 (tag_time - offset)."""
+        ly = parse_file(_SAMPLE_LRC)
+        out = construct_lrc(
+            ly,
+            options=SerializationOptions(
+                apply_offset_from_metadata=True,
+                offset_semantics="positive_advances",
+            ),
+        )
+
+        # offset 从 metadata 消失
+        assert "[offset:" not in out
+        # 原 5000ms - 500ms = 4500ms (line.start)
+        assert "[00:04.500]" in out
+        # 原 10000ms - 500ms = 9500ms (line.start)
+        assert "[00:09.500]" in out
+        # 原 7000ms - 500ms = 6500ms (行尾标签, 方括号)
+        assert "[00:06.500]" in out
+        # 原 12000ms - 500ms = 11500ms (line.end)
+        assert "[00:11.500]" in out
+
+    def test_positive_advances_negative_offset(self) -> None:
+        """`positive_advances` + 负 offset: tag_time - (-2000) = tag_time + 2000."""
+        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -2000]")
+        ly = parse_file(src)
+        out = construct_lrc(
+            ly,
+            options=SerializationOptions(
+                apply_offset_from_metadata=True,
+                offset_semantics="positive_advances",
+            ),
+        )
+
+        # 5000 - (-2000) = 7000
+        assert "[00:07.000]" in out
+        # 10000 - (-2000) = 12000
+        assert "[00:12.000]" in out
+        assert "[offset:" not in out
+
+    def test_positive_advances_partial_application(self) -> None:
+        """`positive_advances` + 正 offset 超过最小时间标签的裁剪.
+
+        原始最小时间 = 5000, offset = 6000 → tag_time - 6000 → 越界
+        → 只能应用 5000 (使最小变为 0), 剩余 1000 保留.
+        """
+        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: 6000]")
+        ly = parse_file(src)
+        out = construct_lrc(
+            ly,
+            options=SerializationOptions(
+                apply_offset_from_metadata=True,
+                offset_semantics="positive_advances",
+            ),
+        )
+
+        # 最小时间标签被 clamp 到 0
+        assert "[00:00.000]" in out
+        # 剩余 offset 应写回 metadata
+        assert "[offset: 1000]" in out
+        # 原 10000 - 5000 = 5000 (line.start)
+        assert "[00:05.000]" in out

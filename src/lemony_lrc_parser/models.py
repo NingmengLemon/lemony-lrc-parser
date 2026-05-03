@@ -13,7 +13,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import overload
+from typing import Literal, overload
+
+
+OffsetSemantics = Literal["positive_delays", "positive_advances"]
 
 __all__ = [
     "BasicLyricLine",
@@ -21,6 +24,7 @@ __all__ = [
     "LyricLine",
     "LyricWord",
     "Lyrics",
+    "OffsetSemantics",
     "ParseOptions",
     "SerializationOptions",
 ]
@@ -41,7 +45,7 @@ class BehaviorConfig:
 class ParseOptions:
     fill_implicit_line_end: bool = False
     apply_offset_from_metadata: bool = False
-    offset_semantics: str = BehaviorConfig.positive_delays
+    offset_semantics: OffsetSemantics = "positive_delays"
 
 
 @dataclass
@@ -52,7 +56,7 @@ class SerializationOptions:
     skip_empty_metadata: bool = True
     line_tag_decimal_length: int = 3
     word_tag_decimal_length: int = 3
-    offset_semantics: str = BehaviorConfig.positive_delays
+    offset_semantics: OffsetSemantics = "positive_delays"
 
 
 @dataclass
