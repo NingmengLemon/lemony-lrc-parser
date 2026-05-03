@@ -68,7 +68,7 @@ def resolve_offset_delta(
             logger.warning(
                 f"Applying offset={offset}ms would make minimum "
                 f"timestamp {min_time}ms negative; "
-                f"only applying {offset - remaining}ms, "
+                f"only applying {safe_delta}ms (delta), "
                 f"remaining {remaining}ms kept in metadata.offset"
             )
             metadata["offset"] = str(remaining)
