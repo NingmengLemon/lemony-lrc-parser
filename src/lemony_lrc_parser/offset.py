@@ -39,12 +39,12 @@ def _resolve_offset_delta(
         应加到每个时间戳上的毫秒增量 (正数 → 延后, 负数 → 提前).
     """
     offset_str = metadata.get("offset")
-    if not offset_str:
+    if offset_str is None:
         return 0
 
     try:
         offset = int(offset_str)
-    except (ValueError, OverflowError):
+    except ValueError:
         logger.warning(
             f"Cannot parse metadata.offset as integer, ignoring: {offset_str!r}"
         )
@@ -73,10 +73,8 @@ def _resolve_offset_delta(
             safe_delta = -min_time  # 使最小时间戳恰好变为 0
             if offset_semantics == OffsetSemantics.positive_delays:
                 remaining = offset - safe_delta
-            elif offset_semantics == OffsetSemantics.positive_advances:
+            else:  # OffsetSemantics.positive_advances
                 remaining = offset + safe_delta  # safe_delta 此时为负
-            else:
-                raise ValueError(f"Unknown offset_semantics: {offset_semantics!r}")
             logger.warning(
                 f"Applying offset={offset}ms would make minimum "
                 f"timestamp {min_time}ms negative; "

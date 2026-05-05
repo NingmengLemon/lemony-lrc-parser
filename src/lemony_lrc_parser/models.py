@@ -66,6 +66,19 @@ class SerializationOptions:
     line_tag_decimal_length: int = 2
     word_tag_decimal_length: int = 2
 
+    def __post_init__(self) -> None:
+        """校验参数合法性."""
+        if self.line_tag_decimal_length < 1:
+            raise ValueError(
+                f"line_tag_decimal_length must be >= 1, "
+                f"got {self.line_tag_decimal_length}"
+            )
+        if self.word_tag_decimal_length < 1:
+            raise ValueError(
+                f"word_tag_decimal_length must be >= 1, "
+                f"got {self.word_tag_decimal_length}"
+            )
+
 
 @dataclass
 class LyricWord:
