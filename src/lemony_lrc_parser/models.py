@@ -38,11 +38,28 @@ class OffsetSemantics(str, Enum):
 
 @dataclass
 class ParseOptions:
+    """解析选项.
+
+    Attributes:
+        fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
+            自动用下一行的开始时间作为其结束时间.
+    """
+
     fill_implicit_line_end: bool = False
 
 
 @dataclass
 class SerializationOptions:
+    """序列化选项.
+
+    Attributes:
+        with_metadata: 是否输出 metadata 段.
+        use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``.
+        skip_empty_metadata: 跳过空值的 metadata 键.
+        line_tag_decimal_length: 行标签毫秒位数 (默认 2).
+        word_tag_decimal_length: 逐字标签毫秒位数 (默认 2).
+    """
+
     with_metadata: bool = True
     use_bracket_for_byword_tag: bool = False
     skip_empty_metadata: bool = True

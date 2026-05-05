@@ -110,7 +110,7 @@ class TestApplyOffset:
         # 时间标签原样 (无效 offset 被忽略)
         assert "[00:05.00]" in out
         assert "[00:10.00]" in out
-        # offset 字段被保留了 (pop 但未解析成功, 未写回)
+        # offset 字段被保留了 (解析失败, 未 pop, 原始 metadata 不变)
         assert "[offset: not-a-number]" in out
 
     def test_original_not_mutated(self) -> None:
