@@ -10,7 +10,6 @@ from io import StringIO
 from logging import getLogger
 
 from .models import BasicLyricLine, Lyrics, SerializationOptions
-from .offset import resolve_offset_delta
 from .timetag import format_timetag
 
 logger = getLogger(__name__)
@@ -26,31 +25,11 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
     Args:
         lyrics: 待序列化的歌词对象.
         options: 序列化选项.
-
-    在序列化时应用 offset 意味着时间标签会被整体偏移.
-    若 ``apply_offset_from_metadata=True``, 则从 ``metadata.offset`` 读入偏移量
-    并应用到输出的每个时间标签, **Lyrics 对象本身的时间戳不受影响**.
-
-    Offset 语义 (foobar2000 兼容) :
-        当 ``offset_semantics="positive_delays"`` (默认) 时:
-            ``display_time = tag_time + offset``
-            正 offset → 歌词延后显示.
-        当 ``offset_semantics="positive_advances"`` 时:
-            ``display_time = tag_time - offset``
-            正 offset → 歌词提前显示 (旧行为).
     """
     buffer = StringIO()
 
     options = options or SerializationOptions()
-    # 拷贝 metadata 以免污染调用方传入的对象
     metadata = dict(lyrics.metadata)
-
-    if options.apply_offset_from_metadata and not lyrics._offset_applied:
-        delta = resolve_offset_delta(
-            lyrics, metadata, offset_semantics=options.offset_semantics
-        )
-    else:
-        delta = 0
 
     if options.with_metadata:
         for key, value in metadata.items():
@@ -70,14 +49,13 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         # 写主行
         buffer.write(
             format_timetag(
-                line_start + delta, tail_digits=options.line_tag_decimal_length
+                line_start, tail_digits=options.line_tag_decimal_length
             )
         )
         buffer.write(
             _format_words(
                 line.content,
                 line_start=line_start,
-                delta=delta,
                 use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                 tail_digits=options.word_tag_decimal_length,
             )
@@ -85,7 +63,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         if line.end is not None:
             buffer.write(
                 format_timetag(
-                    line.end + delta, tail_digits=options.line_tag_decimal_length
+                    line.end, tail_digits=options.line_tag_decimal_length
                 )
             )
         buffer.write("\n")
@@ -94,14 +72,13 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         for refline in line.reference_lines:
             buffer.write(
                 format_timetag(
-                    line_start + delta, tail_digits=options.line_tag_decimal_length
+                    line_start, tail_digits=options.line_tag_decimal_length
                 )
             )
             buffer.write(
                 _format_words(
                     refline,
                     line_start=line_start,
-                    delta=delta,
                     use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                     tail_digits=options.word_tag_decimal_length,
                 )
@@ -115,7 +92,6 @@ def _format_words(
     words: BasicLyricLine,
     *,
     line_start: int | None,
-    delta: int,
     use_bracket_for_byword_tag: bool,
     tail_digits: int,
 ) -> str:
@@ -139,20 +115,20 @@ def _format_words(
             if idx == 0:
                 if word.start != line_start:
                     prefix = format_timetag(
-                        word.start + delta,
+                        word.start,
                         use_angle_bracket=use_angle,
                         tail_digits=tail_digits,
                     )
             elif words[idx - 1].end != word.start:
                 prefix = format_timetag(
-                    word.start + delta,
+                    word.start,
                     use_angle_bracket=use_angle,
                     tail_digits=tail_digits,
                 )
 
         if word.end is not None:
             suffix = format_timetag(
-                word.end + delta,
+                word.end,
                 use_angle_bracket=use_angle,
                 tail_digits=tail_digits,
             )

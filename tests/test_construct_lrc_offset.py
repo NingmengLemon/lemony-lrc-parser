@@ -1,4 +1,4 @@
-"""测试 construct_lrc 的 offset 相关逻辑.
+"""测试 Lyrics.apply_offset 方法和 offset 相关逻辑.
 
 覆盖 `positive_delays` 语义 (默认) :
     display_time = tag_time + offset
@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from lemony_lrc_parser.models import OffsetSemantics, SerializationOptions
+from lemony_lrc_parser.models import OffsetSemantics
 from lemony_lrc_parser.parser import parse_lrc as parse_file
 from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
 
@@ -20,15 +20,13 @@ _SAMPLE_LRC = """\
 """
 
 
-class TestConstructLrcOffset:
-    """针对 construct_lrc 中 offset 处理的测试."""
+class TestApplyOffset:
+    """针对 Lyrics.apply_offset 方法的测试."""
 
     def test_offset_not_applied_by_default(self) -> None:
-        """默认 apply_offset_from_metadata=False 时不应用 offset, metadata.offset 保留原样."""
+        """不调用 apply_offset 时, metadata.offset 保留原样, 时间戳不变."""
         ly = parse_file(_SAMPLE_LRC)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=False)
-        )
+        out = construct_lrc(ly)
 
         # offset 字段仍在
         assert "[offset: 500]" in out
@@ -39,11 +37,10 @@ class TestConstructLrcOffset:
     def test_positive_offset_applied(self) -> None:
         """offset=500 (positive_delays) 时, 所有时间标签应增加 500ms."""
         ly = parse_file(_SAMPLE_LRC)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
-        # offset 从 metadata 消失 (resolve_offset_delta pop 掉了)
+        # offset 从 metadata 消失 (被 pop 掉)
         assert "[offset:" not in out
         # 原 5000ms -> 5500ms (line.start)
         assert "[00:05.500]" in out
@@ -60,9 +57,8 @@ class TestConstructLrcOffset:
         """负 offset 应让时间标签整体减小 (tag_time + (-2000) = tag_time - 2000)."""
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -2000]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
         # 5000 + (-2000) = 3000
         assert "[00:03.00]" in out
@@ -80,9 +76,8 @@ class TestConstructLrcOffset:
         """
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -6000]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
         # 最小时间标签被 clamp 到 0 (line.start)
         assert "[00:00.00]" in out
@@ -95,9 +90,8 @@ class TestConstructLrcOffset:
         """offset 恰好等于 -min_time 时, 最小标签应变为 0, 不需要保留剩余 offset."""
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -5000]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
         # 原 5000 + (-5000) = 0
         assert "[00:00.00]" in out
@@ -107,39 +101,34 @@ class TestConstructLrcOffset:
         assert "[offset:" not in out
 
     def test_invalid_offset_is_ignored(self) -> None:
-        """非整数的 offset 应被忽略, 不影响时间标签, 并且 offset 字段不再出现."""
+        """非整数的 offset 应被忽略, 不影响时间标签, 并且 offset 字段保留."""
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: not-a-number]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
-        # 时间标签原样
+        # 时间标签原样 (无效 offset 被忽略)
         assert "[00:05.00]" in out
         assert "[00:10.00]" in out
-        # offset 字段被 pop 掉了 (因为 apply_offset_from_metadata=True, 但内容无效)
-        assert "[offset:" not in out
+        # offset 字段被保留了 (pop 但未解析成功, 未写回)
+        assert "[offset: not-a-number]" in out
 
-    def test_metadata_not_mutated_on_caller_side(self) -> None:
-        """construct_lrc 不应修改上层传入的 Lyrics.metadata (因为内部拷贝了)."""
+    def test_original_not_mutated(self) -> None:
+        """apply_offset 不应修改原始对象."""
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -6000]")
         ly = parse_file(src)
-        before = dict(ly.metadata)
-        _ = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
-        after = dict(ly.metadata)
+        _ = ly.apply_offset()
 
-        assert before == after, f"metadata 被污染了: before={before}, after={after}"
+        # 原始对象应保持不变
+        assert ly.lines[0].start == 5000
         assert ly.metadata.get("offset") == "-6000"
 
     def test_no_offset_in_metadata(self) -> None:
-        """没有 offset 时, apply_offset_from_metadata=True 也应该正常工作."""
+        """没有 offset 时, apply_offset 应返回时间戳不变的新对象."""
         src = _SAMPLE_LRC.replace("[offset: 500]\n", "")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
         # 时间标签原样
         assert "[00:05.00]" in out
@@ -153,9 +142,8 @@ class TestConstructLrcOffset:
         """
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -6000]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly, options=SerializationOptions(apply_offset_from_metadata=True)
-        )
+        shifted = ly.apply_offset()
+        out = construct_lrc(shifted)
 
         ly2 = parse_file(out)
         # 原始: 5000, offset=-6000 → 显示时间 = 5000 + (-6000) = -1000
@@ -165,16 +153,21 @@ class TestConstructLrcOffset:
         assert new_first_start is not None
         assert new_first_start + new_offset == 5000 + (-6000)
 
+    def test_original_object_unaffected(self) -> None:
+        """多次调用 apply_offset 应各自返回新对象, 不影响原始对象."""
+        ly = parse_file(_SAMPLE_LRC)
+        _ = ly.apply_offset()
+        _ = ly.apply_offset()
+        _ = ly.apply_offset()
+        # 原始对象始终不变
+        assert ly.lines[0].start == 5000
+        assert ly.metadata.get("offset") == "500"
+
     def test_positive_advances_semantics(self) -> None:
         """`positive_advances` 语义: 正 offset → 歌词提前 (tag_time - offset)."""
         ly = parse_file(_SAMPLE_LRC)
-        out = construct_lrc(
-            ly,
-            options=SerializationOptions(
-                apply_offset_from_metadata=True,
-                offset_semantics=OffsetSemantics.positive_advances,
-            ),
-        )
+        shifted = ly.apply_offset(offset_semantics=OffsetSemantics.positive_advances)
+        out = construct_lrc(shifted)
 
         # offset 从 metadata 消失
         assert "[offset:" not in out
@@ -191,13 +184,8 @@ class TestConstructLrcOffset:
         """`positive_advances` + 负 offset: tag_time - (-2000) = tag_time + 2000."""
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -2000]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly,
-            options=SerializationOptions(
-                apply_offset_from_metadata=True,
-                offset_semantics=OffsetSemantics.positive_advances,
-            ),
-        )
+        shifted = ly.apply_offset(offset_semantics=OffsetSemantics.positive_advances)
+        out = construct_lrc(shifted)
 
         # 5000 - (-2000) = 7000
         assert "[00:07.00]" in out
@@ -213,13 +201,8 @@ class TestConstructLrcOffset:
         """
         src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: 6000]")
         ly = parse_file(src)
-        out = construct_lrc(
-            ly,
-            options=SerializationOptions(
-                apply_offset_from_metadata=True,
-                offset_semantics=OffsetSemantics.positive_advances,
-            ),
-        )
+        shifted = ly.apply_offset(offset_semantics=OffsetSemantics.positive_advances)
+        out = construct_lrc(shifted)
 
         # 最小时间标签被 clamp 到 0
         assert "[00:00.00]" in out

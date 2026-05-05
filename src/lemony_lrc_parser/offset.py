@@ -1,24 +1,25 @@
 """Offset 处理工具.
 
-提供全局 offset 的解析与应用逻辑, 供 :mod:`.parser` 与 :mod:`.serializer` 共用.
+提供全局 offset 的解析与应用逻辑.
+
+公共入口由 :class:`.models.Lyrics` 的 :meth:`~.models.Lyrics.apply_offset` 方法
+对外暴露; 本模块的函数以下划线开头, 为内部实现细节.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from copy import deepcopy
 from logging import getLogger
 
 from .models import BasicLyricLine, Lyrics, OffsetSemantics
 
 logger = getLogger(__name__)
 
-__all__ = [
-    "resolve_offset_delta",
-    "apply_offset_to_lyrics",
-]
+__all__: list[str] = []
 
 
-def resolve_offset_delta(
+def _resolve_offset_delta(
     lyrics: Lyrics,
     metadata: dict[str, str],
     *,
@@ -26,8 +27,8 @@ def resolve_offset_delta(
 ) -> int:
     """从 ``metadata`` 中读取 ``offset``, 计算出应**加**到每个时间戳上的有符号增量.
 
-    此函数**只操作 metadata 字典**, 不修改 ``lyrics`` 中的时间戳.
-    若裁剪发生, 剩余 offset 会写回 ``metadata["offset"]``.
+    此函数**只操作 metadata 字典** (从中 pop 出 ``offset`` 键; 若裁剪发生,
+    剩余 offset 会写回 ``metadata["offset"]``), 不修改 ``lyrics`` 中的时间戳.
 
     Args:
         lyrics: 只读地收集所有时间戳, 用于越界检测.
@@ -35,9 +36,9 @@ def resolve_offset_delta(
         offset_semantics: ``"positive_delays"`` (默认) 或 ``"positive_advances"``.
 
     Returns:
-        应加到每个时间戳上的毫秒增量 (正数 → 延后, 负数 → 提前) .
+        应加到每个时间戳上的毫秒增量 (正数 → 延后, 负数 → 提前).
     """
-    offset_str = metadata.pop("offset", None)
+    offset_str = metadata.get("offset")
     if not offset_str:
         return 0
 
@@ -48,6 +49,9 @@ def resolve_offset_delta(
             f"Cannot parse metadata.offset as integer, ignoring: {offset_str!r}"
         )
         return 0
+
+    # 成功解析后才 pop; 无效值保留在 metadata 中
+    metadata.pop("offset")
 
     # 根据语义确定符号方向
     if offset_semantics == OffsetSemantics.positive_delays:
@@ -85,30 +89,31 @@ def resolve_offset_delta(
     return delta
 
 
-def apply_offset_to_lyrics(
+def apply_offset_to_copy(
     lyrics: Lyrics,
     *,
     offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays,
-) -> int:
-    """从 ``lyrics.metadata`` 中读取 offset 并直接应用到所有时间戳 (原地修改).
+) -> Lyrics:
+    """深拷贝 ``lyrics``, 在新对象上应用 ``metadata.offset``, 返回新对象.
 
     Args:
-        lyrics: 歌词对象 (会被原地修改).
-        offset_semantics: 语义方向, 见 :func:`resolve_offset_delta`.
+        lyrics: 原始歌词对象 (不会被修改).
+        offset_semantics: 语义方向, 见 :func:`_resolve_offset_delta`.
 
     Returns:
-        实际应用到每个时间戳上的毫秒增量.
+        应用了 offset 后的新 :class:`Lyrics` 对象.
     """
-    metadata = lyrics.metadata
-    delta = resolve_offset_delta(lyrics, metadata, offset_semantics=offset_semantics)
+    result = deepcopy(lyrics)
+    delta = _resolve_offset_delta(
+        result, result.metadata, offset_semantics=offset_semantics
+    )
     if delta != 0:
-        _apply_delta(lyrics, delta)
+        _apply_delta(result, delta)
         logger.info(
             f"Applied delta={delta}ms to all timestamps "
             f"(semantics={offset_semantics!r})"
         )
-    lyrics._offset_applied = True
-    return delta
+    return result
 
 
 def _apply_delta(lyrics: Lyrics, delta: int) -> None:

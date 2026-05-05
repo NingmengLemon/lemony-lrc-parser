@@ -16,7 +16,6 @@ from logging import getLogger
 
 from .exceptions import LyricsParserError
 from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord, ParseOptions
-from .offset import apply_offset_to_lyrics
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
@@ -221,9 +220,6 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     lyrics = _finalize_lyrics(
         metadata, line_pool, fill_implicit_line_end=options.fill_implicit_line_end
     )
-
-    if options.apply_offset_from_metadata:
-        apply_offset_to_lyrics(lyrics, offset_semantics=options.offset_semantics)
 
     return lyrics
 

@@ -28,10 +28,8 @@ __all__ = [
 
 
 class OffsetSemantics(str, Enum):
-    """全局行为配置常量.
-
-    提供 ``offset_semantics`` 的字面量选项, 供 :class:`ParseOptions` 和
-    :class:`SerializationOptions` 引用.
+    """
+    用于设置 offset 语义的枚举值
     """
 
     positive_delays = "positive_delays"
@@ -41,19 +39,15 @@ class OffsetSemantics(str, Enum):
 @dataclass
 class ParseOptions:
     fill_implicit_line_end: bool = False
-    apply_offset_from_metadata: bool = False
-    offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays
 
 
 @dataclass
 class SerializationOptions:
     with_metadata: bool = True
     use_bracket_for_byword_tag: bool = False
-    apply_offset_from_metadata: bool = False
     skip_empty_metadata: bool = True
     line_tag_decimal_length: int = 2
     word_tag_decimal_length: int = 2
-    offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays
 
 
 @dataclass
@@ -113,7 +107,6 @@ class Lyrics:
 
     lines: list[LyricLine] = field(default_factory=list)
     metadata: dict[str, str] = field(default_factory=dict)
-    _offset_applied: bool = field(default=False, repr=False, compare=False)
 
     def __iter__(self) -> Iterator[LyricLine]:
         return iter(self.lines)
@@ -174,7 +167,6 @@ class Lyrics:
                 pool[line.start] = deepcopy(line)
 
         new.lines = list(pool.values())
-        new._offset_applied = self._offset_applied or other._offset_applied
         return new
 
     @classmethod
@@ -198,6 +190,26 @@ class Lyrics:
         from .serializer import dump_lrc
 
         return dump_lrc(self, options=options)
+
+    def apply_offset(
+        self,
+        *,
+        offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays,
+    ) -> Lyrics:
+        """深拷贝当前对象并在新副本上应用 ``metadata.offset`` 偏移, 返回新对象.
+
+        该方法**不修改**原始对象, 而是返回一个时间戳已被整体偏移的新
+        :class:`Lyrics`. 原对象的 ``metadata.offset`` 保持不变.
+
+        Args:
+            offset_semantics: 语义方向, 见 :class:`OffsetSemantics`.
+
+        Returns:
+            应用了 offset 后的新 :class:`Lyrics` 对象.
+        """
+        from .offset import apply_offset_to_copy
+
+        return apply_offset_to_copy(self, offset_semantics=offset_semantics)
 
     def __str__(self) -> str:
         return self.dumps()
