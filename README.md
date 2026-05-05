@@ -178,14 +178,12 @@ lyrics = Lyrics.loads(lrc_text, options=ParseOptions(fill_implicit_line_end=True
 
 ```python
 from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import ParseOptions, OffsetSemantics
+from lemony_lrc_parser.models import ParseOptions
 
 lyrics = Lyrics.loads(
     lrc_text,
     options=ParseOptions(
         fill_implicit_line_end=False,       # 是否填充隐式行尾时间
-        apply_offset_from_metadata=False,    # 解析后自动应用 metadata.offset
-        offset_semantics=OffsetSemantics.positive_delays,  # foobar2000 兼容
     ),
 )
 ```
@@ -196,17 +194,15 @@ lyrics = Lyrics.loads(
 
 ```python
 from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import SerializationOptions, OffsetSemantics
+from lemony_lrc_parser.models import SerializationOptions
 
 output = lyrics.dumps(
     options=SerializationOptions(
         with_metadata=True,                     # 是否输出 metadata 段
         use_bracket_for_byword_tag=False,       # 逐字标签使用 [...] 还是 <...> (默认)
-        apply_offset_from_metadata=False,       # 是否读取并应用 metadata 中的 offset
         skip_empty_metadata=True,               # 跳过空值的 metadata 键
         line_tag_decimal_length=2,              # 行标签毫秒位数 (默认 2)
         word_tag_decimal_length=2,              # 逐字标签毫秒位数 (默认 2)
-        offset_semantics=OffsetSemantics.positive_delays,
     ),
 )
 ```
@@ -223,19 +219,26 @@ output = lyrics.dumps(
 默认 `line_tag_decimal_length=2`、`word_tag_decimal_length=2`, 输出格式如 `[00:01.00]`、`<00:01.05>`.
 毫秒值不足 2 位时自动补齐, 超过 2 位时不截断 (例如 `500`ms 仍显示为 `[00:01.500]`).
 
-### Applying Offset During Parsing
+### Applying Offset
 
-解析时即可自动应用 `metadata.offset`, 直接修改 `Lyrics` 对象中的时间戳:
+通过 `Lyrics.apply_offset()` 应用 `metadata.offset` 偏移, 返回一个新对象:
 
 ```python
 from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import ParseOptions
+from lemony_lrc_parser.models import OffsetSemantics
 
-lyrics = Lyrics.loads(lrc_text, options=ParseOptions(apply_offset_from_metadata=True))
-# 所有时间戳已被整体偏移
+lyrics = Lyrics.loads(lrc_text)
+
+# 默认 positive_delays 语义: display_time = tag_time + offset
+shifted = lyrics.apply_offset()
+
+# 也可以指定语义方向
+shifted = lyrics.apply_offset(offset_semantics=OffsetSemantics.positive_advances)
+
+# shifted 的时间戳已被整体偏移, 原始 lyrics 不受影响
 ```
 
-序列化时应用 offset 则**不修改** `Lyrics` 对象本身, 只影响输出时间标签.
+序列化时不会再自动应用 offset；如需在序列化前偏移时间戳, 请先调用 `apply_offset()` 再序列化返回的副本.
 
 ### Skip Empty Metadata
 

@@ -164,11 +164,14 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
 
     Args:
         lrc: LRC 源文本.
-        options: 解析选项. 当 ``apply_offset_from_metadata=True`` 时,
-            在解析完成后自动应用 ``metadata.offset`` 到所有时间戳.
+        options: 解析选项.
 
     Returns:
         组装完毕的 :class:`Lyrics` 对象.
+
+    Note:
+        offset 需通过 :meth:`Lyrics.apply_offset` 单独应用,
+        解析时不会自动偏移时间戳.
     """
     metadata: dict[str, str] = {}
     line_pool: dict[int, LyricLine] = {}
