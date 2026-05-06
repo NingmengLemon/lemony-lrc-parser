@@ -57,10 +57,14 @@ class SerializationOptions:
 
     def __post_init__(self) -> None:
         """校验参数合法性."""
+        from .timetag import MAX_TAIL_DIGITS, MIN_TAIL_DIGITS
+
         for f in ("line_tag_decimal_length", "word_tag_decimal_length"):
             val = getattr(self, f)
-            if not 1 <= val <= 6:
-                raise ValueError(f"{f} must be between 1 and 6, got {val}")
+            if not MIN_TAIL_DIGITS <= val <= MAX_TAIL_DIGITS:
+                raise ValueError(
+                    f"{f} must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {val}"
+                )
 
 
 @dataclass

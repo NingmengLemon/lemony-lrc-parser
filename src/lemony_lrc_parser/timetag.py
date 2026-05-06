@@ -12,6 +12,9 @@ from .regex import TIMETAG_REGEX_STRICT, compile_regex
 
 logger = getLogger(__name__)
 
+MIN_TAIL_DIGITS: int = 1
+MAX_TAIL_DIGITS: int = 6
+
 __all__ = [
     "format_timetag",
     "parse_timetag",
@@ -36,8 +39,10 @@ def format_timetag(
     """
     if ms < 0:
         raise ValueError(f"Negative timestamp is not allowed: {ms}ms")
-    if not 1 <= tail_digits <= 6:
-        raise ValueError(f"tail_digits must be between 1 and 6, got {tail_digits}")
+    if not MIN_TAIL_DIGITS <= tail_digits <= MAX_TAIL_DIGITS:
+        raise ValueError(
+            f"tail_digits must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {tail_digits}"
+        )
     minutes = ms // 60_000
     seconds = (ms % 60_000) // 1000
     millis = ms % 1000
