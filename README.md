@@ -209,10 +209,12 @@ output = lyrics.dumps(
 
 #### Offset 语义
 
-- `positive_delays` (默认): `display_time = tag_time + offset`, 正 offset → 歌词延后显示.
-- `positive_advances`: `display_time = tag_time - offset`, 正 offset → 歌词提前显示.
+使用 [`Lyrics.apply_offset(ms)`](src/lemony_lrc_parser/models.py:213) 应用时间偏移:
 
-如果应用 offset 会导致时间戳变为负数, 则只应用"安全"的部分, 剩余量写回 `metadata["offset"]`.
+- `ms > 0` → 歌词延后出现 (`display_time = tag_time + ms`)
+- `ms < 0` → 歌词提前出现 (`display_time = tag_time - |ms|`)
+
+如果应用 offset 会导致时间戳变为负数, 将抛出 [`ValueError`](src/lemony_lrc_parser/models.py:242), 由调用方自行处理.
 
 #### 小数位数
 
@@ -221,22 +223,27 @@ output = lyrics.dumps(
 
 ### Applying Offset
 
-通过 `Lyrics.apply_offset()` 应用 `metadata.offset` 偏移, 返回一个新对象:
+通过 [`Lyrics.apply_offset(ms)`](src/lemony_lrc_parser/models.py:213) 对时间戳应用偏移, 返回一个新对象:
 
 ```python
 from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import OffsetSemantics
 
 lyrics = Lyrics.loads(lrc_text)
 
-# 默认 positive_delays 语义: display_time = tag_time + offset
-shifted = lyrics.apply_offset()
+# 正数 → 歌词延后出现 (等价于 lyrics >> 500)
+shifted = lyrics.apply_offset(500)
 
-# 也可以指定语义方向
-shifted = lyrics.apply_offset(offset_semantics=OffsetSemantics.positive_advances)
+# 负数 → 歌词提前出现 (等价于 lyrics << 500)
+shifted = lyrics.apply_offset(-500)
+
+# 使用 << / >> 运算符
+shifted = lyrics >> 500   # 延后 500ms
+shifted = lyrics << 500   # 提前 500ms
 
 # shifted 的时间戳已被整体偏移, 原始 lyrics 不受影响
 ```
+
+如果偏移会导致时间戳变为负数, 将抛出 [`ValueError`](src/lemony_lrc_parser/models.py:242).
 
 序列化时不会再自动应用 offset；如需在序列化前偏移时间戳, 请先调用 `apply_offset()` 再序列化返回的副本.
 
