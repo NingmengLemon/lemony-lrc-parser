@@ -37,9 +37,7 @@ def format_timetag(
     if ms < 0:
         raise ValueError(f"Negative timestamp is not allowed: {ms}ms")
     if not 1 <= tail_digits <= 6:
-        raise ValueError(
-            f"tail_digits must be between 1 and 6, got {tail_digits}"
-        )
+        raise ValueError(f"tail_digits must be between 1 and 6, got {tail_digits}")
     minutes = ms // 60_000
     seconds = (ms % 60_000) // 1000
     millis = ms % 1000
@@ -76,8 +74,6 @@ def _match_to_ms(match: re.Match[str]) -> int:
 
     * 标准命名组 ``min`` / ``sec`` / ``tail`` (见 ``LINE_TIMETAG_REGEX`` 等) .
     * 前缀命名组 ``line_min`` / ``word_min`` 等 (见 ``GENERIC_TIMETAG_REGEX``) .
-
-    该函数是包内部工具, 不导出到公共 API.
     """
     groups = match.groupdict()
 
