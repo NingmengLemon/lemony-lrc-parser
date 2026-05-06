@@ -36,7 +36,6 @@ from .models import (
     LyricLine,
     Lyrics,
     LyricWord,
-    OffsetSemantics,
     ParseOptions,
     SerializationOptions,
 )
@@ -46,7 +45,6 @@ from .timetag import format_timetag, parse_timetag
 
 __all__ = [
     "BasicLyricLine",
-    "OffsetSemantics",
     "LyricLine",
     "LyricWord",
     "Lyrics",

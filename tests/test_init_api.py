@@ -120,3 +120,5 @@ class TestModuleImports:
         assert not hasattr(llp, "StartEndModel")
         # parse_file 被重命名为 parse_lrc
         assert not hasattr(llp, "parse_file")
+        # OffsetSemantics 已被移除
+        assert not hasattr(llp, "OffsetSemantics")

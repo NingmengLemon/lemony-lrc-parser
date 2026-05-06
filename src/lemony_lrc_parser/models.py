@@ -13,7 +13,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import overload
 
 __all__ = [
@@ -21,19 +20,9 @@ __all__ = [
     "LyricLine",
     "LyricWord",
     "Lyrics",
-    "OffsetSemantics",
     "ParseOptions",
     "SerializationOptions",
 ]
-
-
-class OffsetSemantics(str, Enum):
-    """
-    用于设置 offset 语义的枚举值
-    """
-
-    positive_delays = "positive_delays"
-    positive_advances = "positive_advances"
 
 
 @dataclass
@@ -221,25 +210,57 @@ class Lyrics:
 
         return dump_lrc(self, options=options)
 
-    def apply_offset(
-        self,
-        *,
-        offset_semantics: OffsetSemantics = OffsetSemantics.positive_delays,
-    ) -> Lyrics:
-        """深拷贝当前对象并在新副本上应用 ``metadata.offset`` 偏移, 返回新对象.
+    def apply_offset(self, ms: int) -> Lyrics:
+        """深拷贝当前对象并在新副本上应用时间偏移, 返回新对象.
 
         该方法**不修改**原始对象, 而是返回一个时间戳已被整体偏移的新
-        :class:`Lyrics`. 原对象的 ``metadata.offset`` 保持不变.
+        :class:`Lyrics`.
+
+        语义: ``ms > 0`` → 歌词延后出现; ``ms < 0`` → 歌词提前出现.
+        若偏移后存在任何时间戳 < 0, 直接抛出 :class:`ValueError`,
+        由调用方自行处理 (例如先从 ``metadata.offset`` 读取值再传入).
 
         Args:
-            offset_semantics: 语义方向, 见 :class:`OffsetSemantics`.
+            ms: 要加到每个时间戳上的毫秒数.
 
         Returns:
-            应用了 offset 后的新 :class:`Lyrics` 对象.
-        """
-        from .offset import apply_offset_to_copy
+            应用了偏移后的新 :class:`Lyrics` 对象.
 
-        return apply_offset_to_copy(self, offset_semantics=offset_semantics)
+        Raises:
+            ValueError: 偏移后会导致某个时间戳变为负数.
+        """
+        from .offset import _apply_delta, _iter_all_timestamps
+
+        result = deepcopy(self)
+        if ms == 0:
+            return result
+
+        # 下溢检测
+        all_times = list(_iter_all_timestamps(result))
+        if all_times:
+            min_time = min(all_times)
+            if min_time + ms < 0:
+                raise ValueError(
+                    f"Applying offset={ms}ms would make minimum "
+                    f"timestamp {min_time}ms negative"
+                )
+
+        _apply_delta(result, ms)
+        return result
+
+    def __lshift__(self, ms: int) -> Lyrics:
+        """左移运算符: ``lyrics << ms`` 等价于 ``lyrics.apply_offset(-ms)``.
+
+        语义: 正数 → 歌词提前出现.
+        """
+        return self.apply_offset(-ms)
+
+    def __rshift__(self, ms: int) -> Lyrics:
+        """右移运算符: ``lyrics >> ms`` 等价于 ``lyrics.apply_offset(ms)``.
+
+        语义: 正数 → 歌词延后出现.
+        """
+        return self.apply_offset(ms)
 
     def __str__(self) -> str:
         return self.dumps()
