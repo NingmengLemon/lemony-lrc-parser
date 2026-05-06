@@ -42,6 +42,7 @@ dev = [
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.9",
+    "tox>=4.30.3",
 ]
 
 [tool.tox]
