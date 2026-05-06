@@ -29,16 +29,16 @@ class TestApplyOffset:
         shifted = ly.apply_offset(500)
         out = construct_lrc(shifted)
 
-        # 原 5000ms -> 5500ms (line.start)
-        assert "[00:05.500]" in out
-        # 原 10000ms -> 10500ms (line.start)
-        assert "[00:10.500]" in out
+        # 原 5000ms -> 5500ms (line.start) → 5500ms 百分秒 = 55
+        assert "[00:05.50]" in out
+        # 原 10000ms -> 10500ms (line.start) → 10500ms 百分秒 = 50
+        assert "[00:10.50]" in out
         # 原 11500ms -> 12000ms (中间的 word tag, 保持尖括号)
         assert "<00:12.00>" in out
         # 原 7000ms -> 7500ms (行尾标签, 方括号)
-        assert "[00:07.500]" in out
-        # 原 12000ms -> 12500ms (line.end)
-        assert "[00:12.500]" in out
+        assert "[00:07.50]" in out
+        # 原 12000ms -> 12500ms (line.end) → 12500ms 百分秒 = 50
+        assert "[00:12.50]" in out
 
     def test_negative_offset_applied(self) -> None:
         """负 ms 应让时间标签整体减小."""
@@ -109,8 +109,9 @@ class TestShiftOperators:
         shifted = ly >> 500
         out = construct_lrc(shifted)
 
-        assert "[00:05.500]" in out
-        assert "[00:10.500]" in out
+        # 5500ms → 百分秒 = 55, 10500ms → 百分秒 = 50
+        assert "[00:05.50]" in out
+        assert "[00:10.50]" in out
 
     def test_lshift_positive_advances(self) -> None:
         """``<<`` 正数 → 歌词提前."""
@@ -140,8 +141,8 @@ class TestShiftOperators:
         shifted = (ly >> 100) >> 200
         out = construct_lrc(shifted)
 
-        # 5000 + 100 + 200 = 5300
-        assert "[00:05.300]" in out
+        # 5000 + 100 + 200 = 5300 → 300ms 百分秒 = 30
+        assert "[00:05.30]" in out
 
     def test_original_unaffected_by_operators(self) -> None:
         """运算符不修改原始对象."""

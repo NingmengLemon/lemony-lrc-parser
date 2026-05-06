@@ -39,7 +39,19 @@ def format_timetag(
     minutes = ms // 60_000
     seconds = (ms % 60_000) // 1000
     millis = ms % 1000
-    body = f"{minutes:02d}:{seconds:02d}.{millis:0{tail_digits}d}"
+
+    if tail_digits > 3:
+        # 小数位数 > 3 时, 尾部需要填入更多精度位 (零填充),
+        # 例如 123ms / tail_digits=4 → tail=1230
+        tail = millis * 10 ** (tail_digits - 3)
+    elif tail_digits < 3:
+        # 小数位数 < 3 时, tail 分别表示十分秒 (1 位) 或百分秒 (2 位),
+        # 而非毫秒, 需要截断转换
+        tail = millis // 10 ** (3 - tail_digits)
+    else:
+        tail = millis
+
+    body = f"{minutes:02d}:{seconds:02d}.{tail:0{tail_digits}d}"
     return f"<{body}>" if use_angle_bracket else f"[{body}]"
 
 
