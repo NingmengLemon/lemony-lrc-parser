@@ -48,7 +48,11 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
 
         # 写主行
         buffer.write(
-            format_timetag(line_start, tail_digits=options.line_tag_decimal_length)
+            format_timetag(
+                line_start,
+                tail_digits=options.line_tag_decimal_length,
+                use_angle_bracket=False,
+            )
         )
         buffer.write(
             _format_words(
@@ -60,14 +64,22 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         )
         if line.end is not None:
             buffer.write(
-                format_timetag(line.end, tail_digits=options.line_tag_decimal_length)
+                format_timetag(
+                    line.end,
+                    tail_digits=options.line_tag_decimal_length,
+                    use_angle_bracket=False,
+                )
             )
         buffer.write("\n")
 
         # 写参考行 (共享主行的 start)
         for refline in line.reference_lines:
             buffer.write(
-                format_timetag(line_start, tail_digits=options.line_tag_decimal_length)
+                format_timetag(
+                    line_start,
+                    tail_digits=options.line_tag_decimal_length,
+                    use_angle_bracket=False,
+                )
             )
             buffer.write(
                 _format_words(

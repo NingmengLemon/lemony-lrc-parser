@@ -21,15 +21,15 @@ __all__ = [
 def format_timetag(
     ms: int,
     *,
-    use_angle_bracket: bool = False,
-    tail_digits: int = 3,
+    use_angle_bracket: bool,
+    tail_digits: int,
 ) -> str:
     """将毫秒数格式化为 LRC 时间标签字符串.
 
     Args:
         ms: 毫秒时间戳 (允许为负, 调用方应自行保证语义合理) .
         use_angle_bracket: True 使用 ``<...>`` (逐字标签) , False 使用 ``[...]`` (行标签) .
-        tail_digits: 毫秒尾部补齐的位数, 默认为 3.
+        tail_digits: 毫秒尾部补齐的位数.
 
     Returns:
         形如 ``[01:23.456]`` 或 ``<01:23.456>`` 的字符串.
