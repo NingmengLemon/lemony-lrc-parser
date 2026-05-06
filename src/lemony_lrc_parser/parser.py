@@ -211,9 +211,9 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
 
         # 2b. 行首有时间标签但没有正文 → 占位符 (例如清空当前歌词)
         if not line:
-            t = time_tags[0]
-            if t not in line_pool:
-                line_pool[t] = LyricLine(start=t, content=[LyricWord(content="")])
+            for t in time_tags:
+                if t not in line_pool:
+                    line_pool[t] = LyricLine(start=t, content=[LyricWord(content="")])
             continue
 
         # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行

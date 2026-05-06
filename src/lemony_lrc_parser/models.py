@@ -183,7 +183,7 @@ class Lyrics:
             elif not other_as_refline_only:
                 pool[line.start] = deepcopy(line)
 
-        new.lines = list(pool.values())
+        new.lines = sorted(pool.values(), key=lambda line: line.start or 0)
         return new
 
     @classmethod
