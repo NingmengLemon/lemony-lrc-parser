@@ -57,16 +57,10 @@ class SerializationOptions:
 
     def __post_init__(self) -> None:
         """校验参数合法性."""
-        if self.line_tag_decimal_length < 1:
-            raise ValueError(
-                f"line_tag_decimal_length must be >= 1, "
-                f"got {self.line_tag_decimal_length}"
-            )
-        if self.word_tag_decimal_length < 1:
-            raise ValueError(
-                f"word_tag_decimal_length must be >= 1, "
-                f"got {self.word_tag_decimal_length}"
-            )
+        for f in ("line_tag_decimal_length", "word_tag_decimal_length"):
+            val = getattr(self, f)
+            if not 1 <= val <= 6:
+                raise ValueError(f"{f} must be between 1 and 6, got {val}")
 
 
 @dataclass
@@ -231,12 +225,11 @@ class Lyrics:
         """
         from .offset import _apply_delta, _iter_all_timestamps
 
-        result = deepcopy(self)
         if ms == 0:
-            return result
+            return deepcopy(self)
 
-        # 下溢检测
-        all_times = list(_iter_all_timestamps(result))
+        # 先做下溢检测, 避免异常路径上的 deepcopy 浪费
+        all_times = list(_iter_all_timestamps(self))
         if all_times:
             min_time = min(all_times)
             if min_time + ms < 0:
@@ -245,6 +238,7 @@ class Lyrics:
                     f"timestamp {min_time}ms negative"
                 )
 
+        result = deepcopy(self)
         _apply_delta(result, ms)
         return result
 

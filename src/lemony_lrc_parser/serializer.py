@@ -29,7 +29,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
     buffer = StringIO()
 
     options = options or SerializationOptions()
-    metadata = dict(lyrics.metadata)
+    metadata = dict(lyrics.metadata) if options.with_metadata else {}
 
     if options.with_metadata:
         for key, value in metadata.items():
