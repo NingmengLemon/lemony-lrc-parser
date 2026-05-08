@@ -63,9 +63,7 @@ class TestFormatTimetag:
             format_timetag(555, tail_digits=1, use_angle_bracket=False) == "[00:00.5]"
         )
         # 5ms → 百分秒=0
-        assert (
-            format_timetag(5, tail_digits=2, use_angle_bracket=False) == "[00:00.00]"
-        )
+        assert format_timetag(5, tail_digits=2, use_angle_bracket=False) == "[00:00.00]"
 
     def test_large_timestamp(self) -> None:
         """测试大时间戳."""

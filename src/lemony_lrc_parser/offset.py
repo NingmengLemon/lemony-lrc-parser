@@ -1,23 +1,13 @@
-"""Offset 处理工具.
-
-提供时间戳偏移的应用逻辑. 公共入口由 :class:`.models.Lyrics` 的
-:meth:`~.models.Lyrics.apply_offset` 方法对外暴露; 本模块的函数以下划线开头,
-为内部实现细节.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterator
 
 from .models import BasicLyricLine, Lyrics
 
-__all__: list[str] = [
-    "apply_delta",
-    "iter_all_timestamps",
-]
+__all__: list[str] = []
 
 
-def apply_delta(lyrics: Lyrics, delta: int) -> None:
+def _apply_delta(lyrics: Lyrics, delta: int) -> None:
     """将所有时间戳增加 ``delta`` (原地修改)."""
     for line in lyrics.lines:
         if line.start is not None:
@@ -37,7 +27,7 @@ def _apply_word_delta(words: BasicLyricLine, delta: int) -> None:
             word.end += delta
 
 
-def iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
+def _iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
     """迭代 :class:`Lyrics` 中出现过的所有时间戳 (含参考行)."""
     for line in lyrics.lines:
         if line.start is not None:

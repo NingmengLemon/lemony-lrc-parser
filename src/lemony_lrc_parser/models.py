@@ -227,13 +227,13 @@ class Lyrics:
         Raises:
             ValueError: 偏移后会导致某个时间戳变为负数.
         """
-        from .offset import apply_delta, iter_all_timestamps
+        from .offset import _apply_delta, _iter_all_timestamps
 
         if ms == 0:
             return deepcopy(self)
 
         # 先做下溢检测, 避免异常路径上的 deepcopy 浪费
-        all_times = list(iter_all_timestamps(self))
+        all_times = list(_iter_all_timestamps(self))
         if all_times:
             min_time = min(all_times)
             if min_time + ms < 0:
@@ -243,7 +243,7 @@ class Lyrics:
                 )
 
         result = deepcopy(self)
-        apply_delta(result, ms)
+        _apply_delta(result, ms)
         return result
 
     def __lshift__(self, ms: int) -> Lyrics:
@@ -251,6 +251,8 @@ class Lyrics:
 
         语义: 正数 → 歌词提前出现.
         """
+        if not isinstance(ms, int):
+            return NotImplemented
         return self.apply_offset(-ms)
 
     def __rshift__(self, ms: int) -> Lyrics:
@@ -258,6 +260,8 @@ class Lyrics:
 
         语义: 正数 → 歌词延后出现.
         """
+        if not isinstance(ms, int):
+            return NotImplemented
         return self.apply_offset(ms)
 
     def __str__(self) -> str:
