@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from lemony_lrc_parser.models import LyricLine, Lyrics, LyricWord
+from lemony_lrc_parser.models import LyricLine, Lyrics, LyricToken
 from lemony_lrc_parser.serializer import dump_lrc
 
 
@@ -16,9 +16,9 @@ class TestDumpLrcReferenceLines:
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
-            content=[LyricWord(content="Main", start=1000)],
+            content=[LyricToken(content="Main", start=1000)],
             reference_lines=[
-                [LyricWord(content="翻译", start=1000)],
+                [LyricToken(content="翻译", start=1000)],
             ],
         )
         lyrics.lines = [line]
@@ -32,10 +32,10 @@ class TestDumpLrcReferenceLines:
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
-            content=[LyricWord(content="Main")],
+            content=[LyricToken(content="Main")],
             reference_lines=[
-                [LyricWord(content="翻译1")],
-                [LyricWord(content="翻译2")],
+                [LyricToken(content="翻译1")],
+                [LyricToken(content="翻译2")],
             ],
         )
         lyrics.lines = [line]
@@ -54,11 +54,11 @@ class TestDumpLrcReferenceLines:
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
-            content=[LyricWord(content="Main")],
+            content=[LyricToken(content="Main")],
             reference_lines=[
                 [
-                    LyricWord(content="逐", start=1000, end=1100),
-                    LyricWord(content="字", start=1100, end=1200),
+                    LyricToken(content="逐", start=1000, end=1100),
+                    LyricToken(content="字", start=1100, end=1200),
                 ],
             ],
         )
@@ -83,8 +83,8 @@ class TestDumpLrcLineWithoutStart:
 
         lyrics = Lyrics()
         lyrics.lines = [
-            LyricLine(start=None, content=[LyricWord(content="No start")]),
-            LyricLine(start=1000, content=[LyricWord(content="Has start")]),
+            LyricLine(start=None, content=[LyricToken(content="No start")]),
+            LyricLine(start=1000, content=[LyricToken(content="Has start")]),
         ]
 
         with caplog.at_level(logging.WARNING):
@@ -127,8 +127,8 @@ class TestDumpLrcBywordFormatting:
             LyricLine(
                 start=1000,
                 content=[
-                    LyricWord(content="逐", start=1000, end=1100),
-                    LyricWord(content="字", start=1100, end=1200),
+                    LyricToken(content="逐", start=1000, end=1100),
+                    LyricToken(content="字", start=1100, end=1200),
                 ],
             ),
         ]
@@ -151,8 +151,8 @@ class TestDumpLrcBywordFormatting:
             LyricLine(
                 start=1000,
                 content=[
-                    LyricWord(content="逐", start=1000, end=1100),
-                    LyricWord(content="字", start=1100, end=1200),
+                    LyricToken(content="逐", start=1000, end=1100),
+                    LyricToken(content="字", start=1100, end=1200),
                 ],
             ),
         ]
@@ -174,8 +174,8 @@ class TestDumpLrcBywordFormatting:
             LyricLine(
                 start=1000,
                 content=[
-                    LyricWord(content="第", start=1000, end=1100),
-                    LyricWord(content="一", start=1100, end=1200),
+                    LyricToken(content="第", start=1000, end=1100),
+                    LyricToken(content="一", start=1100, end=1200),
                 ],
             ),
         ]
@@ -191,9 +191,9 @@ class TestDumpLrcBywordFormatting:
             LyricLine(
                 start=1000,
                 content=[
-                    LyricWord(content="第", start=1000, end=1100),
-                    LyricWord(content="一", start=1100, end=1200),
-                    LyricWord(content="个", start=1200, end=1300),
+                    LyricToken(content="第", start=1000, end=1100),
+                    LyricToken(content="一", start=1100, end=1200),
+                    LyricToken(content="个", start=1200, end=1300),
                 ],
             ),
         ]
@@ -212,31 +212,6 @@ class TestDumpLrcBywordFormatting:
 class TestDumpLrcNewOptions:
     """测试 v0.3.0 新增的序列化选项."""
 
-    def test_skip_empty_metadata_true(self) -> None:
-        """skip_empty_metadata=True 时跳过空值 metadata."""
-        from lemony_lrc_parser.models import SerializationOptions
-
-        lyrics = Lyrics()
-        lyrics.metadata = {"ti": "Test", "empty_key": "", "ar": "Artist"}
-        result = dump_lrc(
-            lyrics, options=SerializationOptions(skip_empty_metadata=True)
-        )
-        assert "[ti: Test]" in result
-        assert "[ar: Artist]" in result
-        assert "[empty_key:" not in result
-
-    def test_skip_empty_metadata_false(self) -> None:
-        """skip_empty_metadata=False 时保留空值 metadata."""
-        from lemony_lrc_parser.models import SerializationOptions
-
-        lyrics = Lyrics()
-        lyrics.metadata = {"ti": "Test", "empty_key": ""}
-        result = dump_lrc(
-            lyrics, options=SerializationOptions(skip_empty_metadata=False)
-        )
-        assert "[ti: Test]" in result
-        assert "[empty_key: ]" in result
-
     def test_line_tag_decimal_length_2(self) -> None:
         """line_tag_decimal_length=2 时行标签尾数补齐到 2 位.
 
@@ -250,7 +225,7 @@ class TestDumpLrcNewOptions:
             LyricLine(
                 start=5005,  # 5 毫秒 → 百分秒 0
                 end=5050,  # 50 毫秒 → 百分秒 5
-                content=[LyricWord(content="Test")],
+                content=[LyricToken(content="Test")],
             ),
         ]
         result = dump_lrc(
@@ -273,8 +248,8 @@ class TestDumpLrcNewOptions:
             LyricLine(
                 start=1005,  # 5 毫秒 → 百分秒 0
                 content=[
-                    LyricWord(content="逐", start=1005, end=1055),
-                    LyricWord(content="字", start=1055, end=1500),
+                    LyricToken(content="逐", start=1005, end=1055),
+                    LyricToken(content="字", start=1055, end=1500),
                 ],
             ),
         ]

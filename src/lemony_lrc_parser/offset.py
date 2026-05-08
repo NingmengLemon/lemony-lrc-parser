@@ -4,11 +4,16 @@ from collections.abc import Iterator
 
 from .models import BasicLyricLine, Lyrics
 
-__all__: list[str] = []
+__all__ = [
+    "apply_delta",
+    "iter_all_timestamps",
+]
 
 
-def _apply_delta(lyrics: Lyrics, delta: int) -> None:
-    """将所有时间戳增加 ``delta`` (原地修改)."""
+def apply_delta(lyrics: Lyrics, delta: int) -> None:
+    """将所有时间戳增加 ``delta`` ms
+
+    注意此处为底层函数没有下溢保护, 且为原地修改"""
     for line in lyrics.lines:
         if line.start is not None:
             line.start += delta
@@ -27,7 +32,7 @@ def _apply_word_delta(words: BasicLyricLine, delta: int) -> None:
             word.end += delta
 
 
-def _iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
+def iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
     """迭代 :class:`Lyrics` 中出现过的所有时间戳 (含参考行)."""
     for line in lyrics.lines:
         if line.start is not None:

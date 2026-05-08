@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from lemony_lrc_parser.exceptions import TimestampUnderflowError
 from lemony_lrc_parser.timetag import format_timetag, parse_timetag
 
 
@@ -78,10 +79,14 @@ class TestFormatTimetag:
         )
 
     def test_negative_timestamp_raises(self) -> None:
-        """测试负时间戳应该抛出 ValueError."""
-        with pytest.raises(ValueError, match="Negative timestamp is not allowed"):
+        """测试负时间戳应该抛出 TimestampUnderflowError."""
+        with pytest.raises(
+            TimestampUnderflowError, match="Negative timestamp is not allowed"
+        ):
             format_timetag(-1, tail_digits=3, use_angle_bracket=False)
-        with pytest.raises(ValueError, match="Negative timestamp is not allowed"):
+        with pytest.raises(
+            TimestampUnderflowError, match="Negative timestamp is not allowed"
+        ):
             format_timetag(-5000, tail_digits=3, use_angle_bracket=False)
 
 

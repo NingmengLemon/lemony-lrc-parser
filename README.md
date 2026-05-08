@@ -36,6 +36,14 @@ It's okay to use pip.
 pip install lemony-lrc-parser
 ```
 
+可以使用 git 仓库来源来第一时间体验到最新最热的 ~~bug~~ feature.
+
+You can use git repo as source to catch the newest ~~bugs~~ features.
+
+```bash
+uv add https://github.com/NingmengLemon/lemony-lrc-parser.git
+```
+
 ## Usage
 
 ### Quick Start
@@ -70,13 +78,13 @@ print(lyrics.metadata["ar"])  # "Rick Astley"
 for line in lyrics:
     print(f"{line.start}ms: {line.text}")
 
-# 序列化回 LRC 文本
+# 序列化回 LRC 格式
 output = llp.dumps(lyrics)
 ```
 
 ### OOP Interface
 
-`Lyrics` 类提供面向对象的解析和序列化入口:
+`Lyrics` 类提供面向对象的解析和序列化入口, 也推荐使用面向对象接口:
 
 ```python
 from lemony_lrc_parser import Lyrics
@@ -161,20 +169,9 @@ for line in combined:
 combined = main.combine(translation, other_as_refline_only=False)
 ```
 
-### Implicit Line End
+### Options
 
-当歌词行没有显式结束时间时, 可以自动用下一行的开始时间填充:
-
-```python
-from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import ParseOptions
-
-lyrics = Lyrics.loads(lrc_text, options=ParseOptions(fill_implicit_line_end=True))
-
-# lyrics[0].end == lyrics[1].start
-```
-
-### Parsing Options
+#### Parsing Options
 
 ```python
 from lemony_lrc_parser import Lyrics
@@ -188,7 +185,20 @@ lyrics = Lyrics.loads(
 )
 ```
 
-### Serialization Options
+##### Implicit Line End
+
+当歌词行没有显式结束时间时, 可以自动用下一行的开始时间填充:
+
+```python
+from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser.models import ParseOptions
+
+lyrics = Lyrics.loads(lrc_text, options=ParseOptions(fill_implicit_line_end=True))
+
+# lyrics[0].end == lyrics[1].start
+```
+
+#### Serialization Options
 
 通过 `SerializationOptions` 控制序列化行为:
 
@@ -200,31 +210,30 @@ output = lyrics.dumps(
     options=SerializationOptions(
         with_metadata=True,                     # 是否输出 metadata 段
         use_bracket_for_byword_tag=False,       # 逐字标签使用 [...] 还是 <...> (默认)
-        skip_empty_metadata=True,               # 跳过空值的 metadata 键
         line_tag_decimal_length=2,              # 行标签毫秒位数 (默认 2)
         word_tag_decimal_length=2,              # 逐字标签毫秒位数 (默认 2)
     ),
 )
 ```
 
-#### Offset 语义
-
-使用 [`Lyrics.apply_offset(ms)`](src/lemony_lrc_parser/models.py:213) 应用时间偏移:
-
-- `ms > 0` → 歌词延后出现 (`display_time = tag_time + ms`)
-- `ms < 0` → 歌词提前出现 (`display_time = tag_time - |ms|`)
-
-如果应用 offset 会导致时间戳变为负数, 将抛出 [`ValueError`](src/lemony_lrc_parser/models.py:242), 由调用方自行处理.
-
-#### 小数位数
+#### Length of Decimal Part
 
 默认 `line_tag_decimal_length=2`、`word_tag_decimal_length=2`, 输出格式如 `[00:01.00]`、`<00:01.05>`.
 此时小数部分表示百分秒, 不足 2 位时自动补齐.
 若需保留完整的毫秒精度, 请设置为 `3`.
 
-### Applying Offset
+### Offset
 
-通过 [`Lyrics.apply_offset(ms)`](src/lemony_lrc_parser/models.py:213) 对时间戳应用偏移, 返回一个新对象:
+使用 `Lyrics.apply_delta(ms)` 应用时间偏移, ms 会*直接加到*每个标签的时间戳上,
+这意味着传入*正数*偏移值会导致歌词整体*延后*出现, 反之同理.
+
+也可以使用重载的 `>>` / `<<` 运算, 私以为这样会更好理解一些.
+
+如果应用 offset 会导致时间戳变为负数, 将抛出 `TimestampUnderflowError`, 由调用方自行处理.
+
+#### Applying Offset
+
+通过 `Lyrics.apply_delta(ms)` 对时间戳应用偏移, 返回一个新对象:
 
 ```python
 from lemony_lrc_parser import Lyrics
@@ -232,10 +241,10 @@ from lemony_lrc_parser import Lyrics
 lyrics = Lyrics.loads(lrc_text)
 
 # 正数 → 歌词延后出现 (等价于 lyrics >> 500)
-shifted = lyrics.apply_offset(500)
+shifted = lyrics.apply_delta(500)
 
 # 负数 → 歌词提前出现 (等价于 lyrics << 500)
-shifted = lyrics.apply_offset(-500)
+shifted = lyrics.apply_delta(-500)
 
 # 使用 << / >> 运算符
 shifted = lyrics >> 500   # 延后 500ms
@@ -244,26 +253,10 @@ shifted = lyrics << 500   # 提前 500ms
 # shifted 的时间戳已被整体偏移, 原始 lyrics 不受影响
 ```
 
-如果偏移会导致时间戳变为负数, 将抛出 [`ValueError`](src/lemony_lrc_parser/models.py:242).
+如果偏移会导致时间戳变为负数, 将抛出 `TimestampUnderflowError`.
 
-序列化时不会再自动应用 offset；如需在序列化前偏移时间戳, 请先调用 `apply_offset()` 再序列化返回的副本.
-
-### Skip Empty Metadata
-
-默认跳过空值的 metadata 键:
-
-```python
-from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import SerializationOptions
-
-lyrics = Lyrics.loads('[ti: Test]\n[empty: ]\n[00:01.00]Hello\n')
-
-# 默认跳过空值
-print(lyrics.dumps())  # 不含 [empty: ]
-
-# 保留空值
-print(lyrics.dumps(options=SerializationOptions(skip_empty_metadata=False)))
-```
+如需在序列化前偏移时间戳, 请先调用 `apply_delta()` 再序列化返回的副本.
+如果你的偏移量来自歌词文件元数据, 你可能还需要记得手动清理 `lyrics.metadata` 中的偏移值.
 
 ## References
 

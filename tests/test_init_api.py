@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import lemony_lrc_parser as llp
 from lemony_lrc_parser import dumps, loads
-from lemony_lrc_parser.models import LyricLine, Lyrics, LyricWord
+from lemony_lrc_parser.models import LyricLine, Lyrics, LyricToken
 
 
 class TestLoadsFunction:
@@ -47,7 +47,7 @@ class TestDumpsFunction:
         """测试基本的 dumps 功能."""
         lyrics = Lyrics()
         lyrics.lines = [
-            LyricLine(start=1000, content=[LyricWord(content="Hello")]),
+            LyricLine(start=1000, content=[LyricToken(content="Hello")]),
         ]
         result = dumps(lyrics)
         assert "[00:01.00]Hello" in result
@@ -61,7 +61,7 @@ class TestDumpsFunction:
         lyrics.lines = [
             LyricLine(
                 start=1000,
-                content=[LyricWord(content="逐", start=1000, end=1100)],
+                content=[LyricToken(content="逐", start=1000, end=1100)],
             ),
         ]
         result = dumps(
@@ -78,7 +78,7 @@ class TestDumpsFunction:
         """测试 dumps 等价于 lyrics.dumps."""
         lyrics = Lyrics()
         lyrics.lines = [
-            LyricLine(start=1000, content=[LyricWord(content="Test")]),
+            LyricLine(start=1000, content=[LyricToken(content="Test")]),
         ]
         result1 = dumps(lyrics)
         result2 = lyrics.dumps()
@@ -93,7 +93,7 @@ class TestModuleImports:
         # 数据模型
         assert hasattr(llp, "BasicLyricLine")
         assert hasattr(llp, "LyricLine")
-        assert hasattr(llp, "LyricWord")
+        assert hasattr(llp, "LyricToken")
         assert hasattr(llp, "Lyrics")
 
         # 异常

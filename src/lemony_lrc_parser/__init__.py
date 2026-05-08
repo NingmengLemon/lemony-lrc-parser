@@ -30,12 +30,17 @@
 
 from __future__ import annotations
 
-from .exceptions import InvalidLyricsError, LyricsParserError
+from .exceptions import (
+    InvalidLyricsError,
+    LyricsParserError,
+    ProgrammingError,
+    TimestampUnderflowError,
+)
 from .models import (
     BasicLyricLine,
     LyricLine,
     Lyrics,
-    LyricWord,
+    LyricToken,
     ParseOptions,
     SerializationOptions,
 )
@@ -46,10 +51,12 @@ from .timetag import format_timetag, parse_timetag
 __all__ = [
     "BasicLyricLine",
     "LyricLine",
-    "LyricWord",
+    "LyricToken",
     "Lyrics",
     "InvalidLyricsError",
     "LyricsParserError",
+    "ProgrammingError",
+    "TimestampUnderflowError",
     "ParseOptions",
     "SerializationOptions",
     "dumps",

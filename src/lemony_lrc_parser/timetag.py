@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from logging import getLogger
 
+from .exceptions import ProgrammingError, TimestampUnderflowError
 from .regex import TIMETAG_REGEX_STRICT, compile_regex
 
 logger = getLogger(__name__)
@@ -38,9 +39,9 @@ def format_timetag(
         形如 ``[01:23.456]`` 或 ``<01:23.456>`` 的字符串.
     """
     if ms < 0:
-        raise ValueError(f"Negative timestamp is not allowed: {ms}ms")
+        raise TimestampUnderflowError(f"Negative timestamp is not allowed: {ms}ms")
     if not MIN_TAIL_DIGITS <= tail_digits <= MAX_TAIL_DIGITS:
-        raise ValueError(
+        raise ProgrammingError(
             f"tail_digits must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {tail_digits}"
         )
     minutes = ms // 60_000

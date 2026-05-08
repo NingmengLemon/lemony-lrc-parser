@@ -15,7 +15,7 @@ from copy import deepcopy
 from logging import getLogger
 
 from .exceptions import LyricsParserError
-from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord, ParseOptions
+from .models import BasicLyricLine, LyricLine, Lyrics, LyricToken, ParseOptions
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
@@ -43,7 +43,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
         2. 把序列拆成 ``texts`` (长度 N) 与 ``times`` (长度 N-1) 两条平行数组.
         3. 丢弃非单调递增的时间标签 (视为误写并合并相邻文本) .
         4. 用滑动窗口方式把 ``texts[i]`` 和 ``times[i-1] / times[i]`` 绑成
-           单个 :class:`LyricWord`.
+           单个 :class:`LyricToken`.
         5. 去掉首尾的空词, 使 ``result[0].start`` 成为行首、
            ``result[-1].end`` 成为行尾.
     """
@@ -67,7 +67,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
             raise LyricsParserError(
                 "Inconsistent state: single text segment should not have time tags"
             )
-        return [LyricWord(content=texts[0])]
+        return [LyricToken(content=texts[0])]
 
     diff = len(texts) - len(times)
     if diff != 1:
@@ -80,7 +80,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
     result: BasicLyricLine = []
     last_idx = len(texts) - 1
     for idx, content in enumerate(texts):
-        word = LyricWord(content=content)
+        word = LyricToken(content=content)
         if idx > 0:
             word.start = times[idx - 1]
         if idx < last_idx:
@@ -170,7 +170,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         组装完毕的 :class:`Lyrics` 对象.
 
     Note:
-        offset 需通过 :meth:`Lyrics.apply_offset` 单独应用,
+        offset 需通过 :meth:`Lyrics.apply_delta` 单独应用,
         解析时不会自动偏移时间戳.
     """
     metadata: dict[str, str] = {}
@@ -213,7 +213,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         if not line:
             for t in time_tags:
                 if t not in line_pool:
-                    line_pool[t] = LyricLine(start=t, content=[LyricWord(content="")])
+                    line_pool[t] = LyricLine(start=t, content=[LyricToken(content="")])
             continue
 
         # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行
@@ -245,7 +245,7 @@ def _register_line_at_tags(
             # 同一个时间点已有行 → 当前行变为参考行
             line_pool[tag].reference_lines.append(line)
         else:
-            # 深拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricWord 实例
+            # 深拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricToken 实例
             line_pool[tag] = LyricLine(content=[deepcopy(word) for word in line])
 
 

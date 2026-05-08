@@ -4,3 +4,11 @@ class LyricsParserError(Exception):
 
 class InvalidLyricsError(LyricsParserError):
     pass
+
+
+class TimestampUnderflowError(LyricsParserError):
+    pass
+
+
+class ProgrammingError(LyricsParserError):
+    pass

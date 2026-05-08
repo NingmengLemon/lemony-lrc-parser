@@ -1,4 +1,4 @@
-"""测试 Lyrics.apply_offset 方法和偏移运算符.
+"""测试 Lyrics.apply_delta 方法和偏移运算符.
 
 语义统一为: 正数 → 歌词延后出现; 负数 → 歌词提前出现.
 负偏移导致下溢时直接报错, 由用户自行处理.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from lemony_lrc_parser.exceptions import TimestampUnderflowError
 from lemony_lrc_parser.parser import parse_lrc as parse_file
 from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
 
@@ -21,12 +22,12 @@ _SAMPLE_LRC = """\
 
 
 class TestApplyOffset:
-    """针对 Lyrics.apply_offset 方法的测试."""
+    """针对 Lyrics.apply_delta 方法的测试."""
 
     def test_positive_offset_applied(self) -> None:
         """ms=500 时, 所有时间标签应增加 500ms."""
         ly = parse_file(_SAMPLE_LRC)
-        shifted = ly.apply_offset(500)
+        shifted = ly.apply_delta(500)
         out = construct_lrc(shifted)
 
         # 原 5000ms -> 5500ms (line.start) → 5500ms 百分秒 = 55
@@ -43,7 +44,7 @@ class TestApplyOffset:
     def test_negative_offset_applied(self) -> None:
         """负 ms 应让时间标签整体减小."""
         ly = parse_file(_SAMPLE_LRC)
-        shifted = ly.apply_offset(-2000)
+        shifted = ly.apply_delta(-2000)
         out = construct_lrc(shifted)
 
         # 5000 + (-2000) = 3000
@@ -54,13 +55,15 @@ class TestApplyOffset:
     def test_negative_offset_overflow_raises(self) -> None:
         """负偏移超过最小时间标签时应直接报错."""
         ly = parse_file(_SAMPLE_LRC)
-        with pytest.raises(ValueError, match="would make minimum timestamp"):
-            ly.apply_offset(-6000)
+        with pytest.raises(
+            TimestampUnderflowError, match="would make minimum timestamp"
+        ):
+            ly.apply_delta(-6000)
 
     def test_offset_exactly_equal_to_min_time(self) -> None:
         """偏移恰好等于 -min_time 时, 最小标签应变为 0."""
         ly = parse_file(_SAMPLE_LRC)
-        shifted = ly.apply_offset(-5000)
+        shifted = ly.apply_delta(-5000)
         out = construct_lrc(shifted)
 
         # 原 5000 + (-5000) = 0
@@ -69,9 +72,9 @@ class TestApplyOffset:
         assert "[00:05.00]" in out
 
     def test_original_not_mutated(self) -> None:
-        """apply_offset 不应修改原始对象."""
+        """apply_delta 不应修改原始对象."""
         ly = parse_file(_SAMPLE_LRC)
-        _ = ly.apply_offset(-2000)
+        _ = ly.apply_delta(-2000)
 
         # 原始对象应保持不变
         assert ly.lines[0].start == 5000
@@ -80,7 +83,7 @@ class TestApplyOffset:
     def test_zero_offset_returns_copy(self) -> None:
         """ms=0 时应返回深拷贝, 时间戳不变."""
         ly = parse_file(_SAMPLE_LRC)
-        shifted = ly.apply_offset(0)
+        shifted = ly.apply_delta(0)
         out = construct_lrc(shifted)
 
         # 时间标签原样
@@ -90,11 +93,11 @@ class TestApplyOffset:
         assert shifted is not ly
 
     def test_multiple_calls_independent(self) -> None:
-        """多次调用 apply_offset 应各自返回新对象, 不影响原始对象."""
+        """多次调用 apply_delta 应各自返回新对象, 不影响原始对象."""
         ly = parse_file(_SAMPLE_LRC)
-        _ = ly.apply_offset(100)
-        _ = ly.apply_offset(200)
-        _ = ly.apply_offset(300)
+        _ = ly.apply_delta(100)
+        _ = ly.apply_delta(200)
+        _ = ly.apply_delta(300)
         # 原始对象始终不变
         assert ly.lines[0].start == 5000
         assert ly.metadata.get("offset") == "500"
@@ -125,15 +128,17 @@ class TestShiftOperators:
     def test_lshift_overflow_raises(self) -> None:
         """``<<`` 导致下溢时应报错."""
         ly = parse_file(_SAMPLE_LRC)
-        with pytest.raises(ValueError, match="would make minimum timestamp"):
+        with pytest.raises(
+            TimestampUnderflowError, match="would make minimum timestamp"
+        ):
             _ = ly << 6000
 
     def test_operator_equivalence(self) -> None:
-        """运算符与 apply_offset 语义一致."""
+        """运算符与 apply_delta 语义一致."""
         ly = parse_file(_SAMPLE_LRC)
 
-        assert (ly >> 500).dumps() == ly.apply_offset(500).dumps()
-        assert (ly << 500).dumps() == ly.apply_offset(-500).dumps()
+        assert (ly >> 500).dumps() == ly.apply_delta(500).dumps()
+        assert (ly << 500).dumps() == ly.apply_delta(-500).dumps()
 
     def test_chained_shifts(self) -> None:
         """链式调用."""

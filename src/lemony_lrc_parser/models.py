@@ -1,6 +1,6 @@
 """数据模型.
 
-定义 LRC 歌词的核心数据结构: :class:`LyricWord`、:class:`LyricLine` 和
+定义 LRC 歌词的核心数据结构: :class:`LyricToken`、:class:`LyricLine` 和
 作为顶层容器的 :class:`Lyrics`.
 
 本模块只承载数据层语义; 解析 (LRC 文本 → :class:`Lyrics`) 与序列化
@@ -15,10 +15,12 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import overload
 
+from .exceptions import ProgrammingError, TimestampUnderflowError
+
 __all__ = [
     "BasicLyricLine",
     "LyricLine",
-    "LyricWord",
+    "LyricToken",
     "Lyrics",
     "ParseOptions",
     "SerializationOptions",
@@ -43,15 +45,13 @@ class SerializationOptions:
 
     Attributes:
         with_metadata: 是否输出 metadata 段.
-        use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``.
-        skip_empty_metadata: 跳过空值的 metadata 键.
+        use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``. 在 foobar2000 等老式播放器上可能会有用.
         line_tag_decimal_length: 行标签毫秒位数 (默认 2).
         word_tag_decimal_length: 逐字标签毫秒位数 (默认 2).
     """
 
     with_metadata: bool = True
     use_bracket_for_byword_tag: bool = False
-    skip_empty_metadata: bool = True
     line_tag_decimal_length: int = 2
     word_tag_decimal_length: int = 2
 
@@ -62,13 +62,13 @@ class SerializationOptions:
         for f in ("line_tag_decimal_length", "word_tag_decimal_length"):
             val = getattr(self, f)
             if not MIN_TAIL_DIGITS <= val <= MAX_TAIL_DIGITS:
-                raise ValueError(
+                raise ProgrammingError(
                     f"{f} must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {val}"
                 )
 
 
 @dataclass
-class LyricWord:
+class LyricToken:
     """一个歌词词元 (可以是一个字、一个词, 或整行纯文本) .
 
     Attributes:
@@ -82,10 +82,10 @@ class LyricWord:
     end: int | None = None
 
 
-#: 一行歌词主体 (由若干 :class:`LyricWord` 组成的线性序列) .
+#: 一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
 #:
 #: 对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
-BasicLyricLine = list[LyricWord]
+BasicLyricLine = list[LyricToken]
 
 
 @dataclass
@@ -208,14 +208,15 @@ class Lyrics:
 
         return dump_lrc(self, options=options)
 
-    def apply_offset(self, ms: int) -> Lyrics:
+    def apply_delta(self, ms: int) -> Lyrics:
         """深拷贝当前对象并在新副本上应用时间偏移, 返回新对象.
 
         该方法**不修改**原始对象, 而是返回一个时间戳已被整体偏移的新
         :class:`Lyrics`.
 
-        语义: ``ms > 0`` → 歌词延后出现; ``ms < 0`` → 歌词提前出现.
-        若偏移后存在任何时间戳 < 0, 直接抛出 :class:`ValueError`,
+        这里的 ms 直接加在时间戳上, 所以用了 delta 这个词而不是 offset.
+
+        若偏移后存在任何时间戳 < 0, 直接抛出 :class:`TimestampUnderflowError`,
         由调用方自行处理 (例如先从 ``metadata.offset`` 读取值再传入).
 
         Args:
@@ -225,44 +226,44 @@ class Lyrics:
             应用了偏移后的新 :class:`Lyrics` 对象.
 
         Raises:
-            ValueError: 偏移后会导致某个时间戳变为负数.
+            TimestampUnderflowError: 偏移后会导致某个时间戳变为负数.
         """
-        from .offset import _apply_delta, _iter_all_timestamps
+        from .offset import apply_delta, iter_all_timestamps
 
         if ms == 0:
             return deepcopy(self)
 
         # 先做下溢检测, 避免异常路径上的 deepcopy 浪费
-        all_times = list(_iter_all_timestamps(self))
+        all_times = list(iter_all_timestamps(self))
         if all_times:
             min_time = min(all_times)
             if min_time + ms < 0:
-                raise ValueError(
+                raise TimestampUnderflowError(
                     f"Applying offset={ms}ms would make minimum "
                     f"timestamp {min_time}ms negative"
                 )
 
         result = deepcopy(self)
-        _apply_delta(result, ms)
+        apply_delta(result, ms)
         return result
 
     def __lshift__(self, ms: int) -> Lyrics:
-        """左移运算符: ``lyrics << ms`` 等价于 ``lyrics.apply_offset(-ms)``.
+        """左移运算符: ``lyrics << ms`` 等价于 ``lyrics.apply_delta(-ms)``.
 
         语义: 正数 → 歌词提前出现.
         """
         if not isinstance(ms, int):
             return NotImplemented
-        return self.apply_offset(-ms)
+        return self.apply_delta(-ms)
 
     def __rshift__(self, ms: int) -> Lyrics:
-        """右移运算符: ``lyrics >> ms`` 等价于 ``lyrics.apply_offset(ms)``.
+        """右移运算符: ``lyrics >> ms`` 等价于 ``lyrics.apply_delta(ms)``.
 
         语义: 正数 → 歌词延后出现.
         """
         if not isinstance(ms, int):
             return NotImplemented
-        return self.apply_offset(ms)
+        return self.apply_delta(ms)
 
     def __str__(self) -> str:
         return self.dumps()

@@ -33,8 +33,6 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
 
     if options.with_metadata:
         for key, value in metadata.items():
-            if options.skip_empty_metadata and not value.strip():
-                continue
             buffer.write(f"[{key}: {value}]\n")
 
     for idx, line in enumerate(lyrics.lines):

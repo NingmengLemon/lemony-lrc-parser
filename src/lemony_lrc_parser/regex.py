@@ -89,11 +89,11 @@ METATAG_REGEX: str = r"""
     (?:
         \[
             \s*
-            (?P<key>[a-zA-Z#]{2,16})  # `#` 用于注释标签, 见 LRC 规范
+            (?P<key>[a-zA-Z]{2,16})
             \s*
             :
             \s*
-            (?P<value>.+?)
+            (?P<value>.*?)
             \s*
         \]
     )
