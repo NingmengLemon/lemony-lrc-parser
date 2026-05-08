@@ -20,7 +20,51 @@ __all__ = [
     "LyricLine",
     "LyricWord",
     "Lyrics",
+    "ParseOptions",
+    "SerializationOptions",
 ]
+
+
+@dataclass
+class ParseOptions:
+    """解析选项.
+
+    Attributes:
+        fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
+            自动用下一行的开始时间作为其结束时间.
+    """
+
+    fill_implicit_line_end: bool = False
+
+
+@dataclass
+class SerializationOptions:
+    """序列化选项.
+
+    Attributes:
+        with_metadata: 是否输出 metadata 段.
+        use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``.
+        skip_empty_metadata: 跳过空值的 metadata 键.
+        line_tag_decimal_length: 行标签毫秒位数 (默认 2).
+        word_tag_decimal_length: 逐字标签毫秒位数 (默认 2).
+    """
+
+    with_metadata: bool = True
+    use_bracket_for_byword_tag: bool = False
+    skip_empty_metadata: bool = True
+    line_tag_decimal_length: int = 2
+    word_tag_decimal_length: int = 2
+
+    def __post_init__(self) -> None:
+        """校验参数合法性."""
+        from .timetag import MAX_TAIL_DIGITS, MIN_TAIL_DIGITS
+
+        for f in ("line_tag_decimal_length", "word_tag_decimal_length"):
+            val = getattr(self, f)
+            if not MIN_TAIL_DIGITS <= val <= MAX_TAIL_DIGITS:
+                raise ValueError(
+                    f"{f} must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {val}"
+                )
 
 
 @dataclass
@@ -139,46 +183,86 @@ class Lyrics:
             elif not other_as_refline_only:
                 pool[line.start] = deepcopy(line)
 
-        new.lines = list(pool.values())
+        new.lines = sorted(pool.values(), key=lambda line: line.start or 0)
         return new
 
     @classmethod
-    def loads(cls, s: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
+    def loads(cls, s: str, *, options: ParseOptions | None = None) -> Lyrics:
         """从 LRC 字符串解析出一份 :class:`Lyrics`.
 
         Args:
             s: LRC 源文本.
-            fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
-                自动用下一行的开始时间作为其结束时间.
+            options: 解析选项.
         """
         from .parser import parse_lrc
 
-        return parse_lrc(s, fill_implicit_line_end=fill_implicit_line_end)
+        return parse_lrc(s, options=options)
 
-    def dumps(
-        self,
-        *,
-        with_metadata: bool = True,
-        use_bracket_for_byword_tag: bool = False,
-        apply_offset_from_metadata: bool = False,
-    ) -> str:
+    def dumps(self, *, options: SerializationOptions | None = None) -> str:
         """把当前对象序列化为 LRC 字符串.
 
         Args:
-            with_metadata: 是否写出 metadata 段.
-            use_bracket_for_byword_tag: 逐字标签是否使用 ``[...]``
-                 (默认 ``False`` 使用 ``<...>``) .
-            apply_offset_from_metadata: 是否读取并应用 ``metadata.offset``;
-                见 :func:`.serializer.dump_lrc` 的完整语义说明.
+            options: 序列化选项.
         """
         from .serializer import dump_lrc
 
-        return dump_lrc(
-            self,
-            with_metadata=with_metadata,
-            use_bracket_for_byword_tag=use_bracket_for_byword_tag,
-            apply_offset_from_metadata=apply_offset_from_metadata,
-        )
+        return dump_lrc(self, options=options)
+
+    def apply_offset(self, ms: int) -> Lyrics:
+        """深拷贝当前对象并在新副本上应用时间偏移, 返回新对象.
+
+        该方法**不修改**原始对象, 而是返回一个时间戳已被整体偏移的新
+        :class:`Lyrics`.
+
+        语义: ``ms > 0`` → 歌词延后出现; ``ms < 0`` → 歌词提前出现.
+        若偏移后存在任何时间戳 < 0, 直接抛出 :class:`ValueError`,
+        由调用方自行处理 (例如先从 ``metadata.offset`` 读取值再传入).
+
+        Args:
+            ms: 要加到每个时间戳上的毫秒数.
+
+        Returns:
+            应用了偏移后的新 :class:`Lyrics` 对象.
+
+        Raises:
+            ValueError: 偏移后会导致某个时间戳变为负数.
+        """
+        from .offset import _apply_delta, _iter_all_timestamps
+
+        if ms == 0:
+            return deepcopy(self)
+
+        # 先做下溢检测, 避免异常路径上的 deepcopy 浪费
+        all_times = list(_iter_all_timestamps(self))
+        if all_times:
+            min_time = min(all_times)
+            if min_time + ms < 0:
+                raise ValueError(
+                    f"Applying offset={ms}ms would make minimum "
+                    f"timestamp {min_time}ms negative"
+                )
+
+        result = deepcopy(self)
+        _apply_delta(result, ms)
+        return result
+
+    def __lshift__(self, ms: int) -> Lyrics:
+        """左移运算符: ``lyrics << ms`` 等价于 ``lyrics.apply_offset(-ms)``.
+
+        语义: 正数 → 歌词提前出现.
+        """
+        if not isinstance(ms, int):
+            return NotImplemented
+        return self.apply_offset(-ms)
+
+    def __rshift__(self, ms: int) -> Lyrics:
+        """右移运算符: ``lyrics >> ms`` 等价于 ``lyrics.apply_offset(ms)``.
+
+        语义: 正数 → 歌词延后出现.
+        """
+        if not isinstance(ms, int):
+            return NotImplemented
+        return self.apply_offset(ms)
 
     def __str__(self) -> str:
         return self.dumps()

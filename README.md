@@ -103,7 +103,7 @@ print(lyrics)
 解析逐字 (Enhanced LRC / SPL) 歌词:
 
 ```python
-lrc_text = "[00:01.000]<00:01.000>Never <00:01.500>gonna <00:02.000>give <00:02.500>you <00:03.000>up[00:03.500]"
+lrc_text = "[00:01.00]<00:01.00>Never <00:01.50>gonna <00:02.00>give <00:02.50>you <00:03.00>up[00:03.50]"
 
 lyrics = llp.loads(lrc_text)
 line = lyrics[0]
@@ -124,10 +124,10 @@ for word in line.content:
 LRC 文件中, 紧跟在带时间标签行后面的无标签行, 或与主行的时间戳相同的行, 会被解析为参考行, 常用于存放翻译或音译:
 
 ```python
-lrc_text = """[00:01.000]Hello
-你好
-[00:02.000]World
-[00:02.000]世界
+lrc_text = """[00:01.00]Hello
+    你好
+[00:02.00]World
+[00:02.00]世界
 """
 
 lyrics = llp.loads(lrc_text)
@@ -142,8 +142,8 @@ print(line.reference_lines[0][0].content)     # "你好"
 将两份歌词 (如原文和翻译) 按时间标签合并:
 
 ```python
-main = llp.loads("[00:01.000]Hello\n[00:02.000]World\n")
-translation = llp.loads("[00:01.000]你好\n[00:02.000]世界\n")
+main = llp.loads("[00:01.00]Hello\n[00:02.00]World\n")
+translation = llp.loads("[00:01.00]你好\n[00:02.00]世界\n")
 
 # combine 方法: 翻译行挂到同时间点的 reference_lines 中
 combined = main.combine(translation)
@@ -166,24 +166,104 @@ combined = main.combine(translation, other_as_refline_only=False)
 当歌词行没有显式结束时间时, 可以自动用下一行的开始时间填充:
 
 ```python
-lyrics = llp.loads(lrc_text, fill_implicit_line_end=True)
+from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser.models import ParseOptions
+
+lyrics = Lyrics.loads(lrc_text, options=ParseOptions(fill_implicit_line_end=True))
 
 # lyrics[0].end == lyrics[1].start
 ```
 
-### Serialization Options
-
-`dumps` 支持以下选项:
+### Parsing Options
 
 ```python
-output = lyrics.dumps(
-    with_metadata=True,                 # 是否输出 metadata 段
-    use_bracket_for_byword_tag=False,   # 逐字标签使用 [...] 还是 <...> (默认) 
-    apply_offset_from_metadata=False,   # 是否读取并应用 metadata 中的 offset
+from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser.models import ParseOptions
+
+lyrics = Lyrics.loads(
+    lrc_text,
+    options=ParseOptions(
+        fill_implicit_line_end=False,       # 是否填充隐式行尾时间
+    ),
 )
 ```
 
-`apply_offset_from_metadata` 的行为: 正 offset 会让歌词显示提前 (`display_time = tag_time - offset`) . 如果应用 offset 会导致时间戳变负, 则只应用安全的部分, 剩余写回 `metadata["offset"]`.
+### Serialization Options
+
+通过 `SerializationOptions` 控制序列化行为:
+
+```python
+from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser.models import SerializationOptions
+
+output = lyrics.dumps(
+    options=SerializationOptions(
+        with_metadata=True,                     # 是否输出 metadata 段
+        use_bracket_for_byword_tag=False,       # 逐字标签使用 [...] 还是 <...> (默认)
+        skip_empty_metadata=True,               # 跳过空值的 metadata 键
+        line_tag_decimal_length=2,              # 行标签毫秒位数 (默认 2)
+        word_tag_decimal_length=2,              # 逐字标签毫秒位数 (默认 2)
+    ),
+)
+```
+
+#### Offset 语义
+
+使用 [`Lyrics.apply_offset(ms)`](src/lemony_lrc_parser/models.py:213) 应用时间偏移:
+
+- `ms > 0` → 歌词延后出现 (`display_time = tag_time + ms`)
+- `ms < 0` → 歌词提前出现 (`display_time = tag_time - |ms|`)
+
+如果应用 offset 会导致时间戳变为负数, 将抛出 [`ValueError`](src/lemony_lrc_parser/models.py:242), 由调用方自行处理.
+
+#### 小数位数
+
+默认 `line_tag_decimal_length=2`、`word_tag_decimal_length=2`, 输出格式如 `[00:01.00]`、`<00:01.05>`.
+此时小数部分表示百分秒, 不足 2 位时自动补齐.
+若需保留完整的毫秒精度, 请设置为 `3`.
+
+### Applying Offset
+
+通过 [`Lyrics.apply_offset(ms)`](src/lemony_lrc_parser/models.py:213) 对时间戳应用偏移, 返回一个新对象:
+
+```python
+from lemony_lrc_parser import Lyrics
+
+lyrics = Lyrics.loads(lrc_text)
+
+# 正数 → 歌词延后出现 (等价于 lyrics >> 500)
+shifted = lyrics.apply_offset(500)
+
+# 负数 → 歌词提前出现 (等价于 lyrics << 500)
+shifted = lyrics.apply_offset(-500)
+
+# 使用 << / >> 运算符
+shifted = lyrics >> 500   # 延后 500ms
+shifted = lyrics << 500   # 提前 500ms
+
+# shifted 的时间戳已被整体偏移, 原始 lyrics 不受影响
+```
+
+如果偏移会导致时间戳变为负数, 将抛出 [`ValueError`](src/lemony_lrc_parser/models.py:242).
+
+序列化时不会再自动应用 offset；如需在序列化前偏移时间戳, 请先调用 `apply_offset()` 再序列化返回的副本.
+
+### Skip Empty Metadata
+
+默认跳过空值的 metadata 键:
+
+```python
+from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser.models import SerializationOptions
+
+lyrics = Lyrics.loads('[ti: Test]\n[empty: ]\n[00:01.00]Hello\n')
+
+# 默认跳过空值
+print(lyrics.dumps())  # 不含 [empty: ]
+
+# 保留空值
+print(lyrics.dumps(options=SerializationOptions(skip_empty_metadata=False)))
+```
 
 ## References
 

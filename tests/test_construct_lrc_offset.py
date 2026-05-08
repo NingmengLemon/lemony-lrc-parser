@@ -1,6 +1,12 @@
-"""测试 construct_lrc 的 offset 相关逻辑."""
+"""测试 Lyrics.apply_offset 方法和偏移运算符.
+
+语义统一为: 正数 → 歌词延后出现; 负数 → 歌词提前出现.
+负偏移导致下溢时直接报错, 由用户自行处理.
+"""
 
 from __future__ import annotations
+
+import pytest
 
 from lemony_lrc_parser.parser import parse_lrc as parse_file
 from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
@@ -14,134 +20,134 @@ _SAMPLE_LRC = """\
 """
 
 
-class TestConstructLrcOffset:
-    """针对 construct_lrc 中 offset 处理的测试."""
-
-    def test_offset_not_applied_by_default(self) -> None:
-        """默认 apply_offset_from_metadata=False 时不应用 offset, metadata.offset 保留原样."""
-        ly = parse_file(_SAMPLE_LRC)
-        out = construct_lrc(ly, apply_offset_from_metadata=False)
-
-        # offset 字段仍在
-        assert "[offset: 500]" in out
-        # 时间标签保持原样
-        assert "[00:05.000]" in out
-        assert "[00:10.000]" in out
+class TestApplyOffset:
+    """针对 Lyrics.apply_offset 方法的测试."""
 
     def test_positive_offset_applied(self) -> None:
-        """offset=500 时, 所有时间标签应减去 500ms."""
+        """ms=500 时, 所有时间标签应增加 500ms."""
         ly = parse_file(_SAMPLE_LRC)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
+        shifted = ly.apply_offset(500)
+        out = construct_lrc(shifted)
 
-        # offset 从 metadata 消失
-        assert "[offset:" not in out
-        # 原 5000ms -> 4500ms (line.start)
-        assert "[00:04.500]" in out
-        # 原 10000ms -> 9500ms (line.start)
-        assert "[00:09.500]" in out
-        # 原 11500ms -> 11000ms (中间的 word tag, 保持尖括号)
-        assert "<00:11.000>" in out
-        # 原 7000ms -> 6500ms (行尾标签, parse_file 会把它挪到 line.end, 渲染为方括号)
-        assert "[00:06.500]" in out
-        # 原 12000ms -> 11500ms (同上, 是 line.end)
-        assert "[00:11.500]" in out
+        # 原 5000ms -> 5500ms (line.start) → 5500ms 百分秒 = 55
+        assert "[00:05.50]" in out
+        # 原 10000ms -> 10500ms (line.start) → 10500ms 百分秒 = 50
+        assert "[00:10.50]" in out
+        # 原 11500ms -> 12000ms (中间的 word tag, 保持尖括号)
+        assert "<00:12.00>" in out
+        # 原 7000ms -> 7500ms (行尾标签, 方括号)
+        assert "[00:07.50]" in out
+        # 原 12000ms -> 12500ms (line.end) → 12500ms 百分秒 = 50
+        assert "[00:12.50]" in out
 
     def test_negative_offset_applied(self) -> None:
-        """负 offset 应让时间标签整体增大 (减去负数 = 加上正数)."""
-        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: -2000]")
-        ly = parse_file(src)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
+        """负 ms 应让时间标签整体减小."""
+        ly = parse_file(_SAMPLE_LRC)
+        shifted = ly.apply_offset(-2000)
+        out = construct_lrc(shifted)
 
-        # 5000 - (-2000) = 7000
-        assert "[00:07.000]" in out
-        # 10000 - (-2000) = 12000
-        assert "[00:12.000]" in out
-        # 负 offset 不会触发"保留剩余 offset"的逻辑
-        assert "[offset:" not in out
+        # 5000 + (-2000) = 3000
+        assert "[00:03.00]" in out
+        # 10000 + (-2000) = 8000
+        assert "[00:08.00]" in out
 
-    def test_offset_too_large_triggers_partial_application(self) -> None:
-        """
-        正 offset 超过最小时间标签时, 只应用到最小时间标签的值, 剩余部分保留在 metadata.offset 中.
-
-        原始最小时间 = 5000, offset = 6000 -> 只能应用 5000, 剩余 1000 保留.
-        """
-        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: 6000]")
-        ly = parse_file(src)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
-
-        # 最小时间标签被 clamp 到 0 (line.start)
-        assert "[00:00.000]" in out
-        # 剩余 offset 应写回 metadata
-        assert "[offset: 1000]" in out
-        # 原 10000 - 5000 = 5000 (line.start)
-        assert "[00:05.000]" in out
-        # 原 7000 - 5000 = 2000 (行尾, line.end, 方括号)
-        assert "[00:02.000]" in out
-        # 原 12000 - 5000 = 7000 (行尾, line.end, 方括号)
-        assert "[00:07.000]" in out
-        # 原 11500 - 5000 = 6500 (中间 word tag, 尖括号保留)
-        assert "<00:06.500>" in out
+    def test_negative_offset_overflow_raises(self) -> None:
+        """负偏移超过最小时间标签时应直接报错."""
+        ly = parse_file(_SAMPLE_LRC)
+        with pytest.raises(ValueError, match="would make minimum timestamp"):
+            ly.apply_offset(-6000)
 
     def test_offset_exactly_equal_to_min_time(self) -> None:
-        """offset 恰好等于最小时间标签时, 最小标签应变为 0, 不需要保留剩余 offset."""
-        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: 5000]")
-        ly = parse_file(src)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
+        """偏移恰好等于 -min_time 时, 最小标签应变为 0."""
+        ly = parse_file(_SAMPLE_LRC)
+        shifted = ly.apply_offset(-5000)
+        out = construct_lrc(shifted)
 
-        # 原 5000 -> 0
-        assert "[00:00.000]" in out
-        # 原 10000 -> 5000
-        assert "[00:05.000]" in out
-        # 不需要保留剩余 offset
-        assert "[offset:" not in out
+        # 原 5000 + (-5000) = 0
+        assert "[00:00.00]" in out
+        # 原 10000 + (-5000) = 5000
+        assert "[00:05.00]" in out
 
-    def test_invalid_offset_is_ignored(self) -> None:
-        """非整数的 offset 应被忽略, 不影响时间标签, 并且 offset 字段不再出现."""
-        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: not-a-number]")
-        ly = parse_file(src)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
+    def test_original_not_mutated(self) -> None:
+        """apply_offset 不应修改原始对象."""
+        ly = parse_file(_SAMPLE_LRC)
+        _ = ly.apply_offset(-2000)
 
-        # 时间标签原样
-        assert "[00:05.000]" in out
-        assert "[00:10.000]" in out
-        # offset 字段被 pop 掉了 (因为 apply_offset_from_metadata=True)
-        assert "[offset:" not in out
+        # 原始对象应保持不变
+        assert ly.lines[0].start == 5000
+        assert ly.metadata.get("offset") == "500"
 
-    def test_metadata_not_mutated_on_caller_side(self) -> None:
-        """construct_lrc 不应修改上层传入的 Lyrics.metadata."""
-        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: 6000]")
-        ly = parse_file(src)
-        before = dict(ly.metadata)
-        _ = construct_lrc(ly, apply_offset_from_metadata=True)
-        after = dict(ly.metadata)
-
-        assert before == after, f"metadata 被污染了: before={before}, after={after}"
-        assert ly.metadata.get("offset") == "6000"
-
-    def test_no_offset_in_metadata(self) -> None:
-        """没有 offset 时, apply_offset_from_metadata=True 也应该正常工作."""
-        src = _SAMPLE_LRC.replace("[offset: 500]\n", "")
-        ly = parse_file(src)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
+    def test_zero_offset_returns_copy(self) -> None:
+        """ms=0 时应返回深拷贝, 时间戳不变."""
+        ly = parse_file(_SAMPLE_LRC)
+        shifted = ly.apply_offset(0)
+        out = construct_lrc(shifted)
 
         # 时间标签原样
-        assert "[00:05.000]" in out
-        assert "[00:10.000]" in out
+        assert "[00:05.00]" in out
+        assert "[00:10.00]" in out
+        # 是不同对象
+        assert shifted is not ly
 
-    def test_roundtrip_equivalence(self) -> None:
-        """
-        应用 offset 后再 parse, 其时间应等价于原 lrc + 原 offset.
+    def test_multiple_calls_independent(self) -> None:
+        """多次调用 apply_offset 应各自返回新对象, 不影响原始对象."""
+        ly = parse_file(_SAMPLE_LRC)
+        _ = ly.apply_offset(100)
+        _ = ly.apply_offset(200)
+        _ = ly.apply_offset(300)
+        # 原始对象始终不变
+        assert ly.lines[0].start == 5000
+        assert ly.metadata.get("offset") == "500"
 
-        即: 构造后的最小时间标签 + 剩余 offset == 原始最小时间标签 - 原始 offset.
-        """
-        src = _SAMPLE_LRC.replace("[offset: 500]", "[offset: 6000]")
-        ly = parse_file(src)
-        out = construct_lrc(ly, apply_offset_from_metadata=True)
 
-        ly2 = parse_file(out)
-        # 原始: 5000, offset=6000 -> 显示时间 = -1000
-        # 新的: line.start=0, offset=1000 -> 显示时间 = 0 - 1000 = -1000 ✓
-        new_first_start = ly2.lines[0].start
-        new_offset = int(ly2.metadata.get("offset", "0"))
-        assert new_first_start is not None
-        assert new_first_start - new_offset == 5000 - 6000
+class TestShiftOperators:
+    """测试 ``<<`` / ``>>`` 运算符."""
+
+    def test_rshift_positive_delays(self) -> None:
+        """``>>`` 正数 → 歌词延后."""
+        ly = parse_file(_SAMPLE_LRC)
+        shifted = ly >> 500
+        out = construct_lrc(shifted)
+
+        # 5500ms → 百分秒 = 55, 10500ms → 百分秒 = 50
+        assert "[00:05.50]" in out
+        assert "[00:10.50]" in out
+
+    def test_lshift_positive_advances(self) -> None:
+        """``<<`` 正数 → 歌词提前."""
+        ly = parse_file(_SAMPLE_LRC)
+        shifted = ly << 2000
+        out = construct_lrc(shifted)
+
+        assert "[00:03.00]" in out
+        assert "[00:08.00]" in out
+
+    def test_lshift_overflow_raises(self) -> None:
+        """``<<`` 导致下溢时应报错."""
+        ly = parse_file(_SAMPLE_LRC)
+        with pytest.raises(ValueError, match="would make minimum timestamp"):
+            _ = ly << 6000
+
+    def test_operator_equivalence(self) -> None:
+        """运算符与 apply_offset 语义一致."""
+        ly = parse_file(_SAMPLE_LRC)
+
+        assert (ly >> 500).dumps() == ly.apply_offset(500).dumps()
+        assert (ly << 500).dumps() == ly.apply_offset(-500).dumps()
+
+    def test_chained_shifts(self) -> None:
+        """链式调用."""
+        ly = parse_file(_SAMPLE_LRC)
+        shifted = (ly >> 100) >> 200
+        out = construct_lrc(shifted)
+
+        # 5000 + 100 + 200 = 5300 → 300ms 百分秒 = 30
+        assert "[00:05.30]" in out
+
+    def test_original_unaffected_by_operators(self) -> None:
+        """运算符不修改原始对象."""
+        ly = parse_file(_SAMPLE_LRC)
+        _ = ly >> 500
+        _ = ly << 500
+
+        assert ly.lines[0].start == 5000

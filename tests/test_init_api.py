@@ -23,10 +23,12 @@ class TestLoadsFunction:
 
     def test_loads_with_fill_implicit_end(self) -> None:
         """测试带 fill_implicit_line_end 参数的 loads."""
+        from lemony_lrc_parser.models import ParseOptions
+
         lrc = """[00:01.000]第一行
 [00:05.000]第二行
 """
-        lyrics = loads(lrc, fill_implicit_line_end=True)
+        lyrics = loads(lrc, options=ParseOptions(fill_implicit_line_end=True))
         assert lyrics.lines[0].end == 5000
 
     def test_loads_equivalent_to_lyrics_loads(self) -> None:
@@ -48,10 +50,12 @@ class TestDumpsFunction:
             LyricLine(start=1000, content=[LyricWord(content="Hello")]),
         ]
         result = dumps(lyrics)
-        assert "[00:01.000]Hello" in result
+        assert "[00:01.00]Hello" in result
 
     def test_dumps_with_options(self) -> None:
         """测试带参数的 dumps."""
+        from lemony_lrc_parser.models import SerializationOptions
+
         lyrics = Lyrics()
         lyrics.metadata = {"ti": "Test"}
         lyrics.lines = [
@@ -60,10 +64,15 @@ class TestDumpsFunction:
                 content=[LyricWord(content="逐", start=1000, end=1100)],
             ),
         ]
-        result = dumps(lyrics, with_metadata=True, use_bracket_for_byword_tag=True)
+        result = dumps(
+            lyrics,
+            options=SerializationOptions(
+                with_metadata=True, use_bracket_for_byword_tag=True
+            ),
+        )
         assert "[ti: Test]" in result
         # 检查是否使用了方括号
-        assert "[00:01.000]逐" in result
+        assert "[00:01.00]逐" in result
 
     def test_dumps_equivalent_to_lyrics_dumps(self) -> None:
         """测试 dumps 等价于 lyrics.dumps."""
@@ -111,3 +120,5 @@ class TestModuleImports:
         assert not hasattr(llp, "StartEndModel")
         # parse_file 被重命名为 parse_lrc
         assert not hasattr(llp, "parse_file")
+        # OffsetSemantics 已被移除
+        assert not hasattr(llp, "OffsetSemantics")

@@ -13,35 +13,76 @@ class TestFormatTimetag:
     def test_basic_formatting(self) -> None:
         """测试基本的时间标签格式化."""
         # 基本格式
-        assert format_timetag(0) == "[00:00.000]"
-        assert format_timetag(5000) == "[00:05.000]"
-        assert format_timetag(60000) == "[01:00.000]"
-        assert format_timetag(61000) == "[01:01.000]"
-        assert format_timetag(123456) == "[02:03.456]"
+        assert (
+            format_timetag(0, tail_digits=3, use_angle_bracket=False) == "[00:00.000]"
+        )
+        assert (
+            format_timetag(5000, tail_digits=3, use_angle_bracket=False)
+            == "[00:05.000]"
+        )
+        assert (
+            format_timetag(60000, tail_digits=3, use_angle_bracket=False)
+            == "[01:00.000]"
+        )
+        assert (
+            format_timetag(61000, tail_digits=3, use_angle_bracket=False)
+            == "[01:01.000]"
+        )
+        assert (
+            format_timetag(123456, tail_digits=3, use_angle_bracket=False)
+            == "[02:03.456]"
+        )
 
     def test_angle_bracket(self) -> None:
         """测试使用尖括号的逐字标签格式."""
-        assert format_timetag(5000, use_angle_bracket=True) == "<00:05.000>"
-        assert format_timetag(61000, use_angle_bracket=True) == "<01:01.000>"
+        assert (
+            format_timetag(5000, use_angle_bracket=True, tail_digits=3) == "<00:05.000>"
+        )
+        assert (
+            format_timetag(61000, use_angle_bracket=True, tail_digits=3)
+            == "<01:01.000>"
+        )
 
     def test_tail_digits(self) -> None:
         """测试不同的毫秒位数."""
-        assert format_timetag(5000, tail_digits=2) == "[00:05.00]"
-        assert format_timetag(5000, tail_digits=1) == "[00:05.0]"
-        assert format_timetag(123, tail_digits=3) == "[00:00.123]"
+        assert (
+            format_timetag(5000, tail_digits=2, use_angle_bracket=False) == "[00:05.00]"
+        )
+        assert (
+            format_timetag(5000, tail_digits=1, use_angle_bracket=False) == "[00:05.0]"
+        )
+        assert (
+            format_timetag(123, tail_digits=3, use_angle_bracket=False) == "[00:00.123]"
+        )
+        # tail_digits < 3 时: 毫秒需要截断转换为百分秒/十分秒
+        # 555ms → 百分秒=55, 十分秒=5
+        assert (
+            format_timetag(555, tail_digits=2, use_angle_bracket=False) == "[00:00.55]"
+        )
+        assert (
+            format_timetag(555, tail_digits=1, use_angle_bracket=False) == "[00:00.5]"
+        )
+        # 5ms → 百分秒=0
+        assert format_timetag(5, tail_digits=2, use_angle_bracket=False) == "[00:00.00]"
 
     def test_large_timestamp(self) -> None:
         """测试大时间戳."""
         # 超过1小时
-        assert format_timetag(3600000) == "[60:00.000]"
-        assert format_timetag(3661000) == "[61:01.000]"
+        assert (
+            format_timetag(3600000, tail_digits=3, use_angle_bracket=False)
+            == "[60:00.000]"
+        )
+        assert (
+            format_timetag(3661000, tail_digits=3, use_angle_bracket=False)
+            == "[61:01.000]"
+        )
 
     def test_negative_timestamp_raises(self) -> None:
         """测试负时间戳应该抛出 ValueError."""
         with pytest.raises(ValueError, match="Negative timestamp is not allowed"):
-            format_timetag(-1)
+            format_timetag(-1, tail_digits=3, use_angle_bracket=False)
         with pytest.raises(ValueError, match="Negative timestamp is not allowed"):
-            format_timetag(-5000)
+            format_timetag(-5000, tail_digits=3, use_angle_bracket=False)
 
 
 class TestParseTimetag:

@@ -12,6 +12,9 @@ from .regex import TIMETAG_REGEX_STRICT, compile_regex
 
 logger = getLogger(__name__)
 
+MIN_TAIL_DIGITS: int = 1
+MAX_TAIL_DIGITS: int = 6
+
 __all__ = [
     "format_timetag",
     "parse_timetag",
@@ -21,25 +24,41 @@ __all__ = [
 def format_timetag(
     ms: int,
     *,
-    use_angle_bracket: bool = False,
-    tail_digits: int = 3,
+    use_angle_bracket: bool,
+    tail_digits: int,
 ) -> str:
     """将毫秒数格式化为 LRC 时间标签字符串.
 
     Args:
         ms: 毫秒时间戳 (允许为负, 调用方应自行保证语义合理) .
         use_angle_bracket: True 使用 ``<...>`` (逐字标签) , False 使用 ``[...]`` (行标签) .
-        tail_digits: 毫秒尾部补齐的位数, 默认为 3.
+        tail_digits: 毫秒尾部补齐的位数.
 
     Returns:
         形如 ``[01:23.456]`` 或 ``<01:23.456>`` 的字符串.
     """
     if ms < 0:
         raise ValueError(f"Negative timestamp is not allowed: {ms}ms")
+    if not MIN_TAIL_DIGITS <= tail_digits <= MAX_TAIL_DIGITS:
+        raise ValueError(
+            f"tail_digits must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {tail_digits}"
+        )
     minutes = ms // 60_000
     seconds = (ms % 60_000) // 1000
     millis = ms % 1000
-    body = f"{minutes:02d}:{seconds:02d}.{millis:0{tail_digits}d}"
+
+    if tail_digits > 3:
+        # 小数位数 > 3 时, 尾部需要填入更多精度位 (零填充),
+        # 例如 123ms / tail_digits=4 → tail=1230
+        tail = millis * 10 ** (tail_digits - 3)
+    elif tail_digits < 3:
+        # 小数位数 < 3 时, tail 分别表示十分秒 (1 位) 或百分秒 (2 位),
+        # 而非毫秒, 需要截断转换
+        tail = millis // 10 ** (3 - tail_digits)
+    else:
+        tail = millis
+
+    body = f"{minutes:02d}:{seconds:02d}.{tail:0{tail_digits}d}"
     return f"<{body}>" if use_angle_bracket else f"[{body}]"
 
 
@@ -60,8 +79,6 @@ def _match_to_ms(match: re.Match[str]) -> int:
 
     * 标准命名组 ``min`` / ``sec`` / ``tail`` (见 ``LINE_TIMETAG_REGEX`` 等) .
     * 前缀命名组 ``line_min`` / ``word_min`` 等 (见 ``GENERIC_TIMETAG_REGEX``) .
-
-    该函数是包内部工具, 不导出到公共 API.
     """
     groups = match.groupdict()
 

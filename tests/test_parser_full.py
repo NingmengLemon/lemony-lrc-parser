@@ -105,21 +105,25 @@ class TestParseLrcFillImplicitEnd:
 
     def test_fill_implicit_end(self) -> None:
         """测试填充隐式行尾时间."""
+        from lemony_lrc_parser.models import ParseOptions
+
         lrc = """[00:01.000]第一行
 [00:05.000]第二行
 [00:10.000]第三行
 """
-        lyrics = parse_lrc(lrc, fill_implicit_line_end=True)
+        lyrics = parse_lrc(lrc, options=ParseOptions(fill_implicit_line_end=True))
         assert lyrics.lines[0].end == 5000  # 下一行的开始
         assert lyrics.lines[1].end == 10000  # 下一行的开始
         assert lyrics.lines[2].end is None  # 最后一行没有下一行
 
     def test_no_fill_implicit_end(self) -> None:
         """测试不填充隐式行尾时间."""
+        from lemony_lrc_parser.models import ParseOptions
+
         lrc = """[00:01.000]第一行
 [00:05.000]第二行
 """
-        lyrics = parse_lrc(lrc, fill_implicit_line_end=False)
+        lyrics = parse_lrc(lrc, options=ParseOptions(fill_implicit_line_end=False))
         assert lyrics.lines[0].end is None
         assert lyrics.lines[1].end is None
 

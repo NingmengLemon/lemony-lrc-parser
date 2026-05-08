@@ -15,7 +15,7 @@ from copy import deepcopy
 from logging import getLogger
 
 from .exceptions import LyricsParserError
-from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord
+from .models import BasicLyricLine, LyricLine, Lyrics, LyricWord, ParseOptions
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
@@ -159,20 +159,24 @@ def _drop_nonmonotonic_times(
     return texts, times
 
 
-def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
+def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     """解析一份完整的 LRC 文本.
 
     Args:
         lrc: LRC 源文本.
-        fill_implicit_line_end: 若为 ``True``, 则对没有显式结束时间的行,
-            用紧随其后的行开始时间作为隐式结束时间.
+        options: 解析选项.
 
     Returns:
         组装完毕的 :class:`Lyrics` 对象.
+
+    Note:
+        offset 需通过 :meth:`Lyrics.apply_offset` 单独应用,
+        解析时不会自动偏移时间戳.
     """
     metadata: dict[str, str] = {}
     line_pool: dict[int, LyricLine] = {}
     last_tag: int | None = None
+    options = options or ParseOptions()
 
     for raw_line in lrc.strip().splitlines():
         line_str = raw_line.strip()
@@ -207,18 +211,20 @@ def parse_lrc(lrc: str, *, fill_implicit_line_end: bool = False) -> Lyrics:
 
         # 2b. 行首有时间标签但没有正文 → 占位符 (例如清空当前歌词)
         if not line:
-            t = time_tags[0]
-            if t not in line_pool:
-                line_pool[t] = LyricLine(start=t, content=[LyricWord(content="")])
+            for t in time_tags:
+                if t not in line_pool:
+                    line_pool[t] = LyricLine(start=t, content=[LyricWord(content="")])
             continue
 
         # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行
         _register_line_at_tags(line_pool, line, time_tags)
         last_tag = time_tags[0] if len(time_tags) == 1 else None
 
-    return _finalize_lyrics(
-        metadata, line_pool, fill_implicit_line_end=fill_implicit_line_end
+    lyrics = _finalize_lyrics(
+        metadata, line_pool, fill_implicit_line_end=options.fill_implicit_line_end
     )
+
+    return lyrics
 
 
 def _register_line_at_tags(
