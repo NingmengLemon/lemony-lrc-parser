@@ -22,7 +22,7 @@ Lemon-flavored LRC Parser for Python.
 
 推荐使用 [uv](https://docs.astral.sh/uv/).
 
-It's recommend to use [uv](https://docs.astral.sh/uv/).
+It's recommended to use [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv add lemony-lrc-parser
@@ -38,7 +38,7 @@ pip install lemony-lrc-parser
 
 可以使用 git 仓库来源来第一时间体验到最新最热的 ~~bug~~ feature.
 
-You can use git repo as source to catch the newest ~~bugs~~ features.
+You can use git repo as a source to catch the newest ~~bugs~~ features.
 
 ```bash
 uv add https://github.com/NingmengLemon/lemony-lrc-parser.git
@@ -177,25 +177,16 @@ combined = main.combine(translation, other_as_refline_only=False)
 from lemony_lrc_parser import Lyrics
 from lemony_lrc_parser.models import ParseOptions
 
+lrc_text = "[00:01.000]Hello\n[00:05.000]World\n"
+
 lyrics = Lyrics.loads(
     lrc_text,
     options=ParseOptions(
-        fill_implicit_line_end=False,       # 是否填充隐式行尾时间
+        fill_implicit_line_end=True,        # 是否填充隐式行尾时间
     ),
 )
-```
 
-##### Implicit Line End
-
-当歌词行没有显式结束时间时, 可以自动用下一行的开始时间填充:
-
-```python
-from lemony_lrc_parser import Lyrics
-from lemony_lrc_parser.models import ParseOptions
-
-lyrics = Lyrics.loads(lrc_text, options=ParseOptions(fill_implicit_line_end=True))
-
-# lyrics[0].end == lyrics[1].start
+# lyrics[0].end == lyrics[1].start == 5000
 ```
 
 #### Serialization Options
@@ -260,7 +251,7 @@ shifted = lyrics << 500   # 提前 500ms
 
 ## References
 
-[LRC Wikipedia](https://en.wikipedia.org/wiki/LRC_(file_format))
+[LRC Wikipedia](https://en.wikipedia.org/wiki/LRC_%28file_format%29)
 
 [SPL Specification](https://moriafly.com/standards/spl.html)
 
