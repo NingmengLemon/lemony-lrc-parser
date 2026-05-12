@@ -10,5 +10,5 @@ class TimestampUnderflowError(LyricsParserError):
     pass
 
 
-class ProgrammingError(LyricsParserError):
+class ProgrammingError(Exception):
     pass

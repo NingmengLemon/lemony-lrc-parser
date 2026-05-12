@@ -1,3 +1,9 @@
+"""时间偏移工具.
+
+提供 :func:`apply_delta` 对 :class:`.models.Lyrics` 内所有时间戳做原地偏移,
+以及 :func:`iter_all_timestamps` 迭代出所有时间戳用于下溢检测.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterator

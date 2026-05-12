@@ -35,9 +35,11 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
         for key, value in metadata.items():
             buffer.write(f"[{key}: {value}]\n")
 
+    sep = options.line_separator
+
     for idx, line in enumerate(lyrics.lines):
         if idx > 0:
-            buffer.write("\n")
+            buffer.write(sep)
 
         line_start = line.start
         if line_start is None:

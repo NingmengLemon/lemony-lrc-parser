@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
+from logging import getLogger
 from typing import overload
 
 from .exceptions import ProgrammingError, TimestampUnderflowError
@@ -48,12 +49,15 @@ class SerializationOptions:
         use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``. 在 foobar2000 等老式播放器上可能会有用.
         line_tag_decimal_length: 行标签毫秒位数 (默认 2).
         word_tag_decimal_length: 逐字标签毫秒位数 (默认 2).
+        line_separator: 行间分隔字符串 (默认 ``"\n"`` 表示行间插入空行).
+            设为 ``""`` 可省去空行.
     """
 
     with_metadata: bool = True
     use_bracket_for_byword_tag: bool = False
     line_tag_decimal_length: int = 2
     word_tag_decimal_length: int = 2
+    line_separator: str = "\n"
 
     def __post_init__(self) -> None:
         """校验参数合法性."""
@@ -165,14 +169,23 @@ class Lyrics:
         new.metadata.update(other.metadata)
         new.metadata.update(self.metadata)
 
+        logger = getLogger(__name__)
+
         pool: dict[int, LyricLine] = {}
         for line in self.lines:
             if line.start is None:
+                logger.warning(
+                    f"Skipping line without start time during combine: {line.text!r}"
+                )
                 continue
             # 深拷贝 self 的行, 避免污染原始对象
             pool[line.start] = deepcopy(line)
         for line in other.lines:
             if line.start is None:
+                logger.warning(
+                    f"Skipping other line without start time during combine: "
+                    f"{line.text!r}"
+                )
                 continue
             if line.start in pool:
                 # 深拷贝 other 的行内容, 避免共享引用

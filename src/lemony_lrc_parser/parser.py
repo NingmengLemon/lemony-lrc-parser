@@ -178,11 +178,16 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     last_tag: int | None = None
     options = options or ParseOptions()
 
+    line_tag_check = compile_regex(f"^{LINE_TIMETAG_REGEX}")
+
     for raw_line in lrc.strip().splitlines():
         line_str = raw_line.strip()
 
-        # 1. metadata 行 (如 [ti: ...]、[offset: 500])
-        if meta := _extract_metadata(line_str):
+        # 1. 若行首是时间标签则直接按歌词行处理, 避免 metadata 误匹配.
+        #    例如 "[00:01.000]This is by [ar:tist]" 不应被当作 metadata.
+        if (not line_tag_check.match(line_str)) and (
+            meta := _extract_metadata(line_str)
+        ):
             metadata.update(meta)
             logger.debug(f"Metadata line: {line_str!r}")
             continue

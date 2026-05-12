@@ -89,7 +89,7 @@ METATAG_REGEX: str = r"""
     (?:
         \[
             \s*
-            (?P<key>[a-zA-Z]{2,16})
+            (?P<key>[a-zA-Z][a-zA-Z0-9]{1,15})
             \s*
             :
             \s*
