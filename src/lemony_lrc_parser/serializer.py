@@ -58,6 +58,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
             _format_words(
                 line.content,
                 line_start=line_start,
+                line_end=line.end,
                 use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                 tail_digits=options.word_tag_decimal_length,
             )
@@ -85,6 +86,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
                 _format_words(
                     refline,
                     line_start=line_start,
+                    line_end=line.end,
                     use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                     tail_digits=options.word_tag_decimal_length,
                 )
@@ -98,6 +100,7 @@ def _format_words(
     words: BasicLyricLine,
     *,
     line_start: int | None,
+    line_end: int | None,
     use_bracket_for_byword_tag: bool,
     tail_digits: int,
 ) -> str:
@@ -109,9 +112,12 @@ def _format_words(
       输出过, 不重复.
     * ``idx > 0`` 且 ``words[idx - 1].end == word.start`` —— 与前一词的
       结束时间相接, 可省略前缀.
+    * 最后一个词元的 ``end`` 与 ``line_end`` 相同 —— 行尾时间已由调用方
+      输出, 不重复.
     """
     use_angle = not use_bracket_for_byword_tag
     parts: list[str] = []
+    last_idx = len(words) - 1
 
     for idx, word in enumerate(words):
         prefix = ""
@@ -133,11 +139,15 @@ def _format_words(
                 )
 
         if word.end is not None:
-            suffix = format_timetag(
-                word.end,
-                use_angle_bracket=use_angle,
-                tail_digits=tail_digits,
-            )
+            # 若与调用方输出的行尾标签重复则省略
+            if idx == last_idx and word.end == line_end:
+                pass
+            else:
+                suffix = format_timetag(
+                    word.end,
+                    use_angle_bracket=use_angle,
+                    tail_digits=tail_digits,
+                )
 
         parts.append(f"{prefix}{word.content}{suffix}")
 

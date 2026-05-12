@@ -163,8 +163,7 @@ class TestParseLrcWordLevel:
         assert line.content[1].end == 2000
         assert line.content[2].content == "行"
         assert line.content[2].start == 2000
-        # 最后一个 word 的 end 被提升到 line.end
-        assert line.content[2].end is None
+        assert line.content[2].end == 3000
         assert line.end == 3000
 
 

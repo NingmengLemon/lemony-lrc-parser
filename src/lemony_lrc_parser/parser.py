@@ -14,12 +14,13 @@ import re
 from copy import deepcopy
 from logging import getLogger
 
-from .exceptions import LyricsParserError
+from .exceptions import InvalidLyricsError, LyricsParserError
 from .models import BasicLyricLine, LyricLine, Lyrics, LyricToken, ParseOptions
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
     METATAG_REGEX,
+    WORD_TIMETAG_REGEX,
     compile_regex,
 )
 from .timetag import _match_to_ms
@@ -55,7 +56,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
         return None
 
     if len(sequence) % 2 != 1:
-        raise LyricsParserError(
+        raise InvalidLyricsError(
             f"Unexpected sequence length (expected odd): {len(sequence)}"
         )
 
@@ -71,7 +72,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
 
     diff = len(texts) - len(times)
     if diff != 1:
-        raise LyricsParserError(
+        raise InvalidLyricsError(
             f"text/time length mismatch: expected diff=1, got {diff}"
         )
 
@@ -88,7 +89,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
         result.append(word)
 
     if len(result) < 2:
-        raise LyricsParserError(
+        raise InvalidLyricsError(
             f"Expected at least 2 preprocessed elements, got {len(result)}"
         )
 
@@ -179,15 +180,19 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     options = options or ParseOptions()
 
     line_tag_check = compile_regex(f"^{LINE_TIMETAG_REGEX}")
+    word_tag_check = compile_regex(f"^{WORD_TIMETAG_REGEX}")
 
     for raw_line in lrc.strip().splitlines():
         line_str = raw_line.strip()
 
-        # 1. 若行首是时间标签则直接按歌词行处理, 避免 metadata 误匹配.
-        #    例如 "[00:01.000]This is by [ar:tist]" 不应被当作 metadata.
-        if (not line_tag_check.match(line_str)) and (
-            meta := _extract_metadata(line_str)
-        ):
+        # 1. 若行首是时间标签 (方括号或尖括号) 则直接按歌词行处理,
+        #    避免 metadata 误匹配.
+        #    例如 "[00:01.000]This is by [ar:tist]" 或
+        #    "<00:01.000>text [ar:Artist]" 不应被当作 metadata.
+        #    但是这其实是非标行为应该是 UB, 但是就这样写了.
+        if (
+            not line_tag_check.match(line_str) and not word_tag_check.match(line_str)
+        ) and (meta := _extract_metadata(line_str)):
             metadata.update(meta)
             logger.debug(f"Metadata line: {line_str!r}")
             continue
@@ -223,7 +228,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
 
         # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行
         _register_line_at_tags(line_pool, line, time_tags)
-        last_tag = time_tags[0] if len(time_tags) == 1 else None
+        last_tag = time_tags[0]
 
     lyrics = _finalize_lyrics(
         metadata, line_pool, fill_implicit_line_end=options.fill_implicit_line_end
@@ -267,10 +272,10 @@ def _finalize_lyrics(
     for idx, (line_start, line) in enumerate(sorted_items):
         line.start = line_start
 
-        # 把最后一个 word 的 end 提升为整行 end
+        # 把最后一个 word 的 end 提升为整行 end (保留词元原始值)
         last_word = line.content[-1]
         if last_word.end is not None:
-            line.end, last_word.end = last_word.end, None
+            line.end = last_word.end
 
         # 可选: 用下一行的开始时间作为当前行的隐式结束
         if fill_implicit_line_end and line.end is None and idx + 1 < len(sorted_items):

@@ -31,7 +31,7 @@ def format_timetag(
     """将毫秒数格式化为 LRC 时间标签字符串.
 
     Args:
-        ms: 毫秒时间戳 (允许为负, 调用方应自行保证语义合理) .
+        ms: 毫秒时间戳 (不允许为负) .
         use_angle_bracket: True 使用 ``<...>`` (逐字标签) , False 使用 ``[...]`` (行标签) .
         tail_digits: 毫秒尾部补齐的位数.
 
