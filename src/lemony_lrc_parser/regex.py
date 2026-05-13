@@ -12,7 +12,6 @@ __all__ = [
     "GENERIC_TIMETAG_REGEX",
     "LINE_TIMETAG_REGEX",
     "METATAG_REGEX",
-    "TIMETAG_REGEX_STRICT",
     "WORD_TIMETAG_REGEX",
     "compile_regex",
 ]
@@ -71,18 +70,6 @@ WORD_TIMETAG_REGEX: str = r"""
     )
 """
 
-#: 严格行时间标签 ``[mm:ss.xxx]``, 要求三段齐全、毫秒 1-3 位、无多余空白.
-TIMETAG_REGEX_STRICT: str = r"""
-    (?:
-        \[
-            (?P<min>\d{1,4})
-            :
-            (?P<sec>\d{1,2})
-            \.
-            (?P<tail>\d{1,3})
-        \]
-    )
-"""
 
 #: 元数据标签 ``[key: value]``, 命名组: ``key`` / ``value``.
 METATAG_REGEX: str = r"""
@@ -149,7 +136,6 @@ def _warmup_cache() -> None:
     for pattern in (
         LINE_TIMETAG_REGEX,
         WORD_TIMETAG_REGEX,
-        TIMETAG_REGEX_STRICT,
         METATAG_REGEX,
         GENERIC_TIMETAG_REGEX,
     ):

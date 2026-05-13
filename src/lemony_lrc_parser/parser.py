@@ -203,12 +203,17 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         time_tags, line_str = _split_leading_line_timetags(line_str)
         line = parse_line(line_str)
 
-        # 2a. 行首没有时间标签 → 要么是参考行, 要么是分隔符
+        # 2a. 行首没有方括号时间标签 → 要么是逐字行, 要么是参考行/分隔符
         if not time_tags:
             if not line:
                 # 空分隔行, 重置参考行锚点
                 last_tag = None
                 logger.debug("Reference line marker reset")
+                continue
+            # 若行首为逐字标签 (尖括号), 以第一个词元的 start 作为 line.start
+            if line[0].start is not None:
+                _register_line_at_tags(line_pool, line, [line[0].start])
+                last_tag = line[0].start
                 continue
             if last_tag is None:
                 logger.warning(

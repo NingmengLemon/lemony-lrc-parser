@@ -183,6 +183,40 @@ class TestParseLineEdgeCases:
         assert result[0].content == "   "
 
 
+class TestParseLrcWordTagOnlyLine:
+    """测试 B1: 仅含逐字标签 (尖括号) 的行应被解析为歌词行而非参考行."""
+
+    def test_word_tag_only_line_as_lyric(self) -> None:
+        """行首为尖括号逐字标签时, 以第一个词元 start 作为 line.start."""
+        lrc = """<00:01.000>hello<00:02.000>world<00:03.000>
+"""
+        lyrics = parse_lrc(lrc)
+        # 应该有一个行, start 来自第一个 word tag = 1000ms
+        assert len(lyrics.lines) == 1
+        line = lyrics.lines[0]
+        assert line.start == 1000
+        assert len(line.content) == 2
+        assert line.content[0].content == "hello"
+        assert line.content[0].start == 1000
+        assert line.content[0].end == 2000
+        assert line.content[1].content == "world"
+        assert line.content[1].start == 2000
+        assert line.content[1].end == 3000
+
+    def test_word_tag_only_line_after_normal_line(self) -> None:
+        """逐字行跟在正常行后面, 不应成为参考行."""
+        lrc = """[00:01.000]first
+<00:02.000>second<00:03.000>line<00:04.000>
+"""
+        lyrics = parse_lrc(lrc)
+        assert len(lyrics.lines) == 2
+        assert lyrics.lines[0].text == "first"
+        assert lyrics.lines[1].text == "secondline"
+        assert lyrics.lines[1].start == 2000
+        # 不应有额外参考行
+        assert len(lyrics.lines[0].reference_lines) == 0
+
+
 class TestParseLrcSorting:
     """测试歌词行排序."""
 

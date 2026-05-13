@@ -86,7 +86,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
                 _format_words(
                     refline,
                     line_start=line_start,
-                    line_end=line.end,
+                    line_end=None,
                     use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
                     tail_digits=options.word_tag_decimal_length,
                 )

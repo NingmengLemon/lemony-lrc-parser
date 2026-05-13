@@ -114,14 +114,23 @@ class TestParseTimetag:
         """测试无效格式应该返回 None."""
         # 尖括号 (parse_timetag 只接受方括号)
         assert parse_timetag("<00:05.000>") is None
-        # 缺少毫秒
-        assert parse_timetag("[00:05]") is None
         # 缺少方括号
         assert parse_timetag("00:05.000") is None
         # 空字符串
         assert parse_timetag("") is None
         # 随机文本
         assert parse_timetag("not a timestamp") is None
+
+    def test_loose_formats(self) -> None:
+        """测试宽松格式 (与解析器行为一致)."""
+        # 缺少毫秒
+        assert parse_timetag("[00:05]") == 5000
+        # 带空格
+        assert parse_timetag("[ 00:05 ]") == 5000
+        # 1 位毫秒 → 补齐到 3 位
+        assert parse_timetag("[00:00.1]") == 100
+        # 6 位毫秒 → 截断到 3 位
+        assert parse_timetag("[00:00.123456]") == 123
 
     def test_edge_cases(self) -> None:
         """测试边界情况."""

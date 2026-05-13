@@ -9,7 +9,7 @@ import re
 from logging import getLogger
 
 from .exceptions import ProgrammingError, TimestampUnderflowError
-from .regex import TIMETAG_REGEX_STRICT, compile_regex
+from .regex import LINE_TIMETAG_REGEX, compile_regex
 
 logger = getLogger(__name__)
 
@@ -64,12 +64,15 @@ def format_timetag(
 
 
 def parse_timetag(s: str) -> int | None:
-    """解析一个严格格式的时间标签字符串, 返回对应毫秒数.
+    """解析一个时间标签字符串, 返回对应毫秒数.
 
-    严格格式要求形如 ``[mm:ss.xxx]`` (方括号、三段齐全、毫秒 1-3 位) .
+    支持 ``[mm:ss.xxx]`` (三段齐全) 或 ``[mm:ss]`` (省略毫秒部分) 格式,
+    与解析器的行为保持一致. 也可解析 ``<mm:ss.xxx>`` 等通用格式.
     解析失败返回 ``None``.
     """
-    match = compile_regex(rf"^{TIMETAG_REGEX_STRICT}$").match(s)
+    # 使用 LINE_TIMETAG_REGEX (而非 TIMETAG_REGEX_STRICT) 以与解析器行为一致.
+    # 前者允许省略毫秒、1-6 位尾数、行内空白.
+    match = compile_regex(rf"^{LINE_TIMETAG_REGEX}$").match(s)
     return _match_to_ms(match) if match else None
 
 
