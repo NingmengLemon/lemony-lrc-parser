@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from logging import getLogger
 
 from .exceptions import InvalidLyricsError, LyricsParserError
@@ -68,7 +67,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
             raise LyricsParserError(
                 "Inconsistent state: single text segment should not have time tags"
             )
-        return [LyricToken(content=texts[0])]
+        return BasicLyricLine([LyricToken(content=texts[0])])
 
     diff = len(texts) - len(times)
     if diff != 1:
@@ -78,7 +77,7 @@ def parse_line(line: str) -> BasicLyricLine | None:
 
     texts, times = _drop_nonmonotonic_times(texts, times)
 
-    result: BasicLyricLine = []
+    result = BasicLyricLine()
     last_idx = len(texts) - 1
     for idx, content in enumerate(texts):
         word = LyricToken(content=content)
@@ -228,7 +227,9 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         if not line:
             for t in time_tags:
                 if t not in line_pool:
-                    line_pool[t] = LyricLine(start=t, content=[LyricToken(content="")])
+                    line_pool[t] = LyricLine(
+                        start=t, content=BasicLyricLine([LyricToken(content="")])
+                    )
             continue
 
         # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行
@@ -260,8 +261,8 @@ def _register_line_at_tags(
             # 同一个时间点已有行 → 当前行变为参考行
             line_pool[tag].reference_lines.append(line)
         else:
-            # 深拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricToken 实例
-            line_pool[tag] = LyricLine(content=[deepcopy(word) for word in line])
+            # 拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricToken 实例
+            line_pool[tag] = LyricLine(start=tag, content=line.copy())
 
 
 def _finalize_lyrics(

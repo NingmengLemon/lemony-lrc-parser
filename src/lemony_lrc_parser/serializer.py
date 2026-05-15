@@ -7,12 +7,9 @@
 from __future__ import annotations
 
 from io import StringIO
-from logging import getLogger
 
 from .models import BasicLyricLine, Lyrics, SerializationOptions
 from .timetag import format_timetag
-
-logger = getLogger(__name__)
 
 __all__ = [
     "dump_lrc",
@@ -42,9 +39,6 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
             buffer.write(sep)
 
         line_start = line.start
-        if line_start is None:
-            logger.warning(f"Skipping line with unknown start time: {line}")
-            continue
 
         # 写主行
         buffer.write(
@@ -55,7 +49,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
             )
         )
         buffer.write(
-            _format_words(
+            _format_line(
                 line.content,
                 line_start=line_start,
                 line_end=line.end,
@@ -83,7 +77,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
                 )
             )
             buffer.write(
-                _format_words(
+                _format_line(
                     refline,
                     line_start=line_start,
                     line_end=None,
@@ -96,8 +90,8 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
     return buffer.getvalue()
 
 
-def _format_words(
-    words: BasicLyricLine,
+def _format_line(
+    line: BasicLyricLine,
     *,
     line_start: int | None,
     line_end: int | None,
@@ -117,9 +111,9 @@ def _format_words(
     """
     use_angle = not use_bracket_for_byword_tag
     parts: list[str] = []
-    last_idx = len(words) - 1
+    last_idx = len(line) - 1
 
-    for idx, word in enumerate(words):
+    for idx, word in enumerate(line):
         prefix = ""
         suffix = ""
 
@@ -131,7 +125,7 @@ def _format_words(
                         use_angle_bracket=use_angle,
                         tail_digits=tail_digits,
                     )
-            elif words[idx - 1].end != word.start:
+            elif line[idx - 1].end != word.start:
                 prefix = format_timetag(
                     word.start,
                     use_angle_bracket=use_angle,

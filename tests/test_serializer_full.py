@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from lemony_lrc_parser.models import LyricLine, Lyrics, LyricToken
+from lemony_lrc_parser.models import BasicLyricLine, LyricLine, Lyrics, LyricToken
 from lemony_lrc_parser.serializer import dump_lrc
 
 
@@ -16,9 +14,9 @@ class TestDumpLrcReferenceLines:
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
-            content=[LyricToken(content="Main", start=1000)],
+            content=BasicLyricLine([LyricToken(content="Main", start=1000)]),
             reference_lines=[
-                [LyricToken(content="翻译", start=1000)],
+                BasicLyricLine([LyricToken(content="翻译", start=1000)]),
             ],
         )
         lyrics.lines = [line]
@@ -32,10 +30,10 @@ class TestDumpLrcReferenceLines:
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
-            content=[LyricToken(content="Main")],
+            content=BasicLyricLine([LyricToken(content="Main")]),
             reference_lines=[
-                [LyricToken(content="翻译1")],
-                [LyricToken(content="翻译2")],
+                BasicLyricLine([LyricToken(content="翻译1")]),
+                BasicLyricLine([LyricToken(content="翻译2")]),
             ],
         )
         lyrics.lines = [line]
@@ -54,12 +52,14 @@ class TestDumpLrcReferenceLines:
         lyrics = Lyrics()
         line = LyricLine(
             start=1000,
-            content=[LyricToken(content="Main")],
+            content=BasicLyricLine([LyricToken(content="Main")]),
             reference_lines=[
-                [
-                    LyricToken(content="逐", start=1000, end=1100),
-                    LyricToken(content="字", start=1100, end=1200),
-                ],
+                BasicLyricLine(
+                    [
+                        LyricToken(content="逐", start=1000, end=1100),
+                        LyricToken(content="字", start=1100, end=1200),
+                    ]
+                ),
             ],
         )
         lyrics.lines = [line]
@@ -72,27 +72,6 @@ class TestDumpLrcReferenceLines:
         # word_tag_decimal_length=2 (默认): 100ms → 百分秒 10
         assert "[00:01.00]逐<00:01.10>字<00:01.20>" in result
         assert "<00:01.10>" in result
-
-
-class TestDumpLrcLineWithoutStart:
-    """测试没有 start 的行处理."""
-
-    def test_skip_line_without_start(self, caplog: pytest.LogCaptureFixture) -> None:
-        """测试跳过没有开始时间的行."""
-        import logging
-
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(start=None, content=[LyricToken(content="No start")]),
-            LyricLine(start=1000, content=[LyricToken(content="Has start")]),
-        ]
-
-        with caplog.at_level(logging.WARNING):
-            result = dump_lrc(lyrics)
-
-        assert "Skipping line with unknown start time" in caplog.text
-        assert "No start" not in result
-        assert "Has start" in result
 
 
 class TestDumpLrcEmptyLyrics:
@@ -126,10 +105,12 @@ class TestDumpLrcBywordFormatting:
         lyrics.lines = [
             LyricLine(
                 start=1000,
-                content=[
-                    LyricToken(content="逐", start=1000, end=1100),
-                    LyricToken(content="字", start=1100, end=1200),
-                ],
+                content=BasicLyricLine(
+                    [
+                        LyricToken(content="逐", start=1000, end=1100),
+                        LyricToken(content="字", start=1100, end=1200),
+                    ]
+                ),
             ),
         ]
 
@@ -150,10 +131,12 @@ class TestDumpLrcBywordFormatting:
         lyrics.lines = [
             LyricLine(
                 start=1000,
-                content=[
-                    LyricToken(content="逐", start=1000, end=1100),
-                    LyricToken(content="字", start=1100, end=1200),
-                ],
+                content=BasicLyricLine(
+                    [
+                        LyricToken(content="逐", start=1000, end=1100),
+                        LyricToken(content="字", start=1100, end=1200),
+                    ]
+                ),
             ),
         ]
 
@@ -173,10 +156,12 @@ class TestDumpLrcBywordFormatting:
         lyrics.lines = [
             LyricLine(
                 start=1000,
-                content=[
-                    LyricToken(content="第", start=1000, end=1100),
-                    LyricToken(content="一", start=1100, end=1200),
-                ],
+                content=BasicLyricLine(
+                    [
+                        LyricToken(content="第", start=1000, end=1100),
+                        LyricToken(content="一", start=1100, end=1200),
+                    ]
+                ),
             ),
         ]
 
@@ -190,11 +175,13 @@ class TestDumpLrcBywordFormatting:
         lyrics.lines = [
             LyricLine(
                 start=1000,
-                content=[
-                    LyricToken(content="第", start=1000, end=1100),
-                    LyricToken(content="一", start=1100, end=1200),
-                    LyricToken(content="个", start=1200, end=1300),
-                ],
+                content=BasicLyricLine(
+                    [
+                        LyricToken(content="第", start=1000, end=1100),
+                        LyricToken(content="一", start=1100, end=1200),
+                        LyricToken(content="个", start=1200, end=1300),
+                    ]
+                ),
             ),
         ]
 
@@ -225,7 +212,7 @@ class TestDumpLrcNewOptions:
             LyricLine(
                 start=5005,  # 5 毫秒 → 百分秒 0
                 end=5050,  # 50 毫秒 → 百分秒 5
-                content=[LyricToken(content="Test")],
+                content=BasicLyricLine([LyricToken(content="Test")]),
             ),
         ]
         result = dump_lrc(
@@ -247,10 +234,12 @@ class TestDumpLrcNewOptions:
         lyrics.lines = [
             LyricLine(
                 start=1005,  # 5 毫秒 → 百分秒 0
-                content=[
-                    LyricToken(content="逐", start=1005, end=1055),
-                    LyricToken(content="字", start=1055, end=1500),
-                ],
+                content=BasicLyricLine(
+                    [
+                        LyricToken(content="逐", start=1005, end=1055),
+                        LyricToken(content="字", start=1055, end=1500),
+                    ]
+                ),
             ),
         ]
         result = dump_lrc(

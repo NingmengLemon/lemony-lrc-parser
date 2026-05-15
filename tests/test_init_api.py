@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import lemony_lrc_parser as llp
 from lemony_lrc_parser import dumps, loads
-from lemony_lrc_parser.models import LyricLine, Lyrics, LyricToken
+from lemony_lrc_parser.models import BasicLyricLine, LyricLine, Lyrics, LyricToken
 
 
 class TestLoadsFunction:
@@ -47,7 +47,9 @@ class TestDumpsFunction:
         """测试基本的 dumps 功能."""
         lyrics = Lyrics()
         lyrics.lines = [
-            LyricLine(start=1000, content=[LyricToken(content="Hello")]),
+            LyricLine(
+                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
+            ),
         ]
         result = dumps(lyrics)
         assert "[00:01.00]Hello" in result
@@ -61,7 +63,9 @@ class TestDumpsFunction:
         lyrics.lines = [
             LyricLine(
                 start=1000,
-                content=[LyricToken(content="逐", start=1000, end=1100)],
+                content=BasicLyricLine(
+                    [LyricToken(content="逐", start=1000, end=1100)]
+                ),
             ),
         ]
         result = dumps(
@@ -78,7 +82,7 @@ class TestDumpsFunction:
         """测试 dumps 等价于 lyrics.dumps."""
         lyrics = Lyrics()
         lyrics.lines = [
-            LyricLine(start=1000, content=[LyricToken(content="Test")]),
+            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="Test")])),
         ]
         result1 = dumps(lyrics)
         result2 = lyrics.dumps()
@@ -103,11 +107,13 @@ class TestModuleImports:
         # 主 API
         assert hasattr(llp, "loads")
         assert hasattr(llp, "dumps")
+        assert hasattr(llp, "load")
+        assert hasattr(llp, "dump")
 
         # 低层 API
-        assert hasattr(llp, "dump_lrc")
         assert hasattr(llp, "parse_line")
         assert hasattr(llp, "parse_lrc")
+        # dump_lrc 已移至 serializer 子模块, 不再从包顶层导出
 
         # 时间标签工具
         assert hasattr(llp, "format_timetag")

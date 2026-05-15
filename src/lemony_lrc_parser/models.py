@@ -10,11 +10,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from copy import deepcopy
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from logging import getLogger
-from typing import overload
+from typing import TextIO, overload
 
 from .exceptions import ProgrammingError, TimestampUnderflowError
 
@@ -85,11 +83,39 @@ class LyricToken:
     start: int | None = None
     end: int | None = None
 
+    def __str__(self) -> str:
+        return self.content
+
+    def __repr__(self) -> str:
+        return f"LyricToken({self.content!r}, {self.start!r}, {self.end!r})"
+
+    def __contains__(self, key: object) -> bool:
+        if isinstance(key, str):
+            return key in self.content
+        return False
+
+    def copy(self) -> LyricToken:
+        return LyricToken(content=self.content, start=self.start, end=self.end)
+
 
 #: 一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
 #:
 #: 对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
-BasicLyricLine = list[LyricToken]
+class BasicLyricLine(list[LyricToken]):
+    def __contains__(self, key: object) -> bool:
+        if isinstance(key, str):
+            return key in self.text
+        return super().__contains__(key)
+
+    def __str__(self) -> str:
+        return self.text
+
+    @property
+    def text(self) -> str:
+        return "".join(token.content for token in self)
+
+    def copy(self) -> BasicLyricLine:
+        return BasicLyricLine([token.copy() for token in self])
 
 
 @dataclass
@@ -103,15 +129,41 @@ class LyricLine:
         reference_lines: 参考行列表, 常用于存放翻译/音译等辅助行.
     """
 
-    start: int | None = None
+    start: int
     end: int | None = None
-    content: BasicLyricLine = field(default_factory=list)
+    content: BasicLyricLine = field(default_factory=BasicLyricLine)
     reference_lines: list[BasicLyricLine] = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.start is None:
+            raise TypeError("LyricLine.start cannot be None")
+
+    def copy(self) -> "LyricLine":
+        return LyricLine(
+            start=self.start,
+            end=self.end,
+            content=self.content.copy(),
+            reference_lines=[rl.copy() for rl in self.reference_lines],
+        )
 
     @property
     def text(self) -> str:
-        """拼接整行主语言的纯文本 (便于日志与简单展示) ."""
-        return "".join(word.content for word in self.content)
+        return self.content.text
+
+    def __len__(self) -> int:
+        return len(self.content)
+
+    def __iter__(self) -> Iterator[LyricToken]:
+        return iter(self.content)
+
+    @overload
+    def __getitem__(self, index: int) -> LyricToken: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[LyricToken]: ...
+
+    def __getitem__(self, index: int | slice) -> LyricToken | list[LyricToken]:
+        return self.content[index]
 
 
 @dataclass
@@ -149,14 +201,17 @@ class Lyrics:
             return NotImplemented
         return self.combine(other)
 
-    def combine(self, other: Lyrics, *, other_as_refline_only: bool = True) -> Lyrics:
+    def combine(
+        self, other: Lyrics | Iterable[LyricLine], *, other_as_refline_only: bool = True
+    ) -> Lyrics:
         """将另一份 :class:`Lyrics` 合并进当前对象, 返回新实例.
 
         常见用途是把翻译版本合并到主歌词: 翻译的每一行会被挂在 ``self`` 中
         同 ``start`` 行的 :attr:`LyricLine.reference_lines` 列表里.
 
         Args:
-            other: 要合并进来的另一份歌词.
+            other: 要合并进来的另一份 :class:`Lyrics` 或
+                :class:`LyricLine` 可迭代对象.
             other_as_refline_only: 若为 ``True`` (默认) , ``other`` 中在
                 ``self`` 里找不到对应时间点的行会被丢弃; 若为 ``False``,
                 这些行会被保留为新行.
@@ -166,38 +221,49 @@ class Lyrics:
         """
         new = Lyrics()
         # metadata 以 self 为准, other 作为补充
-        new.metadata.update(other.metadata)
+        if isinstance(other, Lyrics):
+            new.metadata.update(other.metadata)
         new.metadata.update(self.metadata)
-
-        logger = getLogger(__name__)
 
         pool: dict[int, LyricLine] = {}
         for line in self.lines:
-            if line.start is None:
-                logger.warning(
-                    f"Skipping line without start time during combine: {line.text!r}"
-                )
-                continue
-            # 深拷贝 self 的行, 避免污染原始对象
-            pool[line.start] = deepcopy(line)
-        for line in other.lines:
-            if line.start is None:
-                logger.warning(
-                    f"Skipping other line without start time during combine: "
-                    f"{line.text!r}"
-                )
-                continue
+            pool[line.start] = line.copy()
+        for line in other:
             if line.start in pool:
-                # 深拷贝 other 的行内容, 避免共享引用
-                pool[line.start].reference_lines.append(deepcopy(line.content))
+                pool[line.start].reference_lines.append(line.content.copy())
                 pool[line.start].reference_lines.extend(
-                    deepcopy(rl) for rl in line.reference_lines
+                    rl.copy() for rl in line.reference_lines
                 )
             elif not other_as_refline_only:
-                pool[line.start] = deepcopy(line)
+                pool[line.start] = line.copy()
 
-        new.lines = sorted(pool.values(), key=lambda line: line.start or 0)
+        new.lines = sorted(pool.values(), key=lambda line: line.start)
         return new
+
+    def copy(self) -> Lyrics:
+        return Lyrics(
+            lines=[line.copy() for line in self.lines], metadata=self.metadata.copy()
+        )
+
+    @classmethod
+    def load(cls, fp: TextIO, *, options: ParseOptions | None = None) -> "Lyrics":
+        """从文件加载 LRC 内容.
+
+        Args:
+            fp: LRC 文件指针.
+            options: 解析选项.
+        """
+        parsed = cls.loads(fp.read(), options=options)
+        return parsed
+
+    def dump(self, fp: TextIO, *, options: SerializationOptions | None = None) -> None:
+        """将当前对象写入文件.
+
+        Args:
+            fp: LRC 文件指针.
+            options: 序列化选项.
+        """
+        fp.write(self.dumps(options=options))
 
     @classmethod
     def loads(cls, s: str, *, options: ParseOptions | None = None) -> Lyrics:
@@ -244,7 +310,7 @@ class Lyrics:
         from .offset import apply_delta, iter_all_timestamps
 
         if ms == 0:
-            return deepcopy(self)
+            return self.copy()
 
         # 先做下溢检测, 避免异常路径上的 deepcopy 浪费
         all_times = list(iter_all_timestamps(self))
@@ -256,7 +322,7 @@ class Lyrics:
                     f"timestamp {min_time}ms negative"
                 )
 
-        result = deepcopy(self)
+        result = self.copy()
         apply_delta(result, ms)
         return result
 

@@ -1,6 +1,6 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.3.1"
+version = "0.4.0a0"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."
@@ -38,6 +38,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "coverage>=7.10.7",
+    "ipykernel>=6.31.0",
     "mypy>=1.19.1",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
