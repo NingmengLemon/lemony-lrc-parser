@@ -10,9 +10,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+import sys
+from collections import UserList
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import TextIO, overload
+from typing import (
+    Any,
+    SupportsIndex,
+    TextIO,
+    TypedDict,
+    overload,
+)
+
+from typing_extensions import Self, override
 
 from .exceptions import ProgrammingError, TimestampUnderflowError
 
@@ -24,6 +34,7 @@ __all__ = [
     "ParseOptions",
     "SerializationOptions",
 ]
+_DC_ARGS_SLOTS = {"slots": True} if sys.version_info >= (3, 10) else {}
 
 
 @dataclass
@@ -69,7 +80,7 @@ class SerializationOptions:
                 )
 
 
-@dataclass
+@dataclass(**_DC_ARGS_SLOTS)
 class LyricToken:
     """一个歌词词元 (可以是一个字、一个词, 或整行纯文本) .
 
@@ -87,7 +98,7 @@ class LyricToken:
         return self.content
 
     def __repr__(self) -> str:
-        return f"LyricToken({self.content!r}, {self.start!r}, {self.end!r})"
+        return f"LyricToken({self.content!r}, [{self.start!r}: {self.end!r}])"
 
     def __contains__(self, key: object) -> bool:
         if isinstance(key, str):
@@ -97,15 +108,31 @@ class LyricToken:
     def copy(self) -> LyricToken:
         return LyricToken(content=self.content, start=self.start, end=self.end)
 
+    def to_dict(self) -> _LyricTokenDict:
+        return _LyricTokenDict(content=self.content, start=self.start, end=self.end)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LyricToken":
+        return cls(
+            content=data.get("content", ""),
+            start=data["start"],
+            end=data.get("end"),
+        )
+
 
 #: 一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
 #:
 #: 对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
-class BasicLyricLine(list[LyricToken]):
-    def __contains__(self, key: object) -> bool:
-        if isinstance(key, str):
-            return key in self.text
-        return super().__contains__(key)
+class BasicLyricLine(UserList[LyricToken]):
+    __slots__ = ()
+
+    def __init__(self, tokens: Iterable[LyricToken] | None = None) -> None:
+        super().__init__((t.copy() for t in tokens) if tokens is not None else None)
+
+    def __contains__(self, item: object) -> bool:
+        if isinstance(item, str):
+            return item in self.text
+        return super().__contains__(item)
 
     def __str__(self) -> str:
         return self.text
@@ -115,10 +142,17 @@ class BasicLyricLine(list[LyricToken]):
         return "".join(token.content for token in self)
 
     def copy(self) -> BasicLyricLine:
-        return BasicLyricLine([token.copy() for token in self])
+        return BasicLyricLine(self)
+
+    def to_dict(self) -> list[_LyricTokenDict]:
+        return [token.to_dict() for token in self]
+
+    @classmethod
+    def from_dict(cls, data: list[dict[str, Any]]) -> BasicLyricLine:
+        return BasicLyricLine([LyricToken.from_dict(token_data) for token_data in data])
 
 
-@dataclass
+@dataclass(**_DC_ARGS_SLOTS)
 class LyricLine:
     """一行歌词.
 
@@ -160,14 +194,32 @@ class LyricLine:
     def __getitem__(self, index: int) -> LyricToken: ...
 
     @overload
-    def __getitem__(self, index: slice) -> list[LyricToken]: ...
+    def __getitem__(self, index: slice) -> BasicLyricLine: ...
 
-    def __getitem__(self, index: int | slice) -> LyricToken | list[LyricToken]:
+    def __getitem__(self, index: int | slice) -> LyricToken | BasicLyricLine:
         return self.content[index]
 
+    def to_dict(self) -> _LyricLineDict:
+        return _LyricLineDict(
+            start=self.start,
+            end=self.end,
+            content=self.content.to_dict(),
+            reference_lines=[rl.to_dict() for rl in self.reference_lines],
+        )
 
-@dataclass
-class Lyrics:
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LyricLine":
+        return cls(
+            start=data["start"],
+            end=data.get("end"),
+            content=BasicLyricLine.from_dict(data["content"]),
+            reference_lines=[
+                BasicLyricLine.from_dict(rl) for rl in data.get("reference_lines", [])
+            ],
+        )
+
+
+class Lyrics(UserList[LyricLine]):
     """一份完整的歌词.
 
     Attributes:
@@ -178,28 +230,83 @@ class Lyrics:
     ``len(lyrics)`` 取行数, 或通过下标/切片访问具体行.
     """
 
-    lines: list[LyricLine] = field(default_factory=list)
-    metadata: dict[str, str] = field(default_factory=dict)
+    __slots__ = ("metadata",)
 
-    def __iter__(self) -> Iterator[LyricLine]:
-        return iter(self.lines)
+    def __init__(
+        self,
+        lines: Iterable[LyricLine] | None = None,
+        *,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__((i.copy() for i in lines) if lines is not None else None)
+        self.metadata: dict[str, str] = metadata.copy() if metadata is not None else {}
 
-    def __len__(self) -> int:
-        return len(self.lines)
+    @property
+    def lines(self) -> Self:
+        return self
 
-    @overload
-    def __getitem__(self, index: int) -> LyricLine: ...
+    @lines.setter
+    def lines(self, value: Iterable[LyricLine]) -> None:
+        self.clear()
+        self.extend((t.copy() for t in value))
 
-    @overload
-    def __getitem__(self, index: slice) -> list[LyricLine]: ...
-
-    def __getitem__(self, index: int | slice) -> LyricLine | list[LyricLine]:
-        return self.lines[index]
-
-    def __add__(self, other: Lyrics) -> Lyrics:
+    @override
+    def __add__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
         if not isinstance(other, Lyrics):
             return NotImplemented
         return self.combine(other)
+
+    @override
+    def __iadd__(self, value: Lyrics) -> Self:  # type: ignore[override]
+        if not isinstance(value, Lyrics):
+            return NotImplemented
+        self.combine_inplace(value)
+        return self
+
+    @override
+    def __radd__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
+        if not isinstance(other, Lyrics):
+            return NotImplemented
+        return self.combine(other)
+
+    @override
+    def __mul__(self, value: SupportsIndex) -> list[LyricLine]:  # type: ignore[override]
+        return NotImplemented
+
+    @override
+    def __rmul__(self, value: SupportsIndex) -> list[LyricLine]:  # type: ignore[override]
+        return NotImplemented
+
+    @override
+    def __imul__(self, value: SupportsIndex) -> Self:
+        return NotImplemented
+
+    def combine_inplace(
+        self,
+        other: Lyrics | Iterable[LyricLine],
+        *,
+        other_as_refline_only: bool = True,
+    ) -> None:
+        # metadata 以 self 为准, other 作为补充
+        if isinstance(other, Lyrics):
+            for k, v in other.metadata.items():
+                self.metadata.setdefault(k, v)
+        elif isinstance(other, Iterable):
+            other = [lyline for lyline in other if isinstance(lyline, LyricLine)]
+
+        pool: dict[int, LyricLine] = {}
+        for line in self:
+            pool[line.start] = line
+        for line in other:
+            if line.start in pool:
+                pool[line.start].reference_lines.append(line.content.copy())
+                pool[line.start].reference_lines.extend(
+                    rl.copy() for rl in line.reference_lines
+                )
+            elif not other_as_refline_only:
+                pool[line.start] = line.copy()
+
+        self.lines = sorted(pool.values(), key=lambda line: line.start)
 
     def combine(
         self, other: Lyrics | Iterable[LyricLine], *, other_as_refline_only: bool = True
@@ -219,31 +326,12 @@ class Lyrics:
         Returns:
             合并后的新 :class:`Lyrics` 对象; ``self`` 与 ``other`` 均不受影响.
         """
-        new = Lyrics()
-        # metadata 以 self 为准, other 作为补充
-        if isinstance(other, Lyrics):
-            new.metadata.update(other.metadata)
-        new.metadata.update(self.metadata)
-
-        pool: dict[int, LyricLine] = {}
-        for line in self.lines:
-            pool[line.start] = line.copy()
-        for line in other:
-            if line.start in pool:
-                pool[line.start].reference_lines.append(line.content.copy())
-                pool[line.start].reference_lines.extend(
-                    rl.copy() for rl in line.reference_lines
-                )
-            elif not other_as_refline_only:
-                pool[line.start] = line.copy()
-
-        new.lines = sorted(pool.values(), key=lambda line: line.start)
+        new = self.copy()
+        new.combine_inplace(other, other_as_refline_only=other_as_refline_only)
         return new
 
     def copy(self) -> Lyrics:
-        return Lyrics(
-            lines=[line.copy() for line in self.lines], metadata=self.metadata.copy()
-        )
+        return Lyrics(self, metadata=self.metadata)
 
     @classmethod
     def load(cls, fp: TextIO, *, options: ParseOptions | None = None) -> "Lyrics":
@@ -346,3 +434,38 @@ class Lyrics:
 
     def __str__(self) -> str:
         return self.dumps()
+
+    def to_dict(self) -> _LyricsDict:
+        return _LyricsDict(
+            metadata=self.metadata.copy(),
+            lines=[line.to_dict() for line in self.lines],
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Lyrics":
+        metadata = data.get("metadata")
+        metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+        return cls(
+            lines=[
+                LyricLine.from_dict(line_data) for line_data in data.get("lines", [])
+            ],
+            metadata=metadata,
+        )
+
+
+class _LyricTokenDict(TypedDict):
+    start: int | None
+    end: int | None
+    content: str
+
+
+class _LyricLineDict(TypedDict):
+    start: int
+    end: int | None
+    content: list[_LyricTokenDict]
+    reference_lines: list[list[_LyricTokenDict]]
+
+
+class _LyricsDict(TypedDict):
+    metadata: dict[str, str]
+    lines: list[_LyricLineDict]

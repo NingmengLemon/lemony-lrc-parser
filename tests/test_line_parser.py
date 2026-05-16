@@ -1,8 +1,10 @@
+from collections.abc import Sequence
+
 from lemony_lrc_parser.models import LyricToken
 from lemony_lrc_parser.parser import parse_line
 
 
-def lyric_word_eq(a: list[LyricToken], b: list[LyricToken]) -> bool:
+def lyric_word_eq(a: Sequence[LyricToken], b: Sequence[LyricToken]) -> bool:
     if len(a) != len(b):
         return False
     for j, k in zip(a, b):
