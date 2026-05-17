@@ -39,7 +39,16 @@ __all__ = [
     "ParseOptions",
     "SerializationOptions",
 ]
-_DC_ARGS_SLOTS = {"slots": True} if sys.version_info >= (3, 10) else {}
+_DC_ARGS_SLOTS = (
+    {
+        "slots": True,
+        "weakref_slot": True,
+    }
+    if sys.version_info >= (3, 11)
+    else {"slots": True}
+    if sys.version_info >= (3, 10)
+    else {}
+)
 
 
 @dataclass
@@ -101,9 +110,6 @@ class LyricToken:
 
     def __str__(self) -> str:
         return self.content
-
-    def __repr__(self) -> str:
-        return f"LyricToken({self.content!r}, [{self.start!r}: {self.end!r}])"
 
     def __contains__(self, key: object) -> bool:
         if isinstance(key, str):
