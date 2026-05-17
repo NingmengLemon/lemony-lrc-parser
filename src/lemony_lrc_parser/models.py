@@ -26,6 +26,11 @@ from typing_extensions import Self, override
 
 from .exceptions import ProgrammingError, TimestampUnderflowError
 
+if sys.version_info >= (3, 10):
+    from types import NotImplementedType
+else:
+    NotImplementedType = type(NotImplemented)
+
 __all__ = [
     "BasicLyricLine",
     "LyricLine",
@@ -251,34 +256,34 @@ class Lyrics(UserList[LyricLine]):
         self.extend((t.copy() for t in value))
 
     @override
-    def __add__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
+    def __add__(self, other: Lyrics) -> Lyrics:
         if not isinstance(other, Lyrics):
             return NotImplemented
         return self.combine(other)
 
     @override
-    def __iadd__(self, value: Lyrics) -> Self:  # type: ignore[override]
+    def __iadd__(self, value: Lyrics) -> Self:
         if not isinstance(value, Lyrics):
             return NotImplemented
         self.combine_inplace(value)
         return self
 
     @override
-    def __radd__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
+    def __radd__(self, other: Lyrics) -> Lyrics:
         if not isinstance(other, Lyrics):
             return NotImplemented
         return self.combine(other)
 
     @override
-    def __mul__(self, value: SupportsIndex) -> list[LyricLine]:  # type: ignore[override]
+    def __mul__(self, value: SupportsIndex) -> NotImplementedType:
         return NotImplemented
 
     @override
-    def __rmul__(self, value: SupportsIndex) -> list[LyricLine]:  # type: ignore[override]
+    def __rmul__(self, value: SupportsIndex) -> NotImplementedType:
         return NotImplemented
 
     @override
-    def __imul__(self, value: SupportsIndex) -> Self:
+    def __imul__(self, value: SupportsIndex) -> NotImplementedType:
         return NotImplemented
 
     def combine_inplace(
