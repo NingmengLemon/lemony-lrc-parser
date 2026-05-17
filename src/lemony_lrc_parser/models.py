@@ -269,10 +269,8 @@ class Lyrics(UserList[LyricLine]):
         return self
 
     @override
-    def __radd__(self, other: Lyrics) -> Lyrics:
-        if not isinstance(other, Lyrics):
-            return NotImplemented
-        return self.combine(other)
+    def __radd__(self, other: Any) -> NotImplementedType:
+        return NotImplemented
 
     @override
     def __mul__(self, value: SupportsIndex) -> NotImplementedType:
