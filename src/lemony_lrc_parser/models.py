@@ -262,13 +262,13 @@ class Lyrics(UserList[LyricLine]):
         self.extend((t.copy() for t in value))
 
     @override
-    def __add__(self, other: Lyrics) -> Lyrics:
+    def __add__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
         if not isinstance(other, Lyrics):
             return NotImplemented
         return self.combine(other)
 
     @override
-    def __iadd__(self, value: Lyrics) -> Self:
+    def __iadd__(self, value: Lyrics) -> Self:  # type: ignore[override]
         if not isinstance(value, Lyrics):
             return NotImplemented
         self.combine_inplace(value)
@@ -301,7 +301,12 @@ class Lyrics(UserList[LyricLine]):
             for k, v in other.metadata.items():
                 self.metadata.setdefault(k, v)
         elif isinstance(other, Iterable):
-            other = [lyline for lyline in other if isinstance(lyline, LyricLine)]
+            pass
+        else:
+            raise TypeError(
+                "Lyrics or Iterable[LyricLine] is expected as combine argument",
+            )
+        other = [lyline for lyline in other if isinstance(lyline, LyricLine)]
 
         pool: dict[int, LyricLine] = {}
         for line in self:
