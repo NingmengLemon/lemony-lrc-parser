@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from collections import UserList
 from collections.abc import Iterable, Iterator, Mapping
@@ -58,9 +59,13 @@ class ParseOptions:
     Attributes:
         fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
             自动用下一行的开始时间作为其结束时间.
+        line_filter: 黑名单过滤. 若为字符串, 则匹配 lyrics 文本中包含该子串的行;
+            若为已编译的正则, 则用 ``pattern.search`` 匹配行文本.
+            匹配到的行在解析时会被丢弃. ``None`` 表示不过滤.
     """
 
     fill_implicit_line_end: bool = False
+    line_filter: str | re.Pattern | None = None
 
 
 @dataclass

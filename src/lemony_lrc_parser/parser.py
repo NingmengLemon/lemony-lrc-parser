@@ -237,7 +237,10 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         last_tag = time_tags[0]
 
     lyrics = _finalize_lyrics(
-        metadata, line_pool, fill_implicit_line_end=options.fill_implicit_line_end
+        metadata,
+        line_pool,
+        fill_implicit_line_end=options.fill_implicit_line_end,
+        line_filter=options.line_filter,
     )
 
     return lyrics
@@ -270,8 +273,17 @@ def _finalize_lyrics(
     line_pool: dict[int, LyricLine],
     *,
     fill_implicit_line_end: bool,
+    line_filter: str | re.Pattern | None = None,
 ) -> Lyrics:
     """把 ``line_pool`` 按时间排序、补全行首/行尾时间并装进 :class:`Lyrics`."""
+    # 先应用过滤, 再排序填充, 保证 fill_implicit_line_end 不依赖被丢弃的行
+    if line_filter is not None:
+        line_pool = {
+            ts: line
+            for ts, line in line_pool.items()
+            if not _line_matches_filter(line, line_filter)
+        }
+
     lyrics = Lyrics(metadata=metadata)
     sorted_items = sorted(line_pool.items(), key=lambda kv: kv[0])
 
@@ -290,6 +302,22 @@ def _finalize_lyrics(
         lyrics.lines.append(line)
 
     return lyrics
+
+
+def _line_matches_filter(line: LyricLine, line_filter: str | re.Pattern) -> bool:
+    """检查 ``line`` 文本是否命中黑名单过滤.
+
+    Args:
+        line: 待检查的歌词行.
+        line_filter: 字符串 (子串匹配) 或已编译正则 (``pattern.search``).
+
+    Returns:
+        ``True`` 表示该行应被丢弃.
+    """
+    text = line.text
+    if isinstance(line_filter, str):
+        return line_filter in text
+    return bool(line_filter.search(text))
 
 
 def _split_leading_line_timetags(raw_line: str) -> tuple[list[int], str]:

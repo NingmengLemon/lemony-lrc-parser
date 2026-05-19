@@ -231,3 +231,173 @@ class TestParseLrcSorting:
         assert lyrics.lines[0].start == 1000
         assert lyrics.lines[1].start == 3000
         assert lyrics.lines[2].start == 5000
+
+
+class TestParseLrcLineFilter:
+    """测试 line_filter 黑名单过滤功能."""
+
+    @staticmethod
+    def _parse(lrc: str, line_filter):
+        from lemony_lrc_parser.models import ParseOptions
+
+        return parse_lrc(lrc, options=ParseOptions(line_filter=line_filter))
+
+    # ── string filter ──────────────────────────────────────────
+
+    def test_string_filter_substring_match(self) -> None:
+        """字符串过滤: 命中子串的行被丢弃."""
+        lrc = """[00:01.000]A line to keep
+[00:02.000]skip this one
+[00:03.000]B line to keep
+"""
+        lyrics = self._parse(lrc, "skip")
+        assert len(lyrics.lines) == 2
+        assert "A line" in lyrics.lines[0].text
+        assert "B line" in lyrics.lines[1].text
+
+    def test_string_filter_no_match(self) -> None:
+        """字符串过滤: 无匹配时不过滤任何行."""
+        lrc = """[00:01.000]hello
+[00:02.000]world
+"""
+        lyrics = self._parse(lrc, "zzz")
+        assert len(lyrics.lines) == 2
+
+    def test_string_filter_exact_match(self) -> None:
+        """字符串过滤: 完全匹配整行文本."""
+        lrc = """[00:01.000]exact
+[00:02.000]not exact match
+"""
+        lyrics = self._parse(lrc, "exact")
+        # "exact" 是 "not exact match" 的子串, 两行都会被过滤
+        assert len(lyrics.lines) == 0
+
+    def test_string_filter_with_multiple_time_tags(self) -> None:
+        """字符串过滤 + 重复时间标签: 同内容的所有时间点都被过滤."""
+        lrc = """[00:01.000]keep
+[00:02.000][00:05.000]drop me
+[00:10.000]keep too
+"""
+        lyrics = self._parse(lrc, "drop")
+        assert len(lyrics.lines) == 2
+        assert lyrics.lines[0].start == 1000
+        assert lyrics.lines[1].start == 10000
+
+    # ── regex filter ───────────────────────────────────────────
+
+    def test_regex_filter_basic(self) -> None:
+        """正则过滤: 基础模式匹配."""
+        lrc = """[00:01.000]abc123
+[00:02.000]def456
+[00:03.000]ghi789
+"""
+        import re
+
+        lyrics = self._parse(lrc, re.compile(r"\d+"))
+        # 三行都包含数字
+        assert len(lyrics.lines) == 0
+
+    def test_regex_filter_selective(self) -> None:
+        """正则过滤: 只过滤匹配特定模式的行."""
+        lrc = """[00:01.000]keep
+[00:02.000]drop-001
+[00:03.000]drop-002
+[00:04.000]keep too
+"""
+        import re
+
+        lyrics = self._parse(lrc, re.compile(r"^drop-"))
+        assert len(lyrics.lines) == 2
+        assert lyrics.lines[0].text == "keep"
+        assert lyrics.lines[1].text == "keep too"
+
+    def test_regex_filter_case_insensitive(self) -> None:
+        """正则过滤: 大小写不敏感."""
+        lrc = """[00:01.000]Hello
+[00:02.000]HELLO
+[00:03.000]world
+"""
+        import re
+
+        lyrics = self._parse(lrc, re.compile(r"hello", re.IGNORECASE))
+        assert len(lyrics.lines) == 1
+        assert lyrics.lines[0].text == "world"
+
+    # ── interaction with other features ────────────────────────
+
+    def test_filter_before_fill_implicit_end(self) -> None:
+        """过滤先于 fill_implicit_line_end: 被丢弃的行不影响隐式填充."""
+        from lemony_lrc_parser.models import ParseOptions
+
+        lrc = """[00:01.000]keep
+[00:05.000]drop
+[00:10.000]keep too
+"""
+        lyrics = parse_lrc(
+            lrc,
+            options=ParseOptions(line_filter="drop", fill_implicit_line_end=True),
+        )
+        assert len(lyrics.lines) == 2
+        # 过滤后 "keep" 和 "keep too" 相邻, keep 的 end 应为 keep too 的 start
+        assert lyrics.lines[0].end == 10000
+        assert lyrics.lines[1].end is None  # 最后一行
+
+    def test_filter_preserves_metadata(self) -> None:
+        """过滤不影响 metadata 解析."""
+        lrc = """[ti:Song]
+[00:01.000]keep
+[00:02.000]drop
+"""
+        lyrics = self._parse(lrc, "drop")
+        assert lyrics.metadata["ti"] == "Song"
+        assert len(lyrics.lines) == 1
+
+    def test_filter_only_main_content_not_reference(self) -> None:
+        """过滤只检查主行文本, 参考行不参与匹配."""
+        lrc = """[00:01.000]main A
+drop ref A
+[00:02.000]main B
+drop ref B
+"""
+        lyrics = self._parse(lrc, "drop")
+        # 两行主文本都包含 "main" 不包含 "drop", 不会被过滤
+        assert len(lyrics.lines) == 2
+        # 参考行仍然存在
+        assert len(lyrics.lines[0].reference_lines) == 1
+        assert lyrics.lines[0].reference_lines[0].text == "drop ref A"
+
+    def test_filter_main_line_matching_removes_refs_too(self) -> None:
+        """主行被过滤后, 其参考行也一起消失."""
+        lrc = """[00:01.000]main A
+ref for A
+[00:02.000]main drop me
+ref for drop
+[00:03.000]main B
+ref for B
+"""
+        lyrics = self._parse(lrc, "drop")
+        assert len(lyrics.lines) == 2
+        assert lyrics.lines[0].text == "main A"
+        assert lyrics.lines[1].text == "main B"
+
+    def test_filter_empty_placeholder_line(self) -> None:
+        """空占位行: 空字符串是否被匹配取决于 filter 值."""
+        lrc = """[00:01.000]real
+[00:05.000]
+[00:10.000]another
+"""
+        # 用非空 filter → 空行不应被过滤
+        lyrics = self._parse(lrc, "drop")
+        assert len(lyrics.lines) == 3  # 空行保留
+
+    def test_filter_none_noop(self) -> None:
+        """line_filter=None 时行为与不传选项一致."""
+        from lemony_lrc_parser.models import ParseOptions
+
+        lrc = """[00:01.000]line one
+[00:02.000]line two
+"""
+        lyrics1 = parse_lrc(lrc)
+        lyrics2 = parse_lrc(lrc, options=ParseOptions(line_filter=None))
+        assert len(lyrics1.lines) == len(lyrics2.lines) == 2
+        assert lyrics1.lines[0].text == lyrics2.lines[0].text
