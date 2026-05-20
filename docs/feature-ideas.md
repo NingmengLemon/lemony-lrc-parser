@@ -16,13 +16,13 @@
 
 - **[B1] ✅ 仅含逐字标签 (尖括号) 的行被误判为参考行**
 
-  [`parser.py:_split_leading_line_timetags`](src/lemony_lrc_parser/parser.py:294) 只匹配 `LINE_TIMETAG_REGEX` (方括号)。当一行以 `<00:01.000>text` 开头时，`_split_leading_line_timetags` 剥离不到任何标签 → `time_tags=[]` → 落入 `if not time_tags` 分支，可能被误判为参考行或孤儿行。
+  [`parser.py:_split_leading_line_timetags`](src/lemony_lrc_parser/parser.py:323) 只匹配 `LINE_TIMETAG_REGEX` (方括号)。当一行以 `<00:01.000>text` 开头时，`_split_leading_line_timetags` 剥离不到任何标签 → `time_tags=[]` → 落入 `if not time_tags` 分支，可能被误判为参考行或孤儿行。
 
   **修复**: `parse_lrc` 中增加对 `line[0].start is not None` 的判断，以第一个词元 start 作为 `line.start`。
 
-- **[B3] ✅ `_format_words` 对参考行错误传入主行的 `line_end`**
+- **[B3] ✅ 参考行格式化时错误传入主行的 `line_end`**
 
-  [`serializer.py:_format_words`](src/lemony_lrc_parser/serializer.py:86) 格式化参考行时传入了 `line_end=line.end`，导致参考行最后一个词元 `end` 若等于主行 `line.end` 会被错误省略。
+  [`serializer.py:dump_lrc`](src/lemony_lrc_parser/serializer.py:71) 格式化参考行时曾传入了 `line_end=line.end`，导致参考行最后一个词元 `end` 若等于主行 `line.end` 会被错误省略。
 
   **修复**: 改为传入 `line_end=None`。
 
@@ -36,7 +36,7 @@
 
 - **[B5] ✅ `LyricLine.start` 不允许 `None`**
 
-  [`models.py:LyricLine`](src/lemony_lrc_parser/models.py:132) 的 `start` 改为必需的 `int` (移除默认值和 `None` 支持)。`combine`、`dump_lrc`、`apply_delta` 等处移除不再需要的 `is None` 检查和 warning + skip 逻辑。
+  [`models.py:LyricLine`](src/lemony_lrc_parser/models.py:172) 的 `start` 改为必需的 `int` (移除默认值和 `None` 支持)。`combine`、`dump_lrc`、`apply_delta` 等处移除不再需要的 `is None` 检查和 warning + skip 逻辑。
 
 - **[B6] ✅ `combine` 排序时 `line.start or 0` 的隐式 fallback**
 
@@ -54,13 +54,20 @@
 
 - **[F-REPR] 🔶 自定义 `__repr__` 改善调试体验** (部分完成)
 
-  `LyricToken.__repr__` 已实现 (`LyricToken('hello', 1000, 2000)`)。
-  **待做**: `LyricLine` 和 `Lyrics` 仍使用 dataclass 自动生成的 `__repr__`。
+  所有类目前均使用默认的 ``__repr__``: :class:`LyricToken` 和 :class:`LyricLine`
+  使用 dataclass 自动生成的多字段 repr, :class:`Lyrics` 使用 ``UserList`` 的列表 repr。
+  **待做**: 为三个类分别实现更紧凑的自定义 ``__repr__`` (如 ``LyricToken('hello', 1000, 2000)``)。
 
 - **[F-CONTAINS] 🔶 `__contains__` 增强** (部分完成)
 
   `LyricToken.__contains__` 和 `BasicLyricLine.__contains__` 已实现字符串子串搜索。`BasicLyricLine` 因继承自 `list` 已天然支持 `token in line`。
   **待做**: `Lyrics.__contains__` 尚未实现。
+
+- **[F-DICT] 🔶 `to_dict()` / `from_dict()` 序列化** (部分完成)
+
+  :class:`LyricToken`、:class:`BasicLyricLine`、:class:`LyricLine`、:class:`Lyrics`
+  四个类的 ``to_dict()`` / ``from_dict()`` 均已实现, 可往返转换。
+  **待做**: 便捷 ``to_json()`` 方法尚未实现。
 
 ---
 
@@ -70,7 +77,7 @@
 
 - **[B2] `format_timetag` 在 `tail_digits < 3` 时存在精度丢失**
 
-  [`timetag.py:format_timetag`](src/lemony_lrc_parser/timetag.py:55) 中 `tail = millis // 10 ** (3 - tail_digits)` — 555ms 格式化为 `55` (百分秒)，解析回来变成 550ms，丢失 5ms。
+  [`timetag.py:format_timetag`](src/lemony_lrc_parser/timetag.py:58) 中 `tail = millis // 10 ** (3 - tail_digits)` — 555ms 格式化为 `55` (百分秒)，解析回来变成 550ms，丢失 5ms。
 
   这是文档问题而非实现问题。Wikipedia 等参考网站以及网易云/QQ 音乐抓取的 lrc 精度都只到百分秒；`tail_digits > 3` 同理也没意义，因为内部精度只到毫秒。~~甚至SPL文档里也是~~
 
@@ -89,14 +96,6 @@
 ## 三、功能增强 (Feature Enhancements)
 
 ### 🔴 高优先级
-
-- **[F-DICT] `Lyrics.to_dict()` / `Lyrics.from_dict()` 以及 `to_json()`**
-
-  ```python
-  lyrics.to_dict()        # → dict，可 JSON 序列化，用于 API 传输
-  Lyrics.from_dict(d)     # ← 从 dict 还原
-  lyrics.to_json()        # 便捷封装
-  ```
 
 - **[F-SRT] 导出为 SRT 字幕格式**
 
@@ -338,16 +337,16 @@
 | 状态 | 编号 | 简述 |
 |------|------|------|
 | ✅ 已完成 | B1 | 仅逐字标签行被误判为参考行 (v0.3.x) |
-| ✅ 已完成 | B3 | `_format_words` 对参考行错误传入 `line_end` (v0.3.x) |
+| ✅ 已完成 | B3 | 参考行格式化错误传入 `line_end` (v0.3.x) |
 | ✅ 已完成 | B4 | `parse_timetag` 严格/宽松正则不一致 (v0.3.x) |
 | ✅ 已完成 | B5 | `LyricLine.start` 不允许 `None` (v0.4.x) |
 | ✅ 已完成 | B6 | `combine` 排序 `or 0` fallback 移除 (v0.4.x) |
 | ✅ 已完成 | F-IO | 文件 I/O `load(fp)` / `dump(fp)` (v0.4.x) |
 | ✅ 已完成 | F-COPY | 深拷贝方法链替代 `deepcopy` (v0.4.x) |
-| 🔶 部分 | F-REPR | `LyricToken.__repr__` 已实现; LyricLine/Lyrics 待做 |
+| 🔶 部分 | F-REPR | 自定义 `__repr__` 全部未实现，均使用默认 repr |
 | 🔶 部分 | F-CONTAINS | Token/Line `__contains__` 已实现; Lyrics 待做 |
+| 🔶 部分 | F-DICT | `to_dict()`/`from_dict()` 已实现; `to_json()` 待做 |
 | 🔴 高 | B2 | `format_timetag` 精度丢失：文档标注 + `warnings.warn` |
-| 🔴 高 | F-DICT | `to_dict()` / `from_dict()` / `to_json()` |
 | 🔴 高 | F-SRT | 导出 SRT 字幕格式 |
 | 🔴 高 | F-STRICT | 解析严格模式 |
 | 🔴 高 | F-DURATION | `LyricLine.duration` 属性 |

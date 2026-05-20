@@ -16,6 +16,10 @@ Lemon-flavored LRC Parser for Python.
 - 支持折叠时间标签
 - 支持参照行
 - 支持歌词合并
+- 时间偏移 (`apply_delta` / `<<` / `>>` 运算符)
+- 字典序列化 (`to_dict()` / `from_dict()`)
+- 深拷贝方法链 (`.copy()`)
+- 可配置解析与序列化选项
 - 完整的类型注解
 
 ## Installation
@@ -47,6 +51,8 @@ uv add https://github.com/NingmengLemon/lemony-lrc-parser.git
 ## Usage
 
 ### Quick Start
+
+json, marshal or pickle -like usages
 
 ```python
 import lemony_lrc_parser as llp
@@ -169,6 +175,45 @@ for line in combined:
 combined = main.combine(translation, other_as_refline_only=False)
 ```
 
+### Dict Serialization (to_dict / from_dict)
+
+所有数据模型都支持字典序列化, 方便 JSON 传输和 API 对接:
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[00:01.00]Hello\n[00:02.00]World\n")
+
+# Lyrics → dict
+data = lyrics.to_dict()
+# {"metadata": {}, "lines": [{"start": 1000, ...}, ...]}
+
+# dict → Lyrics
+restored = Lyrics.from_dict(data)
+
+# 也可以对单行、单行内容、单个词元分别操作
+line = lyrics[0]
+line_dict = line.to_dict()
+token_dict = line.content[0].to_dict()
+```
+
+### Copy
+
+所有数据模型都提供 `.copy()` 深拷贝方法, 返回独立的副本:
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[00:01.00]Hello\n")
+
+# 深拷贝
+clone = lyrics.copy()
+clone.metadata["ti"] = "New Title"
+
+# 原始对象不受影响
+print(lyrics.metadata.get("ti"))  # None
+```
+
 ### Options
 
 #### Parsing Options
@@ -183,6 +228,8 @@ lyrics = Lyrics.loads(
     lrc_text,
     options=ParseOptions(
         fill_implicit_line_end=True,        # 是否填充隐式行尾时间
+        line_filter="纯音乐, 请欣赏",                    # 黑名单过滤：丢弃包含该子串的行
+        # line_filter=re.compile(r"纯音乐.*?请欣赏"),  # 也支持已编译的正则
     ),
 )
 
@@ -203,6 +250,7 @@ output = lyrics.dumps(
         use_bracket_for_byword_tag=False,       # 逐字标签使用 [...] 还是 <...> (默认)
         line_tag_decimal_length=2,              # 行标签毫秒位数 (默认 2)
         word_tag_decimal_length=2,              # 逐字标签毫秒位数 (默认 2)
+        line_separator="\n",                    # 行间分隔字符串 (默认 "\n", 设为 "" 可省去空行)
     ),
 )
 ```
