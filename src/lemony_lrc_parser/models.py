@@ -75,16 +75,16 @@ class SerializationOptions:
     Attributes:
         with_metadata: 是否输出 metadata 段.
         use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``. 在 foobar2000 等老式播放器上可能会有用.
-        line_tag_decimal_length: 行标签毫秒位数 (默认 2).
-        word_tag_decimal_length: 逐字标签毫秒位数 (默认 2).
-        line_separator: 行间分隔字符串 (默认 ``"\n"`` 表示行间插入空行).
+        line_tag_decimal_length: 行标签毫秒位数 (默认 3), 使用更小的值会损失精度.
+        word_tag_decimal_length: 逐字标签毫秒位数 (默认 3), 使用更小的值会损失精度.
+        line_separator: 行间分隔字符串 (默认 ``"\\n"`` 表示行间插入空行).
             设为 ``""`` 可省去空行.
     """
 
     with_metadata: bool = True
     use_bracket_for_byword_tag: bool = False
-    line_tag_decimal_length: int = 2
-    word_tag_decimal_length: int = 2
+    line_tag_decimal_length: int = 3
+    word_tag_decimal_length: int = 3
     line_separator: str = "\n"
 
     def __post_init__(self) -> None:

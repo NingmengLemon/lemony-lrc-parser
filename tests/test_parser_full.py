@@ -88,6 +88,22 @@ class TestParseLrcReferenceLines:
         assert lyrics.lines[0].start == 1000
         assert lyrics.lines[1].start == 5000
 
+    def test_ambiguous_leading_tags_with_inline_tags_as_single_line(self) -> None:
+        """行首连续标签 + 内联标签应按空词元解析为单行, 不展开."""
+        lrc = """[00:00.01][00:00.02]歌[00:00.03]词[00:00.04]
+"""
+        lyrics = parse_lrc(lrc)
+
+        assert len(lyrics.lines) == 1
+        line = lyrics.lines[0]
+        assert line.start == 10
+        assert line.end == 40
+        assert [(token.content, token.start, token.end) for token in line.content] == [
+            ("", 10, 20),
+            ("歌", 20, 30),
+            ("词", 30, 40),
+        ]
+
     def test_duplicate_time_tag_as_reference(self) -> None:
         """测试同一时间点的行变为参考行."""
         lrc = """[00:01.000]第一版本

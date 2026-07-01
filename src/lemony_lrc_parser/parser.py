@@ -199,10 +199,27 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         logger.debug(f"Parsing lyric line: {line_str!r}")
 
         # 2. 切出行首的重复时间标签
+        raw_lyric_line = line_str
         time_tags, line_str = _split_leading_line_timetags(line_str)
+
+        # 2a. 若行首存在多个连续方括号时间标签, 且剩余正文还含有时间标签,
+        #     则无法区分这些连续标签是“折叠行”还是“空词元 + 逐字行”.
+        #     为避免误展开, 统一按空词元处理, 即按完整原行解析为单行.
+        if len(time_tags) > 1 and compile_regex(GENERIC_TIMETAG_REGEX).search(line_str):
+            line = parse_line(raw_lyric_line)
+            if line:
+                line_start = line[0].start
+                if line_start is None:
+                    raise InvalidLyricsError(
+                        "Ambiguous leading time tags did not produce a line start"
+                    )
+                _register_line_at_tags(line_pool, line, [line_start])
+                last_tag = line_start
+            continue
+
         line = parse_line(line_str)
 
-        # 2a. 行首没有方括号时间标签 → 要么是逐字行, 要么是参考行/分隔符
+        # 2b. 行首没有方括号时间标签 → 要么是逐字行, 要么是参考行/分隔符
         if not time_tags:
             if not line:
                 # 空分隔行, 重置参考行锚点
@@ -223,7 +240,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
             line_pool[last_tag].reference_lines.append(line)
             continue
 
-        # 2b. 行首有时间标签但没有正文 → 占位符 (例如清空当前歌词)
+        # 2b. 行首有时间标签但没有正文 → 占位符 (清空当前歌词)
         if not line:
             for t in time_tags:
                 if t not in line_pool:
