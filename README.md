@@ -16,6 +16,7 @@ Lemon-flavored LRC Parser for Python.
 - 支持折叠时间标签
 - 支持参照行
 - 支持歌词合并
+- 与简单字幕格式 (SRT / WebVTT) 互转
 - 时间偏移 (`apply_delta` / `<<` / `>>` 运算符)
 - 字典序列化 (`to_dict()` / `from_dict()`)
 - 深拷贝方法链 (`.copy()`)
@@ -248,8 +249,8 @@ output = lyrics.dumps(
     options=SerializationOptions(
         with_metadata=True,                     # 是否输出 metadata 段
         use_bracket_for_byword_tag=False,       # 逐字标签使用 [...] 还是 <...> (默认)
-        line_tag_decimal_length=2,              # 行标签毫秒位数 (默认 2)
-        word_tag_decimal_length=2,              # 逐字标签毫秒位数 (默认 2)
+        line_tag_decimal_length=3,              # 行标签毫秒位数 (默认 3)
+        word_tag_decimal_length=3,              # 逐字标签毫秒位数 (默认 3)
         line_separator="\n",                    # 行间分隔字符串 (默认 "\n", 设为 "" 可省去空行)
     ),
 )
@@ -257,9 +258,8 @@ output = lyrics.dumps(
 
 #### Length of Decimal Part
 
-默认 `line_tag_decimal_length=2`、`word_tag_decimal_length=2`, 输出格式如 `[00:01.00]`、`<00:01.05>`.
-此时小数部分表示百分秒, 不足 2 位时自动补齐.
-若需保留完整的毫秒精度, 请设置为 `3`.
+默认 `line_tag_decimal_length=3`、`word_tag_decimal_length=3`, 输出格式如 `[00:01.000]`、`<00:01.050>`, 保留完整的毫秒精度.
+若设为 `2`, 小数部分表示百分秒 (如 `[00:01.00]`), 属于**有损截断** (例如 555ms 会被截断为 55, 解析回来变成 550ms), 需要按需权衡 (部分老软件可能只支持百分秒).
 
 ### Offset
 
@@ -296,6 +296,56 @@ shifted = lyrics << 500   # 提前 500ms
 
 如需在序列化前偏移时间戳, 请先调用 `apply_delta()` 再序列化返回的副本.
 如果你的偏移量来自歌词文件元数据, 你可能还需要记得手动清理 `lyrics.metadata` 中的偏移值.
+
+### Subtitle Conversion (SRT / WebVTT)
+
+`Lyrics` 可与常见的简单字幕格式互相转换, 便于把歌词用于视频字幕制作,
+或把已有字幕导入为歌词:
+
+```python
+from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser.models import SubtitleOptions
+
+lyrics = Lyrics.loads("[00:01.000]Hello\n[00:03.000]World\n")
+
+# LRC → SRT / WebVTT
+srt_text = lyrics.to_srt()
+vtt_text = lyrics.to_webvtt()
+
+# SRT / WebVTT → LRC
+lyrics2 = Lyrics.from_srt(srt_text)
+lyrics3 = Lyrics.from_webvtt(vtt_text)
+
+# 顶层便捷函数也可用
+import lemony_lrc_parser as llp
+
+srt_text = llp.dump_srt(lyrics)
+vtt_text = llp.dump_webvtt(lyrics)
+lyrics2 = llp.parse_srt(srt_text)
+lyrics3 = llp.parse_webvtt(vtt_text)
+```
+
+字幕以 `[start, end]` 时间区间为单位, 与 LRC 存在语义差异, 转换时的行为可通过
+`SubtitleOptions` 控制:
+
+```python
+options = SubtitleOptions(
+    fill_end_from_next=True,       # 缺少行尾时间时, 用下一行的 start 补齐
+    default_duration_ms=5000,      # 无法推断时长时使用的默认时长 (也用于修正非法区间)
+    include_reference_lines=True,  # 是否把参考行 (翻译/音译) 作为 cue 附加文本输出
+)
+
+srt_text = lyrics.to_srt(options=options)
+```
+
+转换注意事项:
+
+- LRC 的逐字标签与 metadata 不会写入字幕 (会被拍平/丢弃).
+- 导出时若某行缺少 `end`, 会依次尝试用下一行 `start` 或
+  `default_duration_ms` 补齐; `end <= start` 的非法区间也会被修正.
+- 一条字幕 cue 可含多行文本: 导出时主行在前、参考行在后;
+  解析时 cue 首行作为主行, 其余行作为参考行.
+- 解析会自动跳过 WebVTT 的 `WEBVTT` 头部以及 `NOTE` / `STYLE` / `REGION` 块.
 
 ## References
 

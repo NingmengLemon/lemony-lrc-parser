@@ -30,16 +30,16 @@ class TestApplyOffset:
         shifted = ly.apply_delta(500)
         out = construct_lrc(shifted)
 
-        # 原 5000ms -> 5500ms (line.start) → 5500ms 百分秒 = 55
-        assert "[00:05.50]" in out
-        # 原 10000ms -> 10500ms (line.start) → 10500ms 百分秒 = 50
-        assert "[00:10.50]" in out
+        # 原 5000ms -> 5500ms (line.start), 默认 3 位小数 = 毫秒 500
+        assert "[00:05.500]" in out
+        # 原 10000ms -> 10500ms (line.start)
+        assert "[00:10.500]" in out
         # 原 11500ms -> 12000ms (中间的 word tag, 保持尖括号)
-        assert "<00:12.00>" in out
+        assert "<00:12.000>" in out
         # 原 7000ms -> 7500ms (行尾标签, 方括号)
-        assert "[00:07.50]" in out
-        # 原 12000ms -> 12500ms (line.end) → 12500ms 百分秒 = 50
-        assert "[00:12.50]" in out
+        assert "[00:07.500]" in out
+        # 原 12000ms -> 12500ms (line.end)
+        assert "[00:12.500]" in out
 
     def test_negative_offset_applied(self) -> None:
         """负 ms 应让时间标签整体减小."""
@@ -48,9 +48,9 @@ class TestApplyOffset:
         out = construct_lrc(shifted)
 
         # 5000 + (-2000) = 3000
-        assert "[00:03.00]" in out
+        assert "[00:03.000]" in out
         # 10000 + (-2000) = 8000
-        assert "[00:08.00]" in out
+        assert "[00:08.000]" in out
 
     def test_negative_offset_overflow_raises(self) -> None:
         """负偏移超过最小时间标签时应直接报错."""
@@ -67,9 +67,9 @@ class TestApplyOffset:
         out = construct_lrc(shifted)
 
         # 原 5000 + (-5000) = 0
-        assert "[00:00.00]" in out
+        assert "[00:00.000]" in out
         # 原 10000 + (-5000) = 5000
-        assert "[00:05.00]" in out
+        assert "[00:05.000]" in out
 
     def test_original_not_mutated(self) -> None:
         """apply_delta 不应修改原始对象."""
@@ -87,8 +87,8 @@ class TestApplyOffset:
         out = construct_lrc(shifted)
 
         # 时间标签原样
-        assert "[00:05.00]" in out
-        assert "[00:10.00]" in out
+        assert "[00:05.000]" in out
+        assert "[00:10.000]" in out
         # 是不同对象
         assert shifted is not ly
 
@@ -112,9 +112,9 @@ class TestShiftOperators:
         shifted = ly >> 500
         out = construct_lrc(shifted)
 
-        # 5500ms → 百分秒 = 55, 10500ms → 百分秒 = 50
-        assert "[00:05.50]" in out
-        assert "[00:10.50]" in out
+        # 5500ms, 10500ms (默认 3 位小数)
+        assert "[00:05.500]" in out
+        assert "[00:10.500]" in out
 
     def test_lshift_positive_advances(self) -> None:
         """``<<`` 正数 → 歌词提前."""
@@ -122,8 +122,8 @@ class TestShiftOperators:
         shifted = ly << 2000
         out = construct_lrc(shifted)
 
-        assert "[00:03.00]" in out
-        assert "[00:08.00]" in out
+        assert "[00:03.000]" in out
+        assert "[00:08.000]" in out
 
     def test_lshift_overflow_raises(self) -> None:
         """``<<`` 导致下溢时应报错."""
@@ -146,8 +146,8 @@ class TestShiftOperators:
         shifted = (ly >> 100) >> 200
         out = construct_lrc(shifted)
 
-        # 5000 + 100 + 200 = 5300 → 300ms 百分秒 = 30
-        assert "[00:05.30]" in out
+        # 5000 + 100 + 200 = 5300 → 毫秒 300
+        assert "[00:05.300]" in out
 
     def test_original_unaffected_by_operators(self) -> None:
         """运算符不修改原始对象."""

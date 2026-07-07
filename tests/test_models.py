@@ -221,5 +221,5 @@ class TestLyricsStr:
         str_result = str(lyrics)
         dumps_result = lyrics.dumps()
         assert str_result == dumps_result
-        assert "[00:01.00]" in str_result
+        assert "[00:01.000]" in str_result
         assert "Hello" in str_result

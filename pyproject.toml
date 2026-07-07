@@ -1,6 +1,6 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.4.0b0"
+version = "0.4.0b1"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."

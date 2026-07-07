@@ -39,6 +39,7 @@ __all__ = [
     "Lyrics",
     "ParseOptions",
     "SerializationOptions",
+    "SubtitleOptions",
 ]
 _DC_ARGS_SLOTS = (
     {
@@ -97,6 +98,34 @@ class SerializationOptions:
                 raise ProgrammingError(
                     f"{f} must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {val}"
                 )
+
+
+@dataclass
+class SubtitleOptions:
+    """字幕 (SRT / WebVTT) 转换选项.
+
+    仅在 :class:`Lyrics` 与字幕格式互转时使用, 见 :mod:`.subtitle`.
+
+    Attributes:
+        fill_end_from_next: 当某行缺少结束时间时, 是否用下一行的开始时间
+            作为其结束时间. 为 ``False`` 或已是最后一行时, 改用
+            ``start + default_duration_ms``.
+        default_duration_ms: 无法推断结束时间时使用的默认时长 (毫秒).
+            也用于修正 ``end <= start`` 的非法区间.
+        include_reference_lines: 导出字幕时是否把参考行 (翻译/音译) 作为
+            cue 内的附加文本行一并输出.
+    """
+
+    fill_end_from_next: bool = True
+    default_duration_ms: int = 5000
+    include_reference_lines: bool = True
+
+    def __post_init__(self) -> None:
+        """校验参数合法性."""
+        if self.default_duration_ms <= 0:
+            raise ProgrammingError(
+                f"default_duration_ms must be positive, got {self.default_duration_ms}"
+            )
 
 
 @dataclass(**_DC_ARGS_SLOTS)
@@ -393,6 +422,48 @@ class Lyrics(UserList[LyricLine]):
         from .serializer import dump_lrc
 
         return dump_lrc(self, options=options)
+
+    def to_srt(self, *, options: SubtitleOptions | None = None) -> str:
+        """把当前对象转换为 SRT (SubRip) 字幕文本.
+
+        Args:
+            options: 字幕转换选项.
+        """
+        from .subtitle import dump_srt
+
+        return dump_srt(self, options=options)
+
+    def to_webvtt(self, *, options: SubtitleOptions | None = None) -> str:
+        """把当前对象转换为 WebVTT 字幕文本.
+
+        Args:
+            options: 字幕转换选项.
+        """
+        from .subtitle import dump_webvtt
+
+        return dump_webvtt(self, options=options)
+
+    @classmethod
+    def from_srt(cls, s: str) -> Lyrics:
+        """从 SRT (SubRip) 字幕文本解析出一份 :class:`Lyrics`.
+
+        Args:
+            s: SRT 源文本.
+        """
+        from .subtitle import parse_srt
+
+        return parse_srt(s)
+
+    @classmethod
+    def from_webvtt(cls, s: str) -> Lyrics:
+        """从 WebVTT 字幕文本解析出一份 :class:`Lyrics`.
+
+        Args:
+            s: WebVTT 源文本.
+        """
+        from .subtitle import parse_webvtt
+
+        return parse_webvtt(s)
 
     def apply_delta(self, ms: int) -> Lyrics:
         """深拷贝当前对象并在新副本上应用时间偏移, 返回新对象.

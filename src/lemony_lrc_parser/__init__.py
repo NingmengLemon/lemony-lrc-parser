@@ -45,8 +45,10 @@ from .models import (
     LyricToken,
     ParseOptions,
     SerializationOptions,
+    SubtitleOptions,
 )
 from .parser import parse_line, parse_lrc
+from .subtitle import dump_srt, dump_webvtt, parse_srt, parse_webvtt
 from .timetag import format_timetag, parse_timetag
 
 __all__ = [
@@ -60,6 +62,7 @@ __all__ = [
     "TimestampUnderflowError",
     "ParseOptions",
     "SerializationOptions",
+    "SubtitleOptions",
     "dumps",
     "loads",
     "dump",
@@ -68,6 +71,10 @@ __all__ = [
     "parse_lrc",
     "format_timetag",
     "parse_timetag",
+    "dump_srt",
+    "dump_webvtt",
+    "parse_srt",
+    "parse_webvtt",
 ]
 
 

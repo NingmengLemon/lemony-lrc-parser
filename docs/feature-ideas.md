@@ -50,6 +50,14 @@
 
   `Lyrics.copy()`、`LyricLine.copy()`、`BasicLyricLine.copy()`、`LyricToken.copy()` 均已实现。内部全面用自定义 `.copy()` 替代 `deepcopy`，语义更清晰且性能更优。
 
+- **[F-SRT] ✅ SRT (SubRip) 字幕互转**
+
+  新增 [`subtitle.py`](src/lemony_lrc_parser/subtitle.py) 模块，实现 `Lyrics.to_srt()` / `Lyrics.from_srt()`（及顶层 `dump_srt` / `parse_srt`）。通过 `SubtitleOptions` 控制行尾时间补齐策略、默认时长与参考行输出。
+
+- **[F-WEBVTT] ✅ WebVTT 字幕互转**
+
+  同 F-SRT，实现 `Lyrics.to_webvtt()` / `Lyrics.from_webvtt()`（及顶层 `dump_webvtt` / `parse_webvtt`）。解析时自动跳过 `WEBVTT` 头部与 `NOTE` / `STYLE` / `REGION` 块，并兼容 cue 时间轴的样式设置后缀。
+
 ### 部分完成
 
 - **[F-REPR] 🔶 自定义 `__repr__` 改善调试体验** (部分完成)
@@ -97,14 +105,6 @@
 
 ### 🔴 高优先级
 
-- **[F-SRT] 导出为 SRT 字幕格式**
-
-  ```python
-  lyrics.to_srt()  # → SubRip 字幕格式字符串
-  ```
-
-  适用场景：将歌词用于视频字幕制作。
-
 - **[F-STRICT] 解析严格模式 (`ParseOptions.strict: bool`)**
 
   开启后以下情况从 warning 升级为抛出 `InvalidLyricsError`:
@@ -140,12 +140,6 @@
   ```python
   lyrics.insert_line(line: LyricLine)   # 插入后自动排序
   lyrics.remove_line(index: int)         # 安全删除
-  ```
-
-- **[F-WEBVTT] 导出为 WebVTT 格式**
-
-  ```python
-  lyrics.to_webvtt()  # → WebVTT 字幕格式字符串
   ```
 
 - **[F-COMBINE-ALL] 批量合并 (`combine_all`)**
@@ -343,16 +337,16 @@
 | ✅ 已完成 | B6 | `combine` 排序 `or 0` fallback 移除 (v0.4.x) |
 | ✅ 已完成 | F-IO | 文件 I/O `load(fp)` / `dump(fp)` (v0.4.x) |
 | ✅ 已完成 | F-COPY | 深拷贝方法链替代 `deepcopy` (v0.4.x) |
+| ✅ 已完成 | F-SRT | 导出/解析 SRT 字幕格式 (v0.4.x) |
+| ✅ 已完成 | F-WEBVTT | 导出/解析 WebVTT 字幕格式 (v0.4.x) |
 | 🔶 部分 | F-REPR | 自定义 `__repr__` 全部未实现，均使用默认 repr |
 | 🔶 部分 | F-CONTAINS | Token/Line `__contains__` 已实现; Lyrics 待做 |
 | 🔶 部分 | F-DICT | `to_dict()`/`from_dict()` 已实现; `to_json()` 待做 |
 | 🔴 高 | B2 | `format_timetag` 精度丢失：文档标注 + `warnings.warn` |
-| 🔴 高 | F-SRT | 导出 SRT 字幕格式 |
 | 🔴 高 | F-STRICT | 解析严格模式 |
 | 🔴 高 | F-DURATION | `LyricLine.duration` 属性 |
 | 🔴 高 | F-RANGE | `Lyrics.lines_in_range()` 时间范围查询 |
 | 🟡 中 | F-MUTATE | `Lyrics` 安全变更方法 |
-| 🟡 中 | F-WEBVTT | 导出 WebVTT 格式 |
 | 🟡 中 | F-COMBINE-ALL | 批量合并 `combine_all` |
 | 🟡 中 | F-VALIDATE | `Lyrics.validate()` 一致性验证 |
 | 🟡 中 | NEW-ERROR-LINE | 解析错误附带行号 |
