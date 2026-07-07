@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import re
 from logging import getLogger
+from typing import cast
 
+from ._utils import match_to_ms
 from .exceptions import InvalidLyricsError, LyricsParserError
 from .models import BasicLyricLine, LyricLine, Lyrics, LyricToken, ParseOptions
 from .regex import (
@@ -22,7 +24,6 @@ from .regex import (
     WORD_TIMETAG_REGEX,
     compile_regex,
 )
-from .timetag import _match_to_ms
 
 logger = getLogger(__name__)
 
@@ -128,7 +129,7 @@ def _unzip_sequence(
         if isinstance(item, str):
             texts.append(item)
         elif isinstance(item, re.Match):
-            times.append(_match_to_ms(item))
+            times.append(match_to_ms(item))
         else:
             raise LyricsParserError(
                 f"Unexpected element type in sequence: {type(item).__name__}"
@@ -220,7 +221,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         line = parse_line(line_str)
 
         # 2b. 行首没有方括号时间标签 → 要么是逐字行, 要么是参考行/分隔符
-        if not time_tags:
+        if not time_tags:  # noqa: SIM102
             if not line:
                 # 空分隔行, 重置参考行锚点
                 last_tag = None
@@ -240,7 +241,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
             line_pool[last_tag].reference_lines.append(line)
             continue
 
-        # 2b. 行首有时间标签但没有正文 → 占位符 (清空当前歌词)
+        # 2c. 行首有时间标签但没有正文 → 占位符 (清空当前歌词)
         if not line:
             for t in time_tags:
                 if t not in line_pool:
@@ -249,15 +250,18 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
                     )
             continue
 
-        # 2c. 常规行: 可能有多个重复时间标签, 每个都生成一行
+        # 2d. 常规行: 可能有多个重复时间标签, 每个都生成一行
         _register_line_at_tags(line_pool, line, time_tags)
         last_tag = time_tags[0]
 
+    # ParseOptions.__post_init__ 已把 str 形式的 line_filter 编译为正则,
+    # 此处运行时必为 re.Pattern[str] | None.
+    line_filter = cast("re.Pattern[str] | None", options.line_filter)
     lyrics = _finalize_lyrics(
         metadata,
         line_pool,
         fill_implicit_line_end=options.fill_implicit_line_end,
-        line_filter=options.line_filter,
+        line_filter=line_filter,
     )
 
     return lyrics
@@ -290,15 +294,20 @@ def _finalize_lyrics(
     line_pool: dict[int, LyricLine],
     *,
     fill_implicit_line_end: bool,
-    line_filter: str | re.Pattern | None = None,
+    line_filter: re.Pattern[str] | None = None,
 ) -> Lyrics:
-    """把 ``line_pool`` 按时间排序、补全行首/行尾时间并装进 :class:`Lyrics`."""
+    """把 ``line_pool`` 按时间排序、补全行首/行尾时间并装进 :class:`Lyrics`.
+
+    Note:
+        ``line_filter`` 统一为已编译的正则 (``str`` 会在 :class:`ParseOptions`
+        构造时被编译), 命中 ``pattern.search`` 的行会被丢弃.
+    """
     # 先应用过滤, 再排序填充, 保证 fill_implicit_line_end 不依赖被丢弃的行
     if line_filter is not None:
         line_pool = {
             ts: line
             for ts, line in line_pool.items()
-            if not _line_matches_filter(line, line_filter)
+            if not line_filter.search(line.text)
         }
 
     lyrics = Lyrics(metadata=metadata)
@@ -316,25 +325,9 @@ def _finalize_lyrics(
         if fill_implicit_line_end and line.end is None and idx + 1 < len(sorted_items):
             line.end = sorted_items[idx + 1][0]
 
-        lyrics.lines.append(line)
+        lyrics.append(line)
 
     return lyrics
-
-
-def _line_matches_filter(line: LyricLine, line_filter: str | re.Pattern) -> bool:
-    """检查 ``line`` 文本是否命中黑名单过滤.
-
-    Args:
-        line: 待检查的歌词行.
-        line_filter: 字符串 (子串匹配) 或已编译正则 (``pattern.search``).
-
-    Returns:
-        ``True`` 表示该行应被丢弃.
-    """
-    text = line.text
-    if isinstance(line_filter, str):
-        return line_filter in text
-    return bool(line_filter.search(text))
 
 
 def _split_leading_line_timetags(raw_line: str) -> tuple[list[int], str]:
@@ -347,7 +340,7 @@ def _split_leading_line_timetags(raw_line: str) -> tuple[list[int], str]:
     pattern = compile_regex(f"^{LINE_TIMETAG_REGEX}")
     times: list[int] = []
     while (match := pattern.match(raw_line)) is not None:
-        times.append(_match_to_ms(match))
+        times.append(match_to_ms(match))
         raw_line = raw_line[match.end() :]
     return times, raw_line
 

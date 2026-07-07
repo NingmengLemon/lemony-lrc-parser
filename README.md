@@ -220,6 +220,7 @@ print(lyrics.metadata.get("ti"))  # None
 #### Parsing Options
 
 ```python
+import re
 from lemony_lrc_parser import Lyrics
 from lemony_lrc_parser.models import ParseOptions
 
@@ -229,13 +230,17 @@ lyrics = Lyrics.loads(
     lrc_text,
     options=ParseOptions(
         fill_implicit_line_end=True,        # 是否填充隐式行尾时间
-        line_filter="纯音乐, 请欣赏",                    # 黑名单过滤：丢弃包含该子串的行
-        # line_filter=re.compile(r"纯音乐.*?请欣赏"),  # 也支持已编译的正则
+        line_filter=r"纯音乐.*?请欣赏",       # 黑名单过滤 (统一按正则理解, str 会被自动 compile)
+        # line_filter=re.compile(r"纯音乐.*?请欣赏"),  # 也可直接传入已编译的正则
     ),
 )
 
 # lyrics[0].end == lyrics[1].start == 5000
 ```
+
+`line_filter` 的内容是正则表达式: 传入的字符串会被 `re.compile` 编译, 之后用
+`pattern.search` 匹配每行文本, 命中的行会被丢弃. 若需要精确的子串匹配 (而非正则),
+请用 `re.escape(...)` 包一层, 例如 `line_filter=re.escape("a.c")`.
 
 #### Serialization Options
 

@@ -77,7 +77,7 @@ class TestApplyOffset:
         _ = ly.apply_delta(-2000)
 
         # 原始对象应保持不变
-        assert ly.lines[0].start == 5000
+        assert ly[0].start == 5000
         assert ly.metadata.get("offset") == "500"
 
     def test_zero_offset_returns_copy(self) -> None:
@@ -99,7 +99,7 @@ class TestApplyOffset:
         _ = ly.apply_delta(200)
         _ = ly.apply_delta(300)
         # 原始对象始终不变
-        assert ly.lines[0].start == 5000
+        assert ly[0].start == 5000
         assert ly.metadata.get("offset") == "500"
 
 
@@ -155,4 +155,4 @@ class TestShiftOperators:
         _ = ly >> 500
         _ = ly << 500
 
-        assert ly.lines[0].start == 5000
+        assert ly[0].start == 5000

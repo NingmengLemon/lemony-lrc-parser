@@ -45,10 +45,10 @@ class TestParseLrcReferenceLines:
 翻译行2
 """
         lyrics = parse_lrc(lrc)
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].content[0].content == "主歌词"
-        assert len(lyrics.lines[0].reference_lines) == 1
-        assert lyrics.lines[0].reference_lines[0][0].content == "翻译行1"
+        assert len(lyrics) == 2
+        assert lyrics[0].content[0].content == "主歌词"
+        assert len(lyrics[0].reference_lines) == 1
+        assert lyrics[0].reference_lines[0][0].content == "翻译行1"
 
     def test_reference_line_reset(self) -> None:
         """测试空行重置参考行锚点."""
@@ -60,8 +60,8 @@ class TestParseLrcReferenceLines:
 """
         lyrics = parse_lrc(lrc)
         # 空行应该重置 last_tag, 所以翻译2 应该挂到 主歌词2 上
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[1].reference_lines[0][0].content == "翻译2"
+        assert len(lyrics) == 2
+        assert lyrics[1].reference_lines[0][0].content == "翻译2"
 
     def test_orphaned_reference_line_warning(
         self, caplog: pytest.LogCaptureFixture
@@ -75,18 +75,18 @@ class TestParseLrcReferenceLines:
         with caplog.at_level(logging.WARNING):
             lyrics = parse_lrc(lrc)
         assert "Orphaned lyric line" in caplog.text
-        assert len(lyrics.lines) == 1
+        assert len(lyrics) == 1
 
     def test_multiple_time_tags_same_line(self) -> None:
         """测试同一行有多个时间标签."""
         lrc = """[00:01.000][00:05.000]重复歌词
 """
         lyrics = parse_lrc(lrc)
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].content[0].content == "重复歌词"
-        assert lyrics.lines[1].content[0].content == "重复歌词"
-        assert lyrics.lines[0].start == 1000
-        assert lyrics.lines[1].start == 5000
+        assert len(lyrics) == 2
+        assert lyrics[0].content[0].content == "重复歌词"
+        assert lyrics[1].content[0].content == "重复歌词"
+        assert lyrics[0].start == 1000
+        assert lyrics[1].start == 5000
 
     def test_ambiguous_leading_tags_with_inline_tags_as_single_line(self) -> None:
         """行首连续标签 + 内联标签应按空词元解析为单行, 不展开."""
@@ -94,8 +94,8 @@ class TestParseLrcReferenceLines:
 """
         lyrics = parse_lrc(lrc)
 
-        assert len(lyrics.lines) == 1
-        line = lyrics.lines[0]
+        assert len(lyrics) == 1
+        line = lyrics[0]
         assert line.start == 10
         assert line.end == 40
         assert [(token.content, token.start, token.end) for token in line.content] == [
@@ -110,10 +110,10 @@ class TestParseLrcReferenceLines:
 [00:01.000]第二版本
 """
         lyrics = parse_lrc(lrc)
-        assert len(lyrics.lines) == 1
-        assert lyrics.lines[0].content[0].content == "第一版本"
-        assert len(lyrics.lines[0].reference_lines) == 1
-        assert lyrics.lines[0].reference_lines[0][0].content == "第二版本"
+        assert len(lyrics) == 1
+        assert lyrics[0].content[0].content == "第一版本"
+        assert len(lyrics[0].reference_lines) == 1
+        assert lyrics[0].reference_lines[0][0].content == "第二版本"
 
 
 class TestParseLrcFillImplicitEnd:
@@ -128,9 +128,9 @@ class TestParseLrcFillImplicitEnd:
 [00:10.000]第三行
 """
         lyrics = parse_lrc(lrc, options=ParseOptions(fill_implicit_line_end=True))
-        assert lyrics.lines[0].end == 5000  # 下一行的开始
-        assert lyrics.lines[1].end == 10000  # 下一行的开始
-        assert lyrics.lines[2].end is None  # 最后一行没有下一行
+        assert lyrics[0].end == 5000  # 下一行的开始
+        assert lyrics[1].end == 10000  # 下一行的开始
+        assert lyrics[2].end is None  # 最后一行没有下一行
 
     def test_no_fill_implicit_end(self) -> None:
         """测试不填充隐式行尾时间."""
@@ -140,8 +140,8 @@ class TestParseLrcFillImplicitEnd:
 [00:05.000]第二行
 """
         lyrics = parse_lrc(lrc, options=ParseOptions(fill_implicit_line_end=False))
-        assert lyrics.lines[0].end is None
-        assert lyrics.lines[1].end is None
+        assert lyrics[0].end is None
+        assert lyrics[1].end is None
 
 
 class TestParseLrcEmptyLines:
@@ -155,9 +155,9 @@ class TestParseLrcEmptyLines:
 """
         lyrics = parse_lrc(lrc)
         # 空行应该创建一个内容为空的 LyricLine
-        assert len(lyrics.lines) == 3
-        assert lyrics.lines[1].content[0].content == ""
-        assert lyrics.lines[1].start == 5000
+        assert len(lyrics) == 3
+        assert lyrics[1].content[0].content == ""
+        assert lyrics[1].start == 5000
 
 
 class TestParseLrcWordLevel:
@@ -168,8 +168,8 @@ class TestParseLrcWordLevel:
         lrc = """[00:01.000]<00:01.000>第<00:01.500>一<00:02.000>行[00:03.000]
 """
         lyrics = parse_lrc(lrc)
-        assert len(lyrics.lines) == 1
-        line = lyrics.lines[0]
+        assert len(lyrics) == 1
+        line = lyrics[0]
         assert len(line.content) == 3
         assert line.content[0].content == "第"
         assert line.content[0].start == 1000
@@ -208,8 +208,8 @@ class TestParseLrcWordTagOnlyLine:
 """
         lyrics = parse_lrc(lrc)
         # 应该有一个行, start 来自第一个 word tag = 1000ms
-        assert len(lyrics.lines) == 1
-        line = lyrics.lines[0]
+        assert len(lyrics) == 1
+        line = lyrics[0]
         assert line.start == 1000
         assert len(line.content) == 2
         assert line.content[0].content == "hello"
@@ -225,12 +225,12 @@ class TestParseLrcWordTagOnlyLine:
 <00:02.000>second<00:03.000>line<00:04.000>
 """
         lyrics = parse_lrc(lrc)
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].text == "first"
-        assert lyrics.lines[1].text == "secondline"
-        assert lyrics.lines[1].start == 2000
+        assert len(lyrics) == 2
+        assert lyrics[0].text == "first"
+        assert lyrics[1].text == "secondline"
+        assert lyrics[1].start == 2000
         # 不应有额外参考行
-        assert len(lyrics.lines[0].reference_lines) == 0
+        assert len(lyrics[0].reference_lines) == 0
 
 
 class TestParseLrcSorting:
@@ -243,10 +243,10 @@ class TestParseLrcSorting:
 [00:03.000]第三行
 """
         lyrics = parse_lrc(lrc)
-        assert len(lyrics.lines) == 3
-        assert lyrics.lines[0].start == 1000
-        assert lyrics.lines[1].start == 3000
-        assert lyrics.lines[2].start == 5000
+        assert len(lyrics) == 3
+        assert lyrics[0].start == 1000
+        assert lyrics[1].start == 3000
+        assert lyrics[2].start == 5000
 
 
 class TestParseLrcLineFilter:
@@ -258,18 +258,18 @@ class TestParseLrcLineFilter:
 
         return parse_lrc(lrc, options=ParseOptions(line_filter=line_filter))
 
-    # ── string filter ──────────────────────────────────────────
+    # ── string filter (统一按正则理解, str 会被 compile) ─────────
 
-    def test_string_filter_substring_match(self) -> None:
-        """字符串过滤: 命中子串的行被丢弃."""
+    def test_string_filter_plain_text(self) -> None:
+        """字符串过滤: 普通字符串按正则 search, 命中的行被丢弃."""
         lrc = """[00:01.000]A line to keep
 [00:02.000]skip this one
 [00:03.000]B line to keep
 """
         lyrics = self._parse(lrc, "skip")
-        assert len(lyrics.lines) == 2
-        assert "A line" in lyrics.lines[0].text
-        assert "B line" in lyrics.lines[1].text
+        assert len(lyrics) == 2
+        assert "A line" in lyrics[0].text
+        assert "B line" in lyrics[1].text
 
     def test_string_filter_no_match(self) -> None:
         """字符串过滤: 无匹配时不过滤任何行."""
@@ -277,16 +277,27 @@ class TestParseLrcLineFilter:
 [00:02.000]world
 """
         lyrics = self._parse(lrc, "zzz")
-        assert len(lyrics.lines) == 2
+        assert len(lyrics) == 2
 
-    def test_string_filter_exact_match(self) -> None:
-        """字符串过滤: 完全匹配整行文本."""
+    def test_string_filter_search_semantics(self) -> None:
+        """字符串过滤: search 语义, 命中行内任意位置即丢弃."""
         lrc = """[00:01.000]exact
 [00:02.000]not exact match
 """
         lyrics = self._parse(lrc, "exact")
-        # "exact" 是 "not exact match" 的子串, 两行都会被过滤
-        assert len(lyrics.lines) == 0
+        # "exact" 出现在两行文本中的任意位置, 两行都会被过滤
+        assert len(lyrics) == 0
+
+    def test_string_filter_compiled_as_regex(self) -> None:
+        """字符串过滤: 字符串会被当作正则编译, 元字符按正则解释."""
+        lrc = """[00:01.000]abc
+[00:02.000]a.c
+[00:03.000]xyz
+"""
+        # "a.c" 作为正则会同时命中 "abc" 与 "a.c", 但不命中 "xyz"
+        lyrics = self._parse(lrc, "a.c")
+        assert len(lyrics) == 1
+        assert lyrics[0].text == "xyz"
 
     def test_string_filter_with_multiple_time_tags(self) -> None:
         """字符串过滤 + 重复时间标签: 同内容的所有时间点都被过滤."""
@@ -295,9 +306,9 @@ class TestParseLrcLineFilter:
 [00:10.000]keep too
 """
         lyrics = self._parse(lrc, "drop")
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].start == 1000
-        assert lyrics.lines[1].start == 10000
+        assert len(lyrics) == 2
+        assert lyrics[0].start == 1000
+        assert lyrics[1].start == 10000
 
     # ── regex filter ───────────────────────────────────────────
 
@@ -311,7 +322,7 @@ class TestParseLrcLineFilter:
 
         lyrics = self._parse(lrc, re.compile(r"\d+"))
         # 三行都包含数字
-        assert len(lyrics.lines) == 0
+        assert len(lyrics) == 0
 
     def test_regex_filter_selective(self) -> None:
         """正则过滤: 只过滤匹配特定模式的行."""
@@ -323,9 +334,9 @@ class TestParseLrcLineFilter:
         import re
 
         lyrics = self._parse(lrc, re.compile(r"^drop-"))
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].text == "keep"
-        assert lyrics.lines[1].text == "keep too"
+        assert len(lyrics) == 2
+        assert lyrics[0].text == "keep"
+        assert lyrics[1].text == "keep too"
 
     def test_regex_filter_case_insensitive(self) -> None:
         """正则过滤: 大小写不敏感."""
@@ -336,8 +347,8 @@ class TestParseLrcLineFilter:
         import re
 
         lyrics = self._parse(lrc, re.compile(r"hello", re.IGNORECASE))
-        assert len(lyrics.lines) == 1
-        assert lyrics.lines[0].text == "world"
+        assert len(lyrics) == 1
+        assert lyrics[0].text == "world"
 
     # ── interaction with other features ────────────────────────
 
@@ -353,10 +364,10 @@ class TestParseLrcLineFilter:
             lrc,
             options=ParseOptions(line_filter="drop", fill_implicit_line_end=True),
         )
-        assert len(lyrics.lines) == 2
+        assert len(lyrics) == 2
         # 过滤后 "keep" 和 "keep too" 相邻, keep 的 end 应为 keep too 的 start
-        assert lyrics.lines[0].end == 10000
-        assert lyrics.lines[1].end is None  # 最后一行
+        assert lyrics[0].end == 10000
+        assert lyrics[1].end is None  # 最后一行
 
     def test_filter_preserves_metadata(self) -> None:
         """过滤不影响 metadata 解析."""
@@ -366,7 +377,7 @@ class TestParseLrcLineFilter:
 """
         lyrics = self._parse(lrc, "drop")
         assert lyrics.metadata["ti"] == "Song"
-        assert len(lyrics.lines) == 1
+        assert len(lyrics) == 1
 
     def test_filter_only_main_content_not_reference(self) -> None:
         """过滤只检查主行文本, 参考行不参与匹配."""
@@ -377,10 +388,10 @@ drop ref B
 """
         lyrics = self._parse(lrc, "drop")
         # 两行主文本都包含 "main" 不包含 "drop", 不会被过滤
-        assert len(lyrics.lines) == 2
+        assert len(lyrics) == 2
         # 参考行仍然存在
-        assert len(lyrics.lines[0].reference_lines) == 1
-        assert lyrics.lines[0].reference_lines[0].text == "drop ref A"
+        assert len(lyrics[0].reference_lines) == 1
+        assert lyrics[0].reference_lines[0].text == "drop ref A"
 
     def test_filter_main_line_matching_removes_refs_too(self) -> None:
         """主行被过滤后, 其参考行也一起消失."""
@@ -392,9 +403,9 @@ ref for drop
 ref for B
 """
         lyrics = self._parse(lrc, "drop")
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].text == "main A"
-        assert lyrics.lines[1].text == "main B"
+        assert len(lyrics) == 2
+        assert lyrics[0].text == "main A"
+        assert lyrics[1].text == "main B"
 
     def test_filter_empty_placeholder_line(self) -> None:
         """空占位行: 空字符串是否被匹配取决于 filter 值."""
@@ -404,7 +415,7 @@ ref for B
 """
         # 用非空 filter → 空行不应被过滤
         lyrics = self._parse(lrc, "drop")
-        assert len(lyrics.lines) == 3  # 空行保留
+        assert len(lyrics) == 3  # 空行保留
 
     def test_filter_none_noop(self) -> None:
         """line_filter=None 时行为与不传选项一致."""
@@ -415,5 +426,5 @@ ref for B
 """
         lyrics1 = parse_lrc(lrc)
         lyrics2 = parse_lrc(lrc, options=ParseOptions(line_filter=None))
-        assert len(lyrics1.lines) == len(lyrics2.lines) == 2
-        assert lyrics1.lines[0].text == lyrics2.lines[0].text
+        assert len(lyrics1) == len(lyrics2) == 2
+        assert lyrics1[0].text == lyrics2[0].text

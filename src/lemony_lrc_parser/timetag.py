@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-import re
 from logging import getLogger
 
+from ._utils import match_to_ms
 from .exceptions import ProgrammingError, TimestampUnderflowError
 from .regex import LINE_TIMETAG_REGEX, compile_regex
 
@@ -73,35 +73,4 @@ def parse_timetag(s: str) -> int | None:
     # 使用 LINE_TIMETAG_REGEX (而非 TIMETAG_REGEX_STRICT) 以与解析器行为一致.
     # 前者允许省略毫秒、1-6 位尾数、行内空白.
     match = compile_regex(rf"^{LINE_TIMETAG_REGEX}$").match(s)
-    return _match_to_ms(match) if match else None
-
-
-def _match_to_ms(match: re.Match[str]) -> int:
-    """从正则匹配对象中提取毫秒数.
-
-    兼容两类命名组:
-
-    * 标准命名组 ``min`` / ``sec`` / ``tail`` (见 ``LINE_TIMETAG_REGEX`` 等) .
-    * 前缀命名组 ``line_min`` / ``word_min`` 等 (见 ``GENERIC_TIMETAG_REGEX``) .
-    """
-    groups = match.groupdict()
-
-    # 优先使用前缀命名组, 再退回到标准命名组
-    min_val = groups.get("line_min") or groups.get("word_min") or groups.get("min")
-    sec_val = groups.get("line_sec") or groups.get("word_sec") or groups.get("sec")
-    tail_val = groups.get("line_tail") or groups.get("word_tail") or groups.get("tail")
-
-    minutes = int(min_val or 0)
-    seconds = int(sec_val or 0)
-
-    if tail_val:
-        # 将毫秒标准化到 3 位
-        if len(tail_val) > 3:
-            tail_val = tail_val[:3]  # 截断: "123456" -> "123"
-        elif len(tail_val) < 3:
-            tail_val = tail_val.ljust(3, "0")  # 补齐: "1" -> "100"
-        millis = int(tail_val)
-    else:
-        millis = 0
-
-    return millis + seconds * 1000 + minutes * 60_000
+    return match_to_ms(match) if match else None

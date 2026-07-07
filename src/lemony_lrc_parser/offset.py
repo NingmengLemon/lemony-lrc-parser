@@ -20,7 +20,7 @@ def apply_delta(lyrics: Lyrics, delta: int) -> None:
     """将所有时间戳增加 ``delta`` ms
 
     注意此处为底层函数没有下溢保护, 且为原地修改"""
-    for line in lyrics.lines:
+    for line in lyrics:
         line.start += delta
         if line.end is not None:
             line.end += delta
@@ -39,7 +39,7 @@ def _apply_word_delta(words: BasicLyricLine, delta: int) -> None:
 
 def iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
     """迭代 :class:`Lyrics` 中出现过的所有时间戳 (含参考行)."""
-    for line in lyrics.lines:
+    for line in lyrics:
         yield line.start
         if line.end is not None:
             yield line.end

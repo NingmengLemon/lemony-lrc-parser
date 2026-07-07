@@ -11,7 +11,6 @@ class TestDumpLrcReferenceLines:
 
     def test_reference_lines_output(self) -> None:
         """测试参考行在输出中."""
-        lyrics = Lyrics()
         line = LyricLine(
             start=1000,
             content=BasicLyricLine([LyricToken(content="Main", start=1000)]),
@@ -19,7 +18,7 @@ class TestDumpLrcReferenceLines:
                 BasicLyricLine([LyricToken(content="翻译", start=1000)]),
             ],
         )
-        lyrics.lines = [line]
+        lyrics = Lyrics([line])
 
         result = dump_lrc(lyrics)
         assert "[00:01.000]Main" in result
@@ -27,7 +26,6 @@ class TestDumpLrcReferenceLines:
 
     def test_multiple_reference_lines(self) -> None:
         """测试多个参考行."""
-        lyrics = Lyrics()
         line = LyricLine(
             start=1000,
             content=BasicLyricLine([LyricToken(content="Main")]),
@@ -36,7 +34,7 @@ class TestDumpLrcReferenceLines:
                 BasicLyricLine([LyricToken(content="翻译2")]),
             ],
         )
-        lyrics.lines = [line]
+        lyrics = Lyrics([line])
 
         result = dump_lrc(lyrics)
         lines = result.strip().split("\n")
@@ -49,7 +47,6 @@ class TestDumpLrcReferenceLines:
         """测试带逐字标签的参考行."""
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
         line = LyricLine(
             start=1000,
             content=BasicLyricLine([LyricToken(content="Main")]),
@@ -62,7 +59,7 @@ class TestDumpLrcReferenceLines:
                 ),
             ],
         )
-        lyrics.lines = [line]
+        lyrics = Lyrics([line])
 
         result = dump_lrc(
             lyrics,
@@ -101,18 +98,19 @@ class TestDumpLrcBywordFormatting:
         """测试使用方括号的逐字标签."""
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                content=BasicLyricLine(
-                    [
-                        LyricToken(content="逐", start=1000, end=1100),
-                        LyricToken(content="字", start=1100, end=1200),
-                    ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine(
+                        [
+                            LyricToken(content="逐", start=1000, end=1100),
+                            LyricToken(content="字", start=1100, end=1200),
+                        ]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
 
         result = dump_lrc(
             lyrics,
@@ -127,18 +125,19 @@ class TestDumpLrcBywordFormatting:
         """测试使用尖括号的逐字标签."""
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                content=BasicLyricLine(
-                    [
-                        LyricToken(content="逐", start=1000, end=1100),
-                        LyricToken(content="字", start=1100, end=1200),
-                    ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine(
+                        [
+                            LyricToken(content="逐", start=1000, end=1100),
+                            LyricToken(content="字", start=1100, end=1200),
+                        ]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
 
         result = dump_lrc(
             lyrics,
@@ -152,18 +151,19 @@ class TestDumpLrcBywordFormatting:
 
     def test_omit_redundant_start_tag(self) -> None:
         """测试省略与行首重复的开始标签."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                content=BasicLyricLine(
-                    [
-                        LyricToken(content="第", start=1000, end=1100),
-                        LyricToken(content="一", start=1100, end=1200),
-                    ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine(
+                        [
+                            LyricToken(content="第", start=1000, end=1100),
+                            LyricToken(content="一", start=1100, end=1200),
+                        ]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
 
         result = dump_lrc(lyrics)
         # 第一个词的开始时间等于行开始时间, 不应该重复输出
@@ -171,19 +171,20 @@ class TestDumpLrcBywordFormatting:
 
     def test_omit_continuous_tags(self) -> None:
         """测试省略与前一词结束时间相接的标签."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                content=BasicLyricLine(
-                    [
-                        LyricToken(content="第", start=1000, end=1100),
-                        LyricToken(content="一", start=1100, end=1200),
-                        LyricToken(content="个", start=1200, end=1300),
-                    ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine(
+                        [
+                            LyricToken(content="第", start=1000, end=1100),
+                            LyricToken(content="一", start=1100, end=1200),
+                            LyricToken(content="个", start=1200, end=1300),
+                        ]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
 
         result = dump_lrc(lyrics)
         # 相接的时间标签应该被省略
@@ -207,14 +208,15 @@ class TestDumpLrcNewOptions:
         """
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=5005,  # 5 毫秒 → 百分秒 0
-                end=5050,  # 50 毫秒 → 百分秒 5
-                content=BasicLyricLine([LyricToken(content="Test")]),
-            ),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=5005,  # 5 毫秒 → 百分秒 0
+                    end=5050,  # 50 毫秒 → 百分秒 5
+                    content=BasicLyricLine([LyricToken(content="Test")]),
+                ),
+            ]
+        )
         result = dump_lrc(
             lyrics, options=SerializationOptions(line_tag_decimal_length=2)
         )
@@ -230,18 +232,19 @@ class TestDumpLrcNewOptions:
         """
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1005,  # 5 毫秒 → 百分秒 0
-                content=BasicLyricLine(
-                    [
-                        LyricToken(content="逐", start=1005, end=1055),
-                        LyricToken(content="字", start=1055, end=1500),
-                    ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1005,  # 5 毫秒 → 百分秒 0
+                    content=BasicLyricLine(
+                        [
+                            LyricToken(content="逐", start=1005, end=1055),
+                            LyricToken(content="字", start=1055, end=1500),
+                        ]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
         result = dump_lrc(
             lyrics, options=SerializationOptions(word_tag_decimal_length=2)
         )

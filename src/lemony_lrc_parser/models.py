@@ -3,9 +3,11 @@
 定义 LRC 歌词的核心数据结构: :class:`LyricToken`、:class:`LyricLine` 和
 作为顶层容器的 :class:`Lyrics`.
 
-本模块只承载数据层语义; 解析 (LRC 文本 → :class:`Lyrics`) 与序列化
- (:class:`Lyrics` → LRC 文本) 的实现分别位于 :mod:`.parser` 与
-:mod:`.serializer`, 这里仅通过延迟导入把它们暴露成 :class:`Lyrics` 的方法.
+本模块采用**充血模型**: :class:`Lyrics` 除承载数据外, 还聚合了解析、序列化、
+字幕互转与时间偏移等操作方法. 这些操作的具体实现分散在 :mod:`.parser`、
+:mod:`.serializer`、:mod:`.subtitle`、:mod:`.offset` 中, 由 :class:`Lyrics`
+的方法通过函数级延迟导入委托调用. 因此 :mod:`.models` 是整个包的**聚合层**,
+而非单纯的数据层——这是有意的取舍, 换取更易用的面向对象 API.
 """
 
 from __future__ import annotations
@@ -40,6 +42,9 @@ __all__ = [
     "ParseOptions",
     "SerializationOptions",
     "SubtitleOptions",
+    "LyricTokenDict",
+    "LyricLineDict",
+    "LyricsDict",
 ]
 _DC_ARGS_SLOTS = (
     {
@@ -53,6 +58,30 @@ _DC_ARGS_SLOTS = (
 )
 
 
+class LyricTokenDict(TypedDict):
+    """:meth:`LyricToken.to_dict` 的返回结构."""
+
+    start: int | None
+    end: int | None
+    content: str
+
+
+class LyricLineDict(TypedDict):
+    """:meth:`LyricLine.to_dict` 的返回结构."""
+
+    start: int
+    end: int | None
+    content: list[LyricTokenDict]
+    reference_lines: list[list[LyricTokenDict]]
+
+
+class LyricsDict(TypedDict):
+    """:meth:`Lyrics.to_dict` 的返回结构."""
+
+    metadata: dict[str, str]
+    lines: list[LyricLineDict]
+
+
 @dataclass
 class ParseOptions:
     """解析选项.
@@ -60,13 +89,19 @@ class ParseOptions:
     Attributes:
         fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
             自动用下一行的开始时间作为其结束时间.
-        line_filter: 黑名单过滤. 若为字符串, 则匹配 lyrics 文本中包含该子串的行;
-            若为已编译的正则, 则用 ``pattern.search`` 匹配行文本.
-            匹配到的行在解析时会被丢弃. ``None`` 表示不过滤.
+        line_filter: 黑名单过滤. 正则表达式: 传入字符串会在
+            :meth:`__post_init__` 中被 :func:`re.compile` 编译, 之后用
+            ``pattern.search`` 匹配行文本. 匹配到的行在解析时会被丢弃.
+            ``None`` 表示不过滤. 若需精确子串匹配, 请使用 :func:`re.escape`.
     """
 
     fill_implicit_line_end: bool = False
-    line_filter: str | re.Pattern | None = None
+    line_filter: str | re.Pattern[str] | None = None
+
+    def __post_init__(self) -> None:
+        """把字符串形式的 ``line_filter`` 统一编译为正则."""
+        if isinstance(self.line_filter, str):
+            self.line_filter = re.compile(self.line_filter)
 
 
 @dataclass
@@ -153,8 +188,8 @@ class LyricToken:
     def copy(self) -> LyricToken:
         return LyricToken(content=self.content, start=self.start, end=self.end)
 
-    def to_dict(self) -> _LyricTokenDict:
-        return _LyricTokenDict(content=self.content, start=self.start, end=self.end)
+    def to_dict(self) -> LyricTokenDict:
+        return LyricTokenDict(content=self.content, start=self.start, end=self.end)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LyricToken":
@@ -165,10 +200,12 @@ class LyricToken:
         )
 
 
-#: 一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
-#:
-#: 对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
 class BasicLyricLine(UserList[LyricToken]):
+    """一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
+
+    对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
+    """
+
     __slots__ = ()
 
     def __init__(self, tokens: Iterable[LyricToken] | None = None) -> None:
@@ -189,7 +226,7 @@ class BasicLyricLine(UserList[LyricToken]):
     def copy(self) -> BasicLyricLine:
         return BasicLyricLine(self)
 
-    def to_dict(self) -> list[_LyricTokenDict]:
+    def to_dict(self) -> list[LyricTokenDict]:
         return [token.to_dict() for token in self]
 
     @classmethod
@@ -204,7 +241,7 @@ class LyricLine:
     Attributes:
         start: 行开始时间 (毫秒) .
         end: 行结束时间 (毫秒) .
-        content: 主语言行内容, 见 :data:`BasicLyricLine`.
+        content: 主语言行内容, 见 :class:`BasicLyricLine`.
         reference_lines: 参考行列表, 常用于存放翻译/音译等辅助行.
     """
 
@@ -244,8 +281,8 @@ class LyricLine:
     def __getitem__(self, index: int | slice) -> LyricToken | BasicLyricLine:
         return self.content[index]
 
-    def to_dict(self) -> _LyricLineDict:
-        return _LyricLineDict(
+    def to_dict(self) -> LyricLineDict:
+        return LyricLineDict(
             start=self.start,
             end=self.end,
             content=self.content.to_dict(),
@@ -267,12 +304,13 @@ class LyricLine:
 class Lyrics(UserList[LyricLine]):
     """一份完整的歌词.
 
-    Attributes:
-        lines: 按时间顺序排列的歌词行.
-        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) .
+    :class:`Lyrics` 直接继承 :class:`~collections.UserList`, 其**自身**就是按
+    时间顺序排列的歌词行序列. 可直接 ``for line in lyrics`` 迭代、``len(lyrics)``
+    取行数, 或通过下标/切片访问具体行, 也支持 ``append`` / ``extend`` 等标准
+    列表操作.
 
-    :class:`Lyrics` 同时是序列容器, 可直接 ``for line in lyrics`` 迭代、
-    ``len(lyrics)`` 取行数, 或通过下标/切片访问具体行.
+    Attributes:
+        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) .
     """
 
     __slots__ = ("metadata",)
@@ -285,15 +323,6 @@ class Lyrics(UserList[LyricLine]):
     ) -> None:
         super().__init__((i.copy() for i in lines) if lines is not None else None)
         self.metadata: dict[str, str] = metadata.copy() if metadata is not None else {}
-
-    @property
-    def lines(self) -> Self:
-        return self
-
-    @lines.setter
-    def lines(self, value: Iterable[LyricLine]) -> None:
-        self.clear()
-        self.extend((t.copy() for t in value))
 
     @override
     def __add__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
@@ -354,7 +383,7 @@ class Lyrics(UserList[LyricLine]):
             elif not other_as_refline_only:
                 pool[line.start] = line.copy()
 
-        self.lines = sorted(pool.values(), key=lambda line: line.start)
+        self.data = sorted(pool.values(), key=lambda line: line.start)
 
     def combine(
         self, other: Lyrics | Iterable[LyricLine], *, other_as_refline_only: bool = True
@@ -525,10 +554,10 @@ class Lyrics(UserList[LyricLine]):
     def __str__(self) -> str:
         return self.dumps()
 
-    def to_dict(self) -> _LyricsDict:
-        return _LyricsDict(
+    def to_dict(self) -> LyricsDict:
+        return LyricsDict(
             metadata=self.metadata.copy(),
-            lines=[line.to_dict() for line in self.lines],
+            lines=[line.to_dict() for line in self],
         )
 
     @classmethod
@@ -541,21 +570,3 @@ class Lyrics(UserList[LyricLine]):
             ],
             metadata=metadata,
         )
-
-
-class _LyricTokenDict(TypedDict):
-    start: int | None
-    end: int | None
-    content: str
-
-
-class _LyricLineDict(TypedDict):
-    start: int
-    end: int | None
-    content: list[_LyricTokenDict]
-    reference_lines: list[list[_LyricTokenDict]]
-
-
-class _LyricsDict(TypedDict):
-    metadata: dict[str, str]
-    lines: list[_LyricLineDict]

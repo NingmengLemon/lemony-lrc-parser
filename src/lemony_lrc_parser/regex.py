@@ -28,47 +28,44 @@ def compile_regex(pattern: str) -> re.Pattern[str]:
     return compiled
 
 
-#: 行时间标签 ``[mm:ss.xxx]``, 命名组: ``min`` / ``sec`` / ``tail``.
-LINE_TIMETAG_REGEX: str = r"""
+def _make_timetag_regex(open_char: str, close_char: str, prefix: str = "") -> str:
+    """按括号符号和命名组前缀生成一段时间标签子模式.
+
+    行标签 (``[mm:ss.xxx]``) 与逐字标签 (``<mm:ss.xxx>``) 的结构完全一致,
+    只有括号符号与命名组前缀不同, 因此统一由本函数生成, 避免复制粘贴漂移.
+
+    Args:
+        open_char: 起始括号 (已转义), 如 ``r"\\["`` 或 ``r"\\<"``.
+        close_char: 结束括号 (已转义), 如 ``r"\\]"`` 或 ``r"\\>"``.
+        prefix: 命名组前缀, 用于在 :data:`GENERIC_TIMETAG_REGEX` 中避免
+            同名组冲突 (如 ``"line_"`` / ``"word_"``); 空串表示无前缀.
+    """
+    return rf"""
     (?:
-        \[
+        {open_char}
             \s*
-                (?P<min>\d{1,4})
+                (?P<{prefix}min>\d{{1,4}})
             \s*
             :
             \s*
-                (?P<sec>\d{1,2})
+                (?P<{prefix}sec>\d{{1,2}})
             \s*
             (?:
                 [:\.]
                 \s*
-                    (?P<tail>\d{1,6})
+                    (?P<{prefix}tail>\d{{1,6}})
                 \s*
             )?
-        \]
+        {close_char}
     )
-"""
+    """
+
+
+#: 行时间标签 ``[mm:ss.xxx]``, 命名组: ``min`` / ``sec`` / ``tail``.
+LINE_TIMETAG_REGEX: str = _make_timetag_regex(r"\[", r"\]")
 
 #: 逐字时间标签 ``<mm:ss.xxx>``, 命名组: ``min`` / ``sec`` / ``tail``.
-WORD_TIMETAG_REGEX: str = r"""
-    (?:
-        \<
-            \s*
-                (?P<min>\d{1,4})
-            \s*
-            :
-            \s*
-                (?P<sec>\d{1,2})
-            \s*
-            (?:
-                [:\.]
-                \s*
-                    (?P<tail>\d{1,6})
-                \s*
-            )?
-        \>
-    )
-"""
+WORD_TIMETAG_REGEX: str = _make_timetag_regex(r"\<", r"\>")
 
 
 #: 元数据标签 ``[key: value]``, 命名组: ``key`` / ``value``.
@@ -89,57 +86,11 @@ METATAG_REGEX: str = r"""
 #: 通用时间标签 (同时匹配方括号行标签与尖括号逐字标签) .
 #:
 #: 为避免同名命名组冲突, 方括号分支使用 ``line_*`` 前缀,
-#: 尖括号分支使用 ``word_*`` 前缀. 消费方应使用 :func:`._match_to_ms` 抹平差异.
-GENERIC_TIMETAG_REGEX: str = r"""
-    (?:
-        (?:
-            \[
-                \s*
-                    (?P<line_min>\d{1,4})
-                \s*
-                :
-                \s*
-                    (?P<line_sec>\d{1,2})
-                \s*
-                (?:
-                    [:\.]
-                    \s*
-                        (?P<line_tail>\d{1,6})
-                    \s*
-                )?
-            \]
-        )
-        |
-        (?:
-            \<
-                \s*
-                    (?P<word_min>\d{1,4})
-                \s*
-                :
-                \s*
-                    (?P<word_sec>\d{1,2})
-                \s*
-                (?:
-                    [:\.]
-                    \s*
-                        (?P<word_tail>\d{1,6})
-                    \s*
-                )?
-            \>
-        )
-    )
-"""
-
-
-def _warmup_cache() -> None:
-    """在模块导入期预热编译缓存, 避免首次使用时的抖动."""
-    for pattern in (
-        LINE_TIMETAG_REGEX,
-        WORD_TIMETAG_REGEX,
-        METATAG_REGEX,
-        GENERIC_TIMETAG_REGEX,
-    ):
-        compile_regex(pattern)
-
-
-_warmup_cache()
+#: 尖括号分支使用 ``word_*`` 前缀. 消费方应使用 :func:`._utils.match_to_ms` 抹平差异.
+GENERIC_TIMETAG_REGEX: str = (
+    "(?:"
+    + _make_timetag_regex(r"\[", r"\]", prefix="line_")
+    + "|"
+    + _make_timetag_regex(r"\<", r"\>", prefix="word_")
+    + ")"
+)

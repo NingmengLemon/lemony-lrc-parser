@@ -34,20 +34,24 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
 
     sep = options.line_separator
 
-    for idx, line in enumerate(lyrics.lines):
+    def write_line_tag(ms: int) -> None:
+        """写一个行首/行尾方括号时间标签."""
+        buffer.write(
+            format_timetag(
+                ms,
+                tail_digits=options.line_tag_decimal_length,
+                use_angle_bracket=False,
+            )
+        )
+
+    for idx, line in enumerate(lyrics):
         if idx > 0:
             buffer.write(sep)
 
         line_start = line.start
 
         # 写主行
-        buffer.write(
-            format_timetag(
-                line_start,
-                tail_digits=options.line_tag_decimal_length,
-                use_angle_bracket=False,
-            )
-        )
+        write_line_tag(line_start)
         buffer.write(
             _format_line(
                 line.content,
@@ -58,24 +62,12 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
             )
         )
         if line.end is not None:
-            buffer.write(
-                format_timetag(
-                    line.end,
-                    tail_digits=options.line_tag_decimal_length,
-                    use_angle_bracket=False,
-                )
-            )
+            write_line_tag(line.end)
         buffer.write("\n")
 
         # 写参考行 (共享主行的 start)
         for refline in line.reference_lines:
-            buffer.write(
-                format_timetag(
-                    line_start,
-                    tail_digits=options.line_tag_decimal_length,
-                    use_angle_bracket=False,
-                )
-            )
+            write_line_tag(line_start)
             buffer.write(
                 _format_line(
                     refline,

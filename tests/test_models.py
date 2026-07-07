@@ -5,19 +5,16 @@ from __future__ import annotations
 from lemony_lrc_parser.models import BasicLyricLine, LyricLine, Lyrics, LyricToken
 
 
+def _line(start: int, text: str) -> LyricLine:
+    return LyricLine(start=start, content=BasicLyricLine([LyricToken(content=text)]))
+
+
 class TestLyricsContainer:
-    """测试 Lyrics 类的容器协议实现."""
+    """测试 Lyrics 类的容器协议实现 (直接继承 UserList)."""
 
     def test_iteration(self) -> None:
         """测试迭代功能."""
-        lyrics = Lyrics()
-        line1 = LyricLine(
-            start=1000, content=BasicLyricLine([LyricToken(content="第一行")])
-        )
-        line2 = LyricLine(
-            start=2000, content=BasicLyricLine([LyricToken(content="第二行")])
-        )
-        lyrics.lines = [line1, line2]
+        lyrics = Lyrics([_line(1000, "第一行"), _line(2000, "第二行")])
 
         lines = list(lyrics)
         assert len(lines) == 2
@@ -29,46 +26,36 @@ class TestLyricsContainer:
         lyrics = Lyrics()
         assert len(lyrics) == 0
 
-        lyrics.lines.append(LyricLine(start=1000))
+        lyrics.append(LyricLine(start=1000))
         assert len(lyrics) == 1
 
-        lyrics.lines.append(LyricLine(start=2000))
+        lyrics.append(LyricLine(start=2000))
         assert len(lyrics) == 2
 
     def test_index_access(self) -> None:
         """测试下标访问."""
-        lyrics = Lyrics()
-        line1 = LyricLine(
-            start=1000, content=BasicLyricLine([LyricToken(content="第一行")])
-        )
-        line2 = LyricLine(
-            start=2000, content=BasicLyricLine([LyricToken(content="第二行")])
-        )
-        lyrics.lines = [line1, line2]
+        lyrics = Lyrics([_line(1000, "第一行"), _line(2000, "第二行")])
 
         assert lyrics[0].content[0].content == "第一行"
         assert lyrics[1].content[0].content == "第二行"
 
     def test_slice_access(self) -> None:
         """测试切片访问."""
-        lyrics = Lyrics()
-        lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="第一行")])
-            ),
-            LyricLine(
-                start=2000, content=BasicLyricLine([LyricToken(content="第二行")])
-            ),
-            LyricLine(
-                start=3000, content=BasicLyricLine([LyricToken(content="第三行")])
-            ),
-        ]
-        lyrics.lines = lines
+        lyrics = Lyrics(
+            [_line(1000, "第一行"), _line(2000, "第二行"), _line(3000, "第三行")]
+        )
 
         sliced = lyrics[0:2]
         assert len(sliced) == 2
         assert sliced[0].content[0].content == "第一行"
         assert sliced[1].content[0].content == "第二行"
+
+    def test_extend_and_append(self) -> None:
+        """测试 extend / append 等标准列表操作."""
+        lyrics = Lyrics()
+        lyrics.extend([_line(1000, "a"), _line(2000, "b")])
+        lyrics.append(_line(3000, "c"))
+        assert [line.text for line in lyrics] == ["a", "b", "c"]
 
 
 class TestLyricLineText:
@@ -98,81 +85,50 @@ class TestLyricsCombine:
 
     def test_combine_basic(self) -> None:
         """测试基本的合并功能."""
-        main = Lyrics()
-        main.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-            LyricLine(
-                start=2000, content=BasicLyricLine([LyricToken(content="World")])
-            ),
-        ]
+        main = Lyrics([_line(1000, "Hello"), _line(2000, "World")])
         main.metadata = {"ti": "Main"}
 
-        translation = Lyrics()
-        translation.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="你好")])),
-            LyricLine(start=2000, content=BasicLyricLine([LyricToken(content="世界")])),
-        ]
+        translation = Lyrics([_line(1000, "你好"), _line(2000, "世界")])
         translation.metadata = {"ar": "Translator"}
 
         combined = main.combine(translation)
 
-        assert len(combined.lines) == 2
-        assert combined.lines[0].content[0].content == "Hello"
-        assert len(combined.lines[0].reference_lines) == 1
-        assert combined.lines[0].reference_lines[0][0].content == "你好"
-        assert combined.lines[1].content[0].content == "World"
-        assert combined.lines[1].reference_lines[0][0].content == "世界"
+        assert len(combined) == 2
+        assert combined[0].content[0].content == "Hello"
+        assert len(combined[0].reference_lines) == 1
+        assert combined[0].reference_lines[0][0].content == "你好"
+        assert combined[1].content[0].content == "World"
+        assert combined[1].reference_lines[0][0].content == "世界"
         # metadata 应该以 main 为准
         assert combined.metadata.get("ti") == "Main"
         assert combined.metadata.get("ar") == "Translator"
 
     def test_combine_with_missing_lines(self) -> None:
         """测试当 translation 有 main 没有的行时的处理."""
-        main = Lyrics()
-        main.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-        ]
+        main = Lyrics([_line(1000, "Hello")])
 
-        translation = Lyrics()
-        translation.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="你好")])),
-            LyricLine(
-                start=3000, content=BasicLyricLine([LyricToken(content="额外的行")])
-            ),
-        ]
+        translation = Lyrics([_line(1000, "你好"), _line(3000, "额外的行")])
 
         # 默认 other_as_refline_only=True, 额外的行应该被丢弃
         combined = main.combine(translation, other_as_refline_only=True)
-        assert len(combined.lines) == 1
+        assert len(combined) == 1
 
         # other_as_refline_only=False, 额外的行应该被保留
         combined = main.combine(translation, other_as_refline_only=False)
-        assert len(combined.lines) == 2
+        assert len(combined) == 2
 
     def test_combine_preserves_original(self) -> None:
         """测试合并不会修改原始对象."""
-        main = Lyrics()
-        main.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-        ]
+        main = Lyrics([_line(1000, "Hello")])
         main.metadata = {"ti": "Original"}
 
-        translation = Lyrics()
-        translation.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="你好")])),
-        ]
+        translation = Lyrics([_line(1000, "你好")])
 
         _ = main.combine(translation)
 
         # 原始对象不应该被修改
-        assert len(main.lines) == 1
-        assert len(main.lines[0].reference_lines) == 0
+        assert len(main) == 1
+        assert len(main[0].reference_lines) == 0
         assert main.metadata.get("ti") == "Original"
 
 
@@ -181,23 +137,14 @@ class TestLyricsAdd:
 
     def test_add_operator(self) -> None:
         """测试 + 运算符."""
-        main = Lyrics()
-        main.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-        ]
-
-        translation = Lyrics()
-        translation.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="你好")])),
-        ]
+        main = Lyrics([_line(1000, "Hello")])
+        translation = Lyrics([_line(1000, "你好")])
 
         combined = main + translation
 
-        assert len(combined.lines) == 1
-        assert combined.lines[0].content[0].content == "Hello"
-        assert len(combined.lines[0].reference_lines) == 1
+        assert len(combined) == 1
+        assert combined[0].content[0].content == "Hello"
+        assert len(combined[0].reference_lines) == 1
 
     def test_add_with_non_lyrics(self) -> None:
         """测试与非 Lyrics 对象相加应该返回 NotImplemented."""
@@ -211,12 +158,7 @@ class TestLyricsStr:
 
     def test_str_calls_dumps(self) -> None:
         """测试 __str__ 会调用 dumps."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-        ]
+        lyrics = Lyrics([_line(1000, "Hello")])
 
         str_result = str(lyrics)
         dumps_result = lyrics.dumps()

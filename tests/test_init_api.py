@@ -20,8 +20,8 @@ class TestLoadsFunction:
         lyrics = loads(lrc)
         assert isinstance(lyrics, Lyrics)
         assert lyrics.metadata.get("ti") == "Test"
-        assert len(lyrics.lines) == 1
-        assert lyrics.lines[0].content[0].content == "Hello World"
+        assert len(lyrics) == 1
+        assert lyrics[0].content[0].content == "Hello World"
 
     def test_loads_with_fill_implicit_end(self) -> None:
         """测试带 fill_implicit_line_end 参数的 loads."""
@@ -31,7 +31,7 @@ class TestLoadsFunction:
 [00:05.000]第二行
 """
         lyrics = loads(lrc, options=ParseOptions(fill_implicit_line_end=True))
-        assert lyrics.lines[0].end == 5000
+        assert lyrics[0].end == 5000
 
     def test_loads_equivalent_to_lyrics_loads(self) -> None:
         """测试 loads 等价于 Lyrics.loads."""
@@ -47,12 +47,13 @@ class TestDumpsFunction:
 
     def test_dumps_basic(self) -> None:
         """测试基本的 dumps 功能."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
+                ),
+            ]
+        )
         result = dumps(lyrics)
         assert "[00:01.000]Hello" in result
 
@@ -60,16 +61,17 @@ class TestDumpsFunction:
         """测试带参数的 dumps."""
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
-        lyrics.metadata = {"ti": "Test"}
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                content=BasicLyricLine(
-                    [LyricToken(content="逐", start=1000, end=1100)]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine(
+                        [LyricToken(content="逐", start=1000, end=1100)]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
+        lyrics.metadata = {"ti": "Test"}
         result = dumps(
             lyrics,
             options=SerializationOptions(
@@ -82,10 +84,13 @@ class TestDumpsFunction:
 
     def test_dumps_equivalent_to_lyrics_dumps(self) -> None:
         """测试 dumps 等价于 lyrics.dumps."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="Test")])),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000, content=BasicLyricLine([LyricToken(content="Test")])
+                ),
+            ]
+        )
         result1 = dumps(lyrics)
         result2 = lyrics.dumps()
         assert result1 == result2
@@ -103,8 +108,8 @@ class TestLoadFunction:
             lyrics = load(fp)
         assert isinstance(lyrics, Lyrics)
         assert lyrics.metadata.get("ti") == "Test"
-        assert len(lyrics.lines) == 1
-        assert lyrics.lines[0].content[0].content == "Hello World"
+        assert len(lyrics) == 1
+        assert lyrics[0].content[0].content == "Hello World"
 
     def test_load_with_fill_implicit_end(self) -> None:
         """测试带 fill_implicit_line_end 参数的 load."""
@@ -115,7 +120,7 @@ class TestLoadFunction:
 """
         with StringIO(lrc) as fp:
             lyrics = load(fp, options=ParseOptions(fill_implicit_line_end=True))
-        assert lyrics.lines[0].end == 5000
+        assert lyrics[0].end == 5000
 
     def test_load_equivalent_to_lyrics_load(self) -> None:
         """测试 load 等价于 Lyrics.load."""
@@ -133,12 +138,13 @@ class TestDumpFunction:
 
     def test_dump_basic(self) -> None:
         """测试基本的 dump 功能."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
-            ),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000, content=BasicLyricLine([LyricToken(content="Hello")])
+                ),
+            ]
+        )
         with StringIO() as fp:
             dump(lyrics, fp)
             result = fp.getvalue()
@@ -148,16 +154,17 @@ class TestDumpFunction:
         """测试带参数的 dump."""
         from lemony_lrc_parser.models import SerializationOptions
 
-        lyrics = Lyrics()
-        lyrics.metadata = {"ti": "Test"}
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                content=BasicLyricLine(
-                    [LyricToken(content="逐", start=1000, end=1100)]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine(
+                        [LyricToken(content="逐", start=1000, end=1100)]
+                    ),
                 ),
-            ),
-        ]
+            ]
+        )
+        lyrics.metadata = {"ti": "Test"}
         with StringIO() as fp:
             dump(
                 lyrics,
@@ -172,10 +179,13 @@ class TestDumpFunction:
 
     def test_dump_equivalent_to_lyrics_dump(self) -> None:
         """测试 dump 等价于 lyrics.dump."""
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="Test")])),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000, content=BasicLyricLine([LyricToken(content="Test")])
+                ),
+            ]
+        )
         with StringIO() as fp:
             dump(lyrics, fp)
             result1 = fp.getvalue()
@@ -199,13 +209,13 @@ class TestDumpFunction:
         with StringIO(dumped) as fp:
             lyrics2 = load(fp)
 
-        assert len(lyrics2.lines) == 2
+        assert len(lyrics2) == 2
         assert lyrics2.metadata.get("ti") == "Roundtrip"
         assert lyrics2.metadata.get("ar") == "TestArtist"
-        assert lyrics2.lines[0].text == "Hello World"
-        assert lyrics2.lines[1].text == "Goodbye World"
-        assert lyrics2.lines[0].start == 1000
-        assert lyrics2.lines[1].start == 5000
+        assert lyrics2[0].text == "Hello World"
+        assert lyrics2[1].text == "Goodbye World"
+        assert lyrics2[0].start == 1000
+        assert lyrics2[1].start == 5000
 
 
 class TestModuleImports:

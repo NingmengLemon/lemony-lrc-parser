@@ -136,7 +136,7 @@ def _iter_cues(
     补齐后仍非正的区间 (``end <= start``) 会被抬升为
     ``start + default_duration_ms``, 保证字幕时长有效.
     """
-    lines = list(lyrics.lines)
+    lines = list(lyrics)
     cues: list[tuple[int, int, list[str]]] = []
     for idx, line in enumerate(lines):
         start = line.start
@@ -253,8 +253,8 @@ def _parse_subtitle(text: str) -> Lyrics:
             continue
         line = _cue_block_to_line(block)
         if line is not None:
-            lyrics.lines.append(line)
-    lyrics.lines = sorted(lyrics.lines, key=lambda ln: ln.start)
+            lyrics.append(line)
+    lyrics.data = sorted(lyrics, key=lambda ln: ln.start)
     return lyrics
 
 

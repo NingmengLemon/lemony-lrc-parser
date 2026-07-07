@@ -58,6 +58,55 @@
 
   同 F-SRT，实现 `Lyrics.to_webvtt()` / `Lyrics.from_webvtt()`（及顶层 `dump_webvtt` / `parse_webvtt`）。解析时自动跳过 `WEBVTT` 头部与 `NOTE` / `STYLE` / `REGION` 块，并兼容 cue 时间轴的样式设置后缀。
 
+### v0.4.x 结构重构 (Structural Refactor)
+
+以下为一次针对**代码结构组织**的集中重构, 不改变对外行为 (除 `line_filter`
+语义收敛外), 主要提升分层清晰度与可维护性:
+
+- **[S1] ✅ `Lyrics` 双重身份消除 (走纯 UserList)**
+
+  移除 [`Lyrics.lines`](src/lemony_lrc_parser/models.py) property/setter.
+  过去 `lyrics.lines` 返回自身、setter 又偷偷 deepcopy, 造成 `append` 与
+  `lines = [...]` 行为不一致的史山. 现在 `Lyrics` 直接就是 `UserList[LyricLine]`,
+  统一用 `lyrics[i]` / `len(lyrics)` / `lyrics.append(...)` / `lyrics.extend(...)`,
+  内部批量重排改用 `self.data = ...`.
+
+- **[S2] ✅ 时间标签正则去重 (模板函数生成)**
+
+  [`regex.py`](src/lemony_lrc_parser/regex.py) 原有三份结构雷同的正则
+  (`LINE_` / `WORD_` / `GENERIC_`), 现由 `_make_timetag_regex(open, close, prefix)`
+  统一生成, 消除复制粘贴漂移风险. 同时删除了导入期的 `_warmup_cache()` 副作用.
+
+- **[S3] ✅ 私有符号跨模块依赖下沉**
+
+  新增内部模块 [`_utils.py`](src/lemony_lrc_parser/_utils.py), 把原先
+  `from .timetag import _match_to_ms` 这种"私有函数跨模块导入"下沉为
+  `_utils.match_to_ms`, `timetag` 与 `parser` 均从此消费, 命名可见性与真实用法一致.
+
+- **[S4] ✅ 公共 Dict 类型去下划线并前移**
+
+  `_LyricTokenDict` / `_LyricLineDict` / `_LyricsDict` 改名为
+  `LyricTokenDict` / `LyricLineDict` / `LyricsDict`, 前移到被引用处之前,
+  并从包顶层导出 (它们本就是 `to_dict()` 的公共返回类型).
+
+- **[S5] ✅ `line_filter` 语义收敛为正则**
+
+  [`ParseOptions`](src/lemony_lrc_parser/models.py) 的 `line_filter` 不再区分
+  "字符串子串" 与 "正则" 两套语义, 统一按正则理解: `str` 会在 `__post_init__`
+  中被 `re.compile`, 之后一律 `pattern.search`. 需精确子串匹配时用 `re.escape`.
+  这是本次唯一的对外行为变化.
+
+- **[S6] ✅ 杂项清理**
+
+  - `exceptions.py` 全部补齐 docstring, 并说明 `ProgrammingError` 刻意不继承
+    `LyricsParserError` 的设计意图.
+  - `BasicLyricLine` 从错误的 `#:` 变量文档语法改为正规 class docstring.
+  - `serializer.py` 抽取 `write_line_tag` helper, 收敛重复的行标签写入逻辑.
+  - 修正 `parser.py` 中重复的 `# 2b.` 注释编号 (2b/2c/2d).
+  - `models.py` 模块 docstring 改为如实描述**充血模型 / 聚合层**定位.
+  - 测试组织: `test_construct_lrc_offset.py` 重命名为 `test_offset.py`, 与其余
+    `test_<模块>.py` 命名约定对齐.
+
 ### 部分完成
 
 - **[F-REPR] 🔶 自定义 `__repr__` 改善调试体验** (部分完成)
@@ -135,7 +184,8 @@
 
 - **[F-MUTATE] `Lyrics` 安全变更方法**
 
-  当前直接操作 `lyrics.lines` 会绕过排序/一致性维护:
+  `Lyrics` 现为 `UserList`, 直接 `lyrics.append(...)` / `lyrics[i] = ...`
+  会绕过按时间排序/一致性维护:
 
   ```python
   lyrics.insert_line(line: LyricLine)   # 插入后自动排序

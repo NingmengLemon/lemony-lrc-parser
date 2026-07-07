@@ -21,20 +21,20 @@ from lemony_lrc_parser.subtitle import (
 
 
 def _make_lyrics() -> Lyrics:
-    lyrics = Lyrics()
-    lyrics.lines = [
-        LyricLine(
-            start=1000,
-            end=3000,
-            content=BasicLyricLine([LyricToken(content="Hello world")]),
-        ),
-        LyricLine(
-            start=3000,
-            end=6500,
-            content=BasicLyricLine([LyricToken(content="Second line")]),
-        ),
-    ]
-    return lyrics
+    return Lyrics(
+        [
+            LyricLine(
+                start=1000,
+                end=3000,
+                content=BasicLyricLine([LyricToken(content="Hello world")]),
+            ),
+            LyricLine(
+                start=3000,
+                end=6500,
+                content=BasicLyricLine([LyricToken(content="Second line")]),
+            ),
+        ]
+    )
 
 
 class TestTimestampHelpers:
@@ -77,47 +77,57 @@ class TestDumpSrt:
         assert "2\n00:00:03,000 --> 00:00:06,500\nSecond line" in result
 
     def test_fill_end_from_next(self) -> None:
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="a")])),
-            LyricLine(start=4000, content=BasicLyricLine([LyricToken(content="b")])),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000, content=BasicLyricLine([LyricToken(content="a")])
+                ),
+                LyricLine(
+                    start=4000, content=BasicLyricLine([LyricToken(content="b")])
+                ),
+            ]
+        )
         result = dump_srt(lyrics)
         # 第一行没有 end, 用下一行 start=4000 填充
         assert "00:00:01,000 --> 00:00:04,000" in result
 
     def test_default_duration_for_last_line(self) -> None:
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(start=1000, content=BasicLyricLine([LyricToken(content="a")])),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000, content=BasicLyricLine([LyricToken(content="a")])
+                ),
+            ]
+        )
         result = dump_srt(lyrics, options=SubtitleOptions(default_duration_ms=2000))
         # 最后一行没有下一行, 用 start + default_duration
         assert "00:00:01,000 --> 00:00:03,000" in result
 
     def test_reference_lines_included(self) -> None:
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                end=2000,
-                content=BasicLyricLine([LyricToken(content="Hello")]),
-                reference_lines=[BasicLyricLine([LyricToken(content="你好")])],
-            ),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    end=2000,
+                    content=BasicLyricLine([LyricToken(content="Hello")]),
+                    reference_lines=[BasicLyricLine([LyricToken(content="你好")])],
+                ),
+            ]
+        )
         result = dump_srt(lyrics)
         assert "Hello\n你好" in result
 
     def test_reference_lines_excluded(self) -> None:
-        lyrics = Lyrics()
-        lyrics.lines = [
-            LyricLine(
-                start=1000,
-                end=2000,
-                content=BasicLyricLine([LyricToken(content="Hello")]),
-                reference_lines=[BasicLyricLine([LyricToken(content="你好")])],
-            ),
-        ]
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    end=2000,
+                    content=BasicLyricLine([LyricToken(content="Hello")]),
+                    reference_lines=[BasicLyricLine([LyricToken(content="你好")])],
+                ),
+            ]
+        )
         result = dump_srt(
             lyrics, options=SubtitleOptions(include_reference_lines=False)
         )
@@ -152,20 +162,20 @@ class TestParseSrt:
             "Second line\n"
         )
         lyrics = parse_srt(srt)
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].start == 1000
-        assert lyrics.lines[0].end == 3000
-        assert lyrics.lines[0].text == "Hello world"
-        assert lyrics.lines[1].start == 3000
-        assert lyrics.lines[1].end == 6500
-        assert lyrics.lines[1].text == "Second line"
+        assert len(lyrics) == 2
+        assert lyrics[0].start == 1000
+        assert lyrics[0].end == 3000
+        assert lyrics[0].text == "Hello world"
+        assert lyrics[1].start == 3000
+        assert lyrics[1].end == 6500
+        assert lyrics[1].text == "Second line"
 
     def test_multiline_cue(self) -> None:
         srt = "1\n00:00:01,000 --> 00:00:03,000\nHello\n你好\n"
         lyrics = parse_srt(srt)
-        assert lyrics.lines[0].text == "Hello"
-        assert len(lyrics.lines[0].reference_lines) == 1
-        assert lyrics.lines[0].reference_lines[0].text == "你好"
+        assert lyrics[0].text == "Hello"
+        assert len(lyrics[0].reference_lines) == 1
+        assert lyrics[0].reference_lines[0].text == "你好"
 
     def test_sorted_by_start(self) -> None:
         srt = (
@@ -173,8 +183,8 @@ class TestParseSrt:
             "2\n00:00:01,000 --> 00:00:02,000\nearly\n"
         )
         lyrics = parse_srt(srt)
-        assert lyrics.lines[0].text == "early"
-        assert lyrics.lines[1].text == "late"
+        assert lyrics[0].text == "early"
+        assert lyrics[1].text == "late"
 
 
 class TestParseWebVtt:
@@ -191,10 +201,10 @@ class TestParseWebVtt:
             "Second line\n"
         )
         lyrics = parse_webvtt(vtt)
-        assert len(lyrics.lines) == 2
-        assert lyrics.lines[0].start == 1000
-        assert lyrics.lines[0].end == 3000
-        assert lyrics.lines[0].text == "Hello world"
+        assert len(lyrics) == 2
+        assert lyrics[0].start == 1000
+        assert lyrics[0].end == 3000
+        assert lyrics[0].text == "Hello world"
 
     def test_skips_note_and_cue_id(self) -> None:
         vtt = (
@@ -207,15 +217,15 @@ class TestParseWebVtt:
             "text\n"
         )
         lyrics = parse_webvtt(vtt)
-        assert len(lyrics.lines) == 1
-        assert lyrics.lines[0].text == "text"
-        assert lyrics.lines[0].start == 1000
+        assert len(lyrics) == 1
+        assert lyrics[0].text == "text"
+        assert lyrics[0].start == 1000
 
     def test_cue_with_settings(self) -> None:
         vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:start position:10%\ntext\n"
         lyrics = parse_webvtt(vtt)
-        assert len(lyrics.lines) == 1
-        assert lyrics.lines[0].end == 2000
+        assert len(lyrics) == 1
+        assert lyrics[0].end == 2000
 
 
 class TestRoundtrip:
@@ -225,8 +235,8 @@ class TestRoundtrip:
         original = _make_lyrics()
         srt = dump_srt(original)
         restored = parse_srt(srt)
-        assert len(restored.lines) == len(original.lines)
-        for a, b in zip(original.lines, restored.lines):
+        assert len(restored) == len(original)
+        for a, b in zip(original, restored):
             assert a.start == b.start
             assert a.end == b.end
             assert a.text == b.text
@@ -235,8 +245,8 @@ class TestRoundtrip:
         original = _make_lyrics()
         vtt = dump_webvtt(original)
         restored = parse_webvtt(vtt)
-        assert len(restored.lines) == len(original.lines)
-        for a, b in zip(original.lines, restored.lines):
+        assert len(restored) == len(original)
+        for a, b in zip(original, restored):
             assert a.start == b.start
             assert a.end == b.end
             assert a.text == b.text
@@ -256,12 +266,12 @@ class TestLyricsMethods:
     def test_from_srt_classmethod(self) -> None:
         srt = "1\n00:00:01,000 --> 00:00:02,000\nhi\n"
         lyrics = Lyrics.from_srt(srt)
-        assert lyrics.lines[0].text == "hi"
+        assert lyrics[0].text == "hi"
 
     def test_from_webvtt_classmethod(self) -> None:
         vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi\n"
         lyrics = Lyrics.from_webvtt(vtt)
-        assert lyrics.lines[0].text == "hi"
+        assert lyrics[0].text == "hi"
 
     def test_top_level_exports(self) -> None:
         assert hasattr(llp, "dump_srt")
