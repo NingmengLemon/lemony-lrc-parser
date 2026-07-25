@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from lemony_lrc_parser import Lyrics
 from lemony_lrc_parser.exceptions import TimestampUnderflowError
+from lemony_lrc_parser.offset import max_timestamp, min_timestamp
 from lemony_lrc_parser.parser import parse_lrc as parse_file
 from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
 
@@ -19,6 +21,17 @@ _SAMPLE_LRC = """\
 [00:05.000]<00:05.000>hello<00:06.000>world<00:07.000>
 [00:10.000]<00:10.000>second<00:11.500>line<00:12.000>
 """
+
+
+class TestTimestampBounds:
+    """测试时间戳上下界聚合函数."""
+
+    def test_empty_lyrics_returns_none(self) -> None:
+        """空歌词没有时间戳时，上下界均返回 None."""
+        lyrics = Lyrics()
+
+        assert min_timestamp(lyrics) is None
+        assert max_timestamp(lyrics) is None
 
 
 class TestApplyOffset:

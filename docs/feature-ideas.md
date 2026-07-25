@@ -50,13 +50,13 @@
 
 ### P0 / 高优先级：建议优先做
 
-| ID | 主题 | 类型 | 价值 | 备注 |
+| ID | 主题 | 类型 | 价值 | 状态 |
 | --- | --- | --- | --- | --- |
-| F-VALIDATE | 数据一致性验证 API | 质量 / DX | 高 | 后续 strict mode、CLI validate、CI 校验都可复用 |
-| NEW-ERROR-LINE | 解析错误包含行号与原始行 | 可诊断性 | 高 | 多行 LRC 调试时收益很大 |
-| NEW-CLI | CLI 入口 | 工具化 | 高 | 可让非库用户直接验证、偏移、转换、合并歌词 |
-| B7 | 逐字时间戳与行时间范围一致性校验 | 正确性 | 高 | 可合并进 `validate()`，默认不破坏宽松解析 |
-| NEW-ROUNDTRIP | Roundtrip Fidelity 测试矩阵 | 回归保障 | 高 | 对解析 / 序列化库非常关键 |
+| F-VALIDATE | 数据一致性验证 API | 质量 / DX | 高 | ✅ v0.4.0b3 |
+| NEW-ERROR-LINE | 解析错误包含行号与原始行 | 可诊断性 | 高 | ✅ v0.4.0b3 |
+| NEW-CLI | CLI 入口 | 工具化 | 高 | ✅ v0.4.0b3 |
+| B7 | 逐字时间戳与行时间范围一致性校验 | 正确性 | 高 | ✅ v0.4.0b3 |
+| NEW-ROUNDTRIP | Roundtrip Fidelity 测试矩阵 | 回归保障 | 高 | 待办 |
 
 ### P1 / 中优先级：稳定核心后推进
 
@@ -842,6 +842,37 @@ ASS 支持样式、定位、特效，完整支持会显著扩大复杂度。
 - **[S6] 杂项清理**
 
   包括 docstring、注释编号、测试文件命名、序列化 helper 等结构清理。
+
+### v0.4.0b3 (当前迭代)
+
+- **[F-VALIDATE] 数据一致性验证 API** (#P0)
+
+ 新增 [`validation.py`](../src/lemony_lrc_parser/validation.py) 模块, 提供:
+
+- `ValidationIssue` — 结构化问题描述 (code / message / severity / line_index / token_index).
+- `ValidationOptions` — 验证选项 (strict 模式).
+- `validate_lyrics()` — 独立验证函数, 检查排序、重复 start、end<=start、token 单调性、token 越界 (B7)、metadata key 合法性、offset 可解析性.
+- `Lyrics.validate()` — 便捷薄包装, `strict=True` 时遇 error 抛 `InvalidLyricsError`.
+
+- **[B7] 逐字时间戳与行时间范围一致性校验** (#P0)
+
+ 已合入 `validation.py` 的 `_check_line_tokens()`, 检查 token 是否落在 `[line.start, line.end]` 范围内. 作为 warning 而非 error.
+
+- **[NEW-ERROR-LINE] 解析错误包含行号与原始行** (#P0)
+
+- `InvalidLyricsError` 增加 `line_no` / `raw_line` 属性.
+- `parse_lrc()` 循环改用 `enumerate(lrc.splitlines(), start=1)` 保留行号.
+- `parse_line()` 调用的异常路径通过 try/except 自动附加行号信息.
+- warning 日志也带上了行号.
+
+- **[NEW-CLI] CLI 命令行入口** (#P0)
+
+ 新增 [`cli.py`](../src/lemony_lrc_parser/cli.py) 和 [`__main__.py`](../src/lemony_lrc_parser/__main__.py), 支持:
+
+- `python -m lemony_lrc_parser validate [--strict] <file>` — 验证数据一致性.
+- `python -m lemony_lrc_parser offset --delta <ms> [-o out] <file>` — 时间偏移.
+- `python -m lemony_lrc_parser to-srt [-o out] <file>` — 转 SRT.
+- `python -m lemony_lrc_parser to-webvtt [-o out] <file>` — 转 WebVTT.
 
 ---
 

@@ -13,7 +13,19 @@ from .models import BasicLyricLine, Lyrics
 __all__ = [
     "apply_delta",
     "iter_all_timestamps",
+    "max_timestamp",
+    "min_timestamp",
 ]
+
+
+def max_timestamp(lyrics: Lyrics) -> int | None:
+    """获取所有时间戳中的最大值; 歌词不含时间戳时返回 ``None``."""
+    return max(iter_all_timestamps(lyrics), default=None)
+
+
+def min_timestamp(lyrics: Lyrics) -> int | None:
+    """获取所有时间戳中的最小值; 歌词不含时间戳时返回 ``None``."""
+    return min(iter_all_timestamps(lyrics), default=None)
 
 
 def apply_delta(lyrics: Lyrics, delta: int) -> None:

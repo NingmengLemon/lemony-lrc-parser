@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from lemony_lrc_parser import BasicLyricLine
 from lemony_lrc_parser.parser import parse_line, parse_lrc
 
 
@@ -74,7 +75,7 @@ class TestParseLrcReferenceLines:
 
         with caplog.at_level(logging.WARNING):
             lyrics = parse_lrc(lrc)
-        assert "Orphaned lyric line" in caplog.text
+        assert "orphaned lyric line" in caplog.text
         assert len(lyrics) == 1
 
     def test_multiple_time_tags_same_line(self) -> None:
@@ -428,3 +429,70 @@ ref for B
         lyrics2 = parse_lrc(lrc, options=ParseOptions(line_filter=None))
         assert len(lyrics1) == len(lyrics2) == 2
         assert lyrics1[0].text == lyrics2[0].text
+
+
+class TestParseLrcErrorLineInfo:
+    """测试 parse_lrc 异常时附带的 line_no / raw_line 信息."""
+
+    def test_invalid_lyrics_gets_line_no(self, monkeypatch) -> None:
+        """parse_lrc 抛出的 InvalidLyricsError 应自动附加 line_no 和 raw_line."""
+        from lemony_lrc_parser.exceptions import InvalidLyricsError
+
+        # 通过 monkeypatch parse_line 来触发 InvalidLyricsError,
+        # 测试 parse_lrc 中新加的 try/except 包装逻辑
+        import lemony_lrc_parser.parser as parser_mod
+
+        def _fail_parse_line(line: str) -> None:
+            raise InvalidLyricsError("simulated failure")
+
+        monkeypatch.setattr(parser_mod, "parse_line", _fail_parse_line)
+        lrc = "[00:01.000]some line\n"
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parse_lrc(lrc)
+        err = exc_info.value
+        assert err.line_no is not None, "line_no should be populated"
+        assert err.raw_line is not None, "raw_line should be populated"
+        assert err.line_no >= 1
+        assert isinstance(err.raw_line, str)
+
+    def test_ambiguous_leading_tags_error_has_line_info(self) -> None:
+        """多行首标签 + 含时间标签的正交 且无法产生 line start 时,
+        错误应带 line_no / raw_line."""
+        from lemony_lrc_parser.exceptions import InvalidLyricsError
+
+        # 场景: 多个行首 [time] 标签, 剩余正文还含有时间标签,
+        # 但 parse_line 返回 None 导致 line_start 为 None
+        # 这里构造一段 parse_line 返回非 None 但第一个 token start=None 的情况
+        # 实际上 parse_line 对空内容返回 None, 这让 2a 分支走 continue。
+        # 公平起见用 monkeypatch 让 parse_line 返回 line.start=None 的数据
+        import lemony_lrc_parser.parser as parser_mod
+
+        orig = parser_mod.parse_line
+
+        def _bad_parse_line(line: str) -> BasicLyricLine | None:
+            from lemony_lrc_parser.models import BasicLyricLine, LyricToken
+
+            return BasicLyricLine([LyricToken(content="x", start=None, end=None)])
+
+        try:
+            parser_mod.parse_line = _bad_parse_line  # type: ignore[method-assign]
+            lrc = "[00:01.000][00:02.000]text <00:01.500>extra"
+            with pytest.raises(InvalidLyricsError) as exc_info:
+                parse_lrc(lrc)
+            err = exc_info.value
+            assert err.line_no is not None
+            assert err.raw_line is not None
+        finally:
+            parser_mod.parse_line = orig  # type: ignore[method-assign]
+
+    def test_orphaned_line_warning_has_line_no(self, caplog) -> None:
+        """孤立行 (无锚点且无时间标签) 的 warning 日志应包含行号."""
+        import logging
+
+        # 先有空行重置 last_tag, 再出现无时间标签的文本行
+        lrc = "[00:01.000]anchor\n\norphan text"
+        with caplog.at_level(logging.WARNING):
+            parse_lrc(lrc)
+        assert "orphaned lyric line" in caplog.text
+        # 新格式包含 "Line N:" 前缀
+        assert "Line 3:" in caplog.text

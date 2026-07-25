@@ -248,6 +248,12 @@ class TestModuleImports:
         assert hasattr(llp, "format_timetag")
         assert hasattr(llp, "parse_timetag")
 
+        # 验证子系统
+        assert hasattr(llp, "ValidationIssue")
+        assert hasattr(llp, "ValidationOptions")
+        assert hasattr(llp, "ValidationSeverity")
+        assert hasattr(llp, "validate_lyrics")
+
     def test_old_names_removed(self) -> None:
         """测试旧名称已被移除."""
         # 这些名称在旧版本中存在, 现在应该被移除

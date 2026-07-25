@@ -18,6 +18,7 @@ from collections import UserList
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import (
+    TYPE_CHECKING,
     Any,
     SupportsIndex,
     TextIO,
@@ -28,6 +29,9 @@ from typing import (
 from typing_extensions import Self, override
 
 from .exceptions import ProgrammingError, TimestampUnderflowError
+
+if TYPE_CHECKING:
+    from .validation import ValidationIssue, ValidationOptions
 
 if sys.version_info >= (3, 10):
     from types import NotImplementedType
@@ -250,9 +254,9 @@ class LyricLine:
     content: BasicLyricLine = field(default_factory=BasicLyricLine)
     reference_lines: list[BasicLyricLine] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.start is None:
-            raise TypeError("LyricLine.start cannot be None")
+            raise ValueError("LyricLine.start cannot be None")
 
     def copy(self) -> "LyricLine":
         return LyricLine(
@@ -553,6 +557,34 @@ class Lyrics(UserList[LyricLine]):
 
     def __str__(self) -> str:
         return self.dumps()
+
+    def validate(
+        self,
+        *,
+        options: "ValidationOptions | None" = None,
+    ) -> "list[ValidationIssue]":
+        """验证歌词数据一致性, 返回问题列表.
+
+        委托给 :func:`~.validation.validate_lyrics` 做纯数据校验,
+        本方法额外处理 ``strict`` 行为.
+
+        Args:
+            options: 验证选项. ``strict=True`` 时遇到 error 级别问题
+                会抛出 :class:`~.exceptions.InvalidLyricsError`.
+        """
+        from .validation import validate_lyrics
+
+        issues = validate_lyrics(self)
+        if options and options.strict:
+            errors = [i for i in issues if i.severity == "error"]
+            if errors:
+                from .exceptions import InvalidLyricsError
+
+                raise InvalidLyricsError(
+                    f"Validation failed with {len(errors)} error(s): "
+                    + "; ".join(f"[{e.code}] {e.message}" for e in errors)
+                )
+        return issues
 
     def to_dict(self) -> LyricsDict:
         return LyricsDict(

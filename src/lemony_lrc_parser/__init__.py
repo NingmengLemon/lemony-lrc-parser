@@ -53,6 +53,12 @@ from .models import (
 from .parser import parse_line, parse_lrc
 from .subtitle import dump_srt, dump_webvtt, parse_srt, parse_webvtt
 from .timetag import format_timetag, parse_timetag
+from .validation import (
+    ValidationIssue,
+    ValidationOptions,
+    ValidationSeverity,
+    validate_lyrics,
+)
 
 __all__ = [
     "BasicLyricLine",
@@ -69,6 +75,10 @@ __all__ = [
     "ParseOptions",
     "SerializationOptions",
     "SubtitleOptions",
+    "ValidationIssue",
+    "ValidationOptions",
+    "ValidationSeverity",
+    "validate_lyrics",
     "dumps",
     "loads",
     "dump",

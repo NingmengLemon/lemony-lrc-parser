@@ -21,6 +21,9 @@ Lemon-flavored LRC Parser for Python.
 - 字典序列化 (`to_dict()` / `from_dict()`)
 - 深拷贝方法链 (`.copy()`)
 - 可配置解析与序列化选项
+- 数据一致性验证 API (`validate_lyrics` / `Lyrics.validate()`)
+- CLI 命令行工具 (`lemonyrics` / `python -m lemony_lrc_parser`)
+- 解析错误附带行号与原始行 (`InvalidLyricsError.line_no` / `.raw_line`)
 - 完整的类型注解
 
 ## Installation
@@ -301,6 +304,64 @@ shifted = lyrics << 500   # 提前 500ms
 
 如需在序列化前偏移时间戳, 请先调用 `apply_delta()` 再序列化返回的副本.
 如果你的偏移量来自歌词文件元数据, 你可能还需要记得手动清理 `lyrics.metadata` 中的偏移值.
+
+也可以通过 `min_timestamp` / `max_timestamp` 快速检查歌词的时间范围:
+
+```python
+from lemony_lrc_parser.offset import min_timestamp, max_timestamp
+
+lyrics = Lyrics.loads(lrc_text)
+print(min_timestamp(lyrics))  # 最小时间戳 (ms), 无时间戳时为 None
+print(max_timestamp(lyrics))  # 最大时间戳 (ms), 无时间戳时为 None
+```
+
+### Validation
+
+使用 `lyrics.validate()` 检查歌词数据一致性:
+
+```python
+from lemony_lrc_parser import Lyrics, validate_lyrics
+
+lyrics = Lyrics.loads(lrc_text)
+
+# 返回问题列表
+issues = lyrics.validate()
+for issue in issues:
+    print(f"[{issue.severity}] {issue.code}: {issue.message}")
+
+# strict 模式: 遇到 error 级问题时抛出 InvalidLyricsError
+issues = lyrics.validate(options=ValidationOptions(strict=True))
+```
+
+检查项包括:
+
+- 歌词行是否按时间升序排列 (`unsorted`)
+- 是否存在重复时间戳 (`duplicate-start`)
+- 行结束时间是否晚于开始时间 (`end-not-after-start`)
+- 逐字 token 时间是否单调递增 (`token-nonmonotonic`)
+- 逐字 token 是否在所属行的时间范围内 (`token-before-line-start` / `token-after-line-end`)
+- metadata key 格式合法性 (`invalid-metadata-key`)
+- `offset` 元数据是否可解析为整数 (`offset-not-int`)
+
+### CLI Usage
+
+安装后可通过命令行直接使用:
+
+```bash
+# 验证 LRC 文件数据一致性
+lemonyrics validate song.lrc
+lemonyrics validate --strict song.lrc    # 有 error 时退出码为 1
+
+# 整体时间偏移 (毫秒)
+lemonyrics offset --delta 500 song.lrc           # 输出到 stdout
+lemonyrics offset --delta -200 song.lrc -o out.lrc  # 输出到文件
+
+# 转换为字幕格式
+lemonyrics to-srt song.lrc
+lemonyrics to-webvtt song.lrc -o song.vtt
+```
+
+也可以使用 `python -m lemony_lrc_parser` 作为入口.
 
 ### Subtitle Conversion (SRT / WebVTT)
 

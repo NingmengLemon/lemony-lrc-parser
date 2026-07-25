@@ -182,7 +182,9 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     line_tag_check = compile_regex(f"^{LINE_TIMETAG_REGEX}")
     word_tag_check = compile_regex(f"^{WORD_TIMETAG_REGEX}")
 
-    for raw_line in lrc.strip().splitlines():
+    # NOTE: 不再使用 lrc.strip().splitlines(), 而是保留前导空行以正确计数行号.
+    # 空行不会产生有效歌词, 但会消耗 line_no 并产生 debug 日志.
+    for line_no, raw_line in enumerate(lrc.splitlines(), start=1):
         line_str = raw_line.strip()
 
         # 1. 若行首是时间标签 (方括号或尖括号) 则直接按歌词行处理,
@@ -194,34 +196,47 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
             not line_tag_check.match(line_str) and not word_tag_check.match(line_str)
         ) and (meta := _extract_metadata(line_str)):
             metadata.update(meta)
-            logger.debug(f"Metadata line: {line_str!r}")
+            logger.debug(f"Metadata line {line_no}: {line_str!r}")
             continue
 
-        logger.debug(f"Parsing lyric line: {line_str!r}")
+        logger.debug(f"Parsing lyric line {line_no}: {line_str!r}")
 
         # 2. 切出行首的重复时间标签
         raw_lyric_line = line_str
         time_tags, line_str = _split_leading_line_timetags(line_str)
 
         # 2a. 若行首存在多个连续方括号时间标签, 且剩余正文还含有时间标签,
-        #     则无法区分这些连续标签是“折叠行”还是“空词元 + 逐字行”.
+        #     则无法区分这些连续标签是"折叠行"还是"空词元 + 逐字行".
         #     为避免误展开, 统一按空词元处理, 即按完整原行解析为单行.
         if len(time_tags) > 1 and compile_regex(GENERIC_TIMETAG_REGEX).search(line_str):
-            line = parse_line(raw_lyric_line)
+            try:
+                line = parse_line(raw_lyric_line)
+            except InvalidLyricsError as exc:
+                exc.line_no = exc.line_no or line_no
+                exc.raw_line = exc.raw_line or raw_line
+                raise
             if line:
                 line_start = line[0].start
                 if line_start is None:
                     raise InvalidLyricsError(
-                        "Ambiguous leading time tags did not produce a line start"
+                        f"Line {line_no}: ambiguous leading time tags "
+                        f"did not produce a line start; raw={raw_line!r}",
+                        line_no=line_no,
+                        raw_line=raw_line,
                     )
                 _register_line_at_tags(line_pool, line, [line_start])
                 last_tag = line_start
             continue
 
-        line = parse_line(line_str)
+        try:
+            line = parse_line(line_str)
+        except InvalidLyricsError as exc:
+            exc.line_no = exc.line_no or line_no
+            exc.raw_line = exc.raw_line or raw_line
+            raise
 
         # 2b. 行首没有方括号时间标签 → 要么是逐字行, 要么是参考行/分隔符
-        if not time_tags:  # noqa: SIM102
+        if not time_tags:
             if not line:
                 # 空分隔行, 重置参考行锚点
                 last_tag = None
@@ -234,7 +249,8 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
                 continue
             if last_tag is None:
                 logger.warning(
-                    f"Orphaned lyric line (no anchor): {line!r} (raw={raw_line!r})"
+                    f"Line {line_no}: orphaned lyric line (no anchor): "
+                    f"{line!r} (raw={raw_line!r})"
                 )
                 continue
             logger.debug(f"Adding {line!r} as reference of {line_pool[last_tag]!r}")

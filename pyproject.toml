@@ -1,6 +1,6 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.4.0b2"
+version = "0.4.0b3"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."
@@ -25,6 +25,9 @@ classifiers = [
 ]
 requires-python = ">=3.9,<3.16"
 dependencies = ["typing-extensions>=4.14.0"]
+
+[project.scripts]
+lemonyrics = "lemony_lrc_parser.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/NingmengLemon/lemony-lrc-parser"
