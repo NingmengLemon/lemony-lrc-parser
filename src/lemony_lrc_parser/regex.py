@@ -11,7 +11,7 @@ import re
 __all__ = [
     "GENERIC_TIMETAG_REGEX",
     "LINE_TIMETAG_REGEX",
-    "METATAG_REGEX",
+    "METATAG_KEY_REGEX",
     "WORD_TIMETAG_REGEX",
     "compile_regex",
 ]
@@ -68,20 +68,19 @@ LINE_TIMETAG_REGEX: str = _make_timetag_regex(r"\[", r"\]")
 WORD_TIMETAG_REGEX: str = _make_timetag_regex(r"\<", r"\>")
 
 
-#: 元数据标签 ``[key: value]``, 命名组: ``key`` / ``value``.
-METATAG_REGEX: str = r"""
-    (?:
-        \[
-            \s*
-            (?P<key>[a-zA-Z][a-zA-Z0-9]{1,15})
-            \s*
-            :
-            \s*
-            (?P<value>.*?)
-            \s*
-        \]
-    )
-"""
+#: metadata key: 以字母开头, 后接字母/数字, 总长 1-16.
+#:
+#: 独立成常量供 :mod:`.parser` (解析) 与 :mod:`.validation` (校验)、
+#: :mod:`.serializer` (往返告警) 复用, 保证"解析接受的 key"、"校验认可的 key"、
+#: "写出时告警的 key" 三处规则永远同源, 不发生漂移.
+#:
+#: Note:
+#:     整行 metadata 的判定**不是**正则, 而是一个按"配对方括号"扫描的小函数
+#:     (见 :func:`.parser._parse_metatag_line`): 只有扫描器才能正确处理
+#:     ``[al: Album [Deluxe]]`` 这种 value 内含配对括号的写法, 而正则表达式
+#:     无法表达"配对"(Python ``re`` 没有递归/平衡组). 曾经存在过的
+#:     ``METATAG_REGEX`` 常量已随之移除, 以免出现两套并存的规则.
+METATAG_KEY_REGEX: str = r"[a-zA-Z][a-zA-Z0-9]{0,15}"
 
 #: 通用时间标签 (同时匹配方括号行标签与尖括号逐字标签) .
 #:

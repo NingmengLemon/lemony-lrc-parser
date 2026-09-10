@@ -1,6 +1,7 @@
 """命令行入口.
 
-通过 ``python -m lemony_lrc_parser`` 使用. 优先支持的命令:
+通过安装后的 ``lemonyrics`` 命令或 ``python -m lemony_lrc_parser`` 使用.
+优先支持的命令:
 
 * ``validate`` —— 验证歌词数据一致性.
 * ``offset``  —— 整体时间偏移.
@@ -14,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .exceptions import InvalidLyricsError, LyricsParserError
+from .exceptions import LyricsParserError
 from .models import Lyrics, SerializationOptions
 from .validation import ValidationOptions
 
@@ -71,19 +72,23 @@ def _resolve_args(args: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def _read_lrc(path: str) -> Lyrics:
-    """从文件路径读取 LRC 并返回 Lyrics 对象."""
+def _read_lrc(path: str) -> Lyrics | None:
+    """从文件路径读取 LRC; 失败时打印错误并返回 ``None``.
+
+    Note:
+        这里刻意**不**调用 :func:`sys.exit`: 退出码统一由 :func:`main` 决定,
+        这样 ``main()`` 的调用方 (含测试) 只需要看返回值, 不必同时处理
+        "返回码"与 ``SystemExit`` 两套控制流.
+    """
     try:
         return Lyrics.loads(Path(path).read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         print(f"Error: file not found: {path}", file=sys.stderr)
-        sys.exit(1)
     except OSError as exc:
         print(f"Error: failed to read {path}: {exc}", file=sys.stderr)
-        sys.exit(1)
-    except (InvalidLyricsError, LyricsParserError) as exc:
+    except LyricsParserError as exc:
         print(f"Error: failed to parse {path}: {exc}", file=sys.stderr)
-        sys.exit(1)
+    return None
 
 
 def _write_output(text: str, output_path: str | None) -> bool:
@@ -105,6 +110,8 @@ def main(args: list[str] | None = None) -> int:
 
     if ns.command == "validate":
         lyrics = _read_lrc(ns.file)
+        if lyrics is None:
+            return 1
         issues = lyrics.validate(options=ValidationOptions(strict=False))
         if not issues:
             print(f"{ns.file}: OK (no issues)")
@@ -125,8 +132,12 @@ def main(args: list[str] | None = None) -> int:
 
     elif ns.command == "offset":
         lyrics = _read_lrc(ns.file)
+        if lyrics is None:
+            return 1
         try:
             shifted = lyrics.apply_delta(ns.delta)
+        # CLI 边界刻意宽捕获: 任何异常都转成 stderr 提示 + 退出码 1,
+        # 不把 traceback 甩给终端用户.
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
@@ -135,11 +146,15 @@ def main(args: list[str] | None = None) -> int:
 
     elif ns.command == "to-srt":
         lyrics = _read_lrc(ns.file)
+        if lyrics is None:
+            return 1
         output = lyrics.to_srt()
         return 0 if _write_output(output, ns.output) else 1
 
     elif ns.command == "to-webvtt":
         lyrics = _read_lrc(ns.file)
+        if lyrics is None:
+            return 1
         output = lyrics.to_webvtt()
         return 0 if _write_output(output, ns.output) else 1
 

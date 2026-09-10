@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 from logging import getLogger
-from typing import cast
 
 from ._utils import match_to_ms
 from .exceptions import InvalidLyricsError, LyricsParserError
@@ -20,7 +19,7 @@ from .models import BasicLyricLine, LyricLine, Lyrics, LyricToken, ParseOptions
 from .regex import (
     GENERIC_TIMETAG_REGEX,
     LINE_TIMETAG_REGEX,
-    METATAG_REGEX,
+    METATAG_KEY_REGEX,
     WORD_TIMETAG_REGEX,
     compile_regex,
 )
@@ -88,7 +87,10 @@ def parse_line(line: str) -> BasicLyricLine | None:
             word.end = times[idx]
         result.append(word)
 
-    if len(result) < 2:
+    # 防御性检查: 当前实现下不可达——首个时间标签永远不会被
+    # _drop_nonmonotonic_times 丢弃, 因此 times 非空时 texts 至少剩 2 段.
+    # 保留以防未来改动破坏该不变量.
+    if len(result) < 2:  # pragma: no cover
         raise InvalidLyricsError(
             f"Expected at least 2 preprocessed elements, got {len(result)}"
         )
@@ -140,7 +142,15 @@ def _unzip_sequence(
 def _drop_nonmonotonic_times(
     texts: list[str], times: list[int]
 ) -> tuple[list[str], list[int]]:
-    """丢弃非严格递增的时间标签, 并把它们前后的文本合并."""
+    """丢弃非严格递增的时间标签, 并把它们前后的文本合并.
+
+    两种情况区别对待 (真实语料统计见 CHANGELOG: 某 6536 份 .lrc 语料里
+    "相等" 出现 1917 次, "递减" 0 次):
+
+    * ``now == prev``: 逐字行里很常见 (空格词元与下一个词共享时间戳), 合并后
+      语义不变, 只记 ``debug``, 不当成用户需要处理的异常.
+    * ``now < prev``: 真的乱序, 记 ``warning``.
+    """
     texts = list(texts)
     times = list(times)
     removed = 0
@@ -152,7 +162,12 @@ def _drop_nonmonotonic_times(
         now_time = times[idx]
         if prev_time < now_time:
             continue
-        logger.warning(f"Unordered time tag dropped: prev={prev_time}, now={now_time}")
+        if prev_time == now_time:
+            logger.debug(f"Redundant equal time tag merged: {now_time}ms")
+        else:
+            logger.warning(
+                f"Unordered time tag dropped: prev={prev_time}ms, now={now_time}ms"
+            )
         texts[idx] += texts[idx + 1]
         texts.pop(idx + 1)
         times.pop(idx)
@@ -174,6 +189,10 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         offset 需通过 :meth:`Lyrics.apply_delta` 单独应用,
         解析时不会自动偏移时间戳.
     """
+    # 去除开头可能存在的 BOM (例如调用方直接 loads() 未按 utf-8-sig 解码的
+    # 文本). 若不去除, BOM 会使行首锚定正则失配, 导致首行被当作无锚点
+    # 孤儿行而静默丢弃. BOM 本身不含换行, 去除不影响行号计数.
+    lrc = lrc.removeprefix("\ufeff")
     metadata: dict[str, str] = {}
     line_pool: dict[int, LyricLine] = {}
     last_tag: int | None = None
@@ -185,13 +204,16 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     # NOTE: 不再使用 lrc.strip().splitlines(), 而是保留前导空行以正确计数行号.
     # 空行不会产生有效歌词, 但会消耗 line_no 并产生 debug 日志.
     for line_no, raw_line in enumerate(lrc.splitlines(), start=1):
-        line_str = raw_line.strip()
+        # 去除行首缩进以识别标签, 但保留正文尾随空白。正文空白是有效文本。
+        line_str = raw_line.lstrip()
 
         # 1. 若行首是时间标签 (方括号或尖括号) 则直接按歌词行处理,
         #    避免 metadata 误匹配.
         #    例如 "[00:01.000]This is by [ar:tist]" 或
         #    "<00:01.000>text [ar:Artist]" 不应被当作 metadata.
         #    但是这其实是非标行为应该是 UB, 但是就这样写了.
+        #    此外 metadata 判定要求整行由 metatag 构成 (见 _extract_metadata),
+        #    行中混有普通文本的 [key: value] 不会把整行吞掉.
         if (
             not line_tag_check.match(line_str) and not word_tag_check.match(line_str)
         ) and (meta := _extract_metadata(line_str)):
@@ -253,56 +275,109 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
                     f"{line!r} (raw={raw_line!r})"
                 )
                 continue
+            # 防御性检查: 按当前实现, last_tag 的所有赋值路径都指向已注册的
+            # 时间点, 此分支不可达; 保留以防未来改动破坏该不变量 (B1).
+            if last_tag not in line_pool:  # pragma: no cover
+                logger.warning(
+                    f"Line {line_no}: reference anchor {last_tag}ms not in "
+                    f"line pool, line treated as orphaned: "
+                    f"{line!r} (raw={raw_line!r})"
+                )
+                continue
             logger.debug(f"Adding {line!r} as reference of {line_pool[last_tag]!r}")
             line_pool[last_tag].reference_lines.append(line)
             continue
 
         # 2c. 行首有时间标签但没有正文 → 占位符 (清空当前歌词)
         if not line:
+            # line_str 是标签之后剩下的部分, 仍可能含空白, 如 "[00:01.000]  ".
+            # 按"正文空白是有效文本"的既定取向, 这种空白算作内容而不是没有
+            # 内容; 否则 dumps() 写出的 "[00:01.000]  " 无法往返 (重新解析会
+            # 退化成空占位行, 见 tests/test_roundtrip_matrix.py).
+            placeholder = BasicLyricLine([LyricToken(content=line_str)])
             for t in time_tags:
                 if t not in line_pool:
-                    line_pool[t] = LyricLine(
-                        start=t, content=BasicLyricLine([LyricToken(content="")])
-                    )
+                    # 每个时间点各持一份拷贝, 避免多个占位行共享同一对象
+                    line_pool[t] = LyricLine(start=t, content=placeholder.copy())
+            # NOTE: 占位符刻意不更新 last_tag——它没有正文内容, 后续的
+            # 无标签行 (翻译等) 仍挂到上一个有正文的锚点上.
             continue
 
         # 2d. 常规行: 可能有多个重复时间标签, 每个都生成一行
-        _register_line_at_tags(line_pool, line, time_tags)
-        last_tag = time_tags[0]
+        registered_tags = _register_line_at_tags(line_pool, line, time_tags)
+        if not registered_tags:
+            # 全部行首标签都被跳过 → 本行没有任何归属时间点, 只能丢弃.
+            # 明确说明后果: 紧随其后的无标签行 (翻译/音译) 也会因失去锚点
+            # 而变成孤儿行, 用户需要能从日志里看出"丢的不止一行".
+            logger.warning(
+                f"Line {line_no}: all leading time tags were ignored, so this "
+                f"line is dropped; following untagged lines become orphaned "
+                f"(raw={raw_line!r})"
+            )
+        # 只有真实落入 line_pool 的时间点才能作为参考行锚点; 若全部标签
+        # 被跳过 (word start 早于标签), 本行已被丢弃, 锚点重置为 None,
+        # 后续无标签行按孤儿处理, 而不是在 line_pool 上 KeyError (B1).
+        last_tag = registered_tags[0] if registered_tags else None
 
-    # ParseOptions.__post_init__ 已把 str 形式的 line_filter 编译为正则,
-    # 此处运行时必为 re.Pattern[str] | None.
-    line_filter = cast("re.Pattern[str] | None", options.line_filter)
-    lyrics = _finalize_lyrics(
+    # ParseOptions.__post_init__ 已把 str 形式的 line_filter 编译为正则, 但
+    # ParseOptions 是可变 dataclass, 调用方仍可能在构造之后再赋一个字符串;
+    # 这里再归一化一次, 不依赖"构造后再没人改过"这一隐式前提.
+    line_filter = options.line_filter
+    if isinstance(line_filter, str):
+        line_filter = re.compile(line_filter)
+
+    return _finalize_lyrics(
         metadata,
         line_pool,
         fill_implicit_line_end=options.fill_implicit_line_end,
         line_filter=line_filter,
     )
 
-    return lyrics
-
 
 def _register_line_at_tags(
     line_pool: dict[int, LyricLine],
     line: BasicLyricLine,
     time_tags: list[int],
-) -> None:
-    """把同一行歌词注册到 ``line_pool`` 中所有 ``time_tags`` 对应的时间点上."""
+) -> list[int]:
+    """把同一行歌词注册到 ``line_pool`` 中所有 ``time_tags`` 对应的时间点上.
+
+    若某个行首标签**晚于**本行首个词元的开始时间, 说明标签与逐字标签自相矛盾
+    (常见于"行首标签从上一条复制而来"的脏数据). 此时按首个词元的时间**归位**,
+    而不是丢弃整行 —— 丢弃会让本行及其后的翻译/音译行一起消失.
+
+    Returns:
+        实际落入 ``line_pool`` 的时间点列表 (含归位后的时间点). 调用方应只把
+        返回值中的时间点用作后续参考行的锚点, 否则挂载时会对未注册时间点取
+        KeyError.
+    """
+    registered: list[int] = []
     word_start = line[0].start
     for tag in time_tags:
+        effective_tag = tag
         if word_start is not None and word_start < tag:
+            # 归位到首个词元时间; 同一行若因此落到同一个时间点, 只注册一次,
+            # 避免把同一行自己挂成自己的参考行.
+            effective_tag = word_start
+            if effective_tag in registered:
+                continue
             logger.warning(
-                f"Invalid duplicate line tag {tag}ms "
-                f"(later than first word start {word_start}ms)"
+                f"Leading time tag {tag}ms is later than the first word start "
+                f"{word_start}ms; anchoring the line at {effective_tag}ms instead "
+                f"of dropping it"
             )
-            continue
-        if tag in line_pool:
-            # 同一个时间点已有行 → 当前行变为参考行
-            line_pool[tag].reference_lines.append(line)
+        if effective_tag in line_pool:
+            # 同一个时间点已有行 → 当前行变为参考行.
+            # 必须拷贝: 同一行的多个重复时间标签可能都命中已存在的时间点,
+            # 若直接 append 原实例, 多个 reference_lines 槽位会共享同一对象,
+            # 改动其一会波及其它槽位.
+            line_pool[effective_tag].reference_lines.append(line.copy())
         else:
             # 拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricToken 实例
-            line_pool[tag] = LyricLine(start=tag, content=line.copy())
+            line_pool[effective_tag] = LyricLine(
+                start=effective_tag, content=line.copy()
+            )
+        registered.append(effective_tag)
+    return registered
 
 
 def _finalize_lyrics(
@@ -317,6 +392,14 @@ def _finalize_lyrics(
     Note:
         ``line_filter`` 统一为已编译的正则 (``str`` 会在 :class:`ParseOptions`
         构造时被编译), 命中 ``pattern.search`` 的行会被丢弃.
+
+    Note:
+        ``end`` 在这里由最后一个词元的 ``end`` **推断**而来. 若该推断与行首
+        时间矛盾 (``end <= start``, 例如逐字标签早于行首标签、或行尾标签与
+        行首标签相同), 推断结果会被丢弃 (置回 ``None``) 并记 warning, 而不再
+        产出 ``end <= start`` 的行 —— 那是 :func:`~.validation.validate_lyrics`
+        眼里的 error, 也会让 ``to_srt()`` 去"修正"一个本不该存在的区间.
+        词元自身的 ``start`` / ``end`` 原样保留, 不丢数据.
     """
     # 先应用过滤, 再排序填充, 保证 fill_implicit_line_end 不依赖被丢弃的行
     if line_filter is not None:
@@ -333,9 +416,17 @@ def _finalize_lyrics(
         line.start = line_start
 
         # 把最后一个 word 的 end 提升为整行 end (保留词元原始值)
-        last_word = line.content[-1]
-        if last_word.end is not None:
-            line.end = last_word.end
+        inferred_end: int | None = None
+        if line.content:
+            inferred_end = line.content[-1].end
+        if inferred_end is not None and inferred_end <= line_start:
+            logger.warning(
+                f"Line at {line_start}ms: inferred line end {inferred_end}ms is "
+                f"not after the line start (byword tags disagree with the line "
+                f"tag); discarding the inferred end"
+            )
+            inferred_end = None
+        line.end = inferred_end
 
         # 可选: 用下一行的开始时间作为当前行的隐式结束
         if fill_implicit_line_end and line.end is None and idx + 1 < len(sorted_items):
@@ -362,6 +453,91 @@ def _split_leading_line_timetags(raw_line: str) -> tuple[list[int], str]:
 
 
 def _extract_metadata(line: str) -> dict[str, str]:
-    """从一行字符串中提取 metadata 标签 ``[key: value]``."""
-    pattern = compile_regex(METATAG_REGEX)
-    return {match["key"]: match["value"] for match in pattern.finditer(line)}
+    """从一行字符串中提取 metadata 标签 ``[key: value]``.
+
+    仅当**整行**都由 metatag (及其间空白) 构成时才视为 metadata 行并提取;
+    正文中间出现 ``[key: value]`` 的普通文本行不会被吞并 (B3) —— 否则
+    ``finditer`` 非锚定匹配会把 "Return [to: sender] now" 这类行整行当成
+    metadata, 导致正文静默丢失. 这类行现在按普通歌词/参考行处理.
+
+    ``value`` 的结束位置由**配对方括号**决定 (见
+    :func:`._parse_metatag_line`), 因此 ``[al: Album [Deluxe]]`` 的 value 是
+    ``Album [Deluxe]``: 这是 LRC 社区里真实存在的写法 (参见 rmpc#519), 而
+    "取第一个 ``]`` 就收尾"的简单实现 (如 ffmpeg) 会把它截断成
+    ``Album [Deluxe``.
+    """
+    tags = _parse_metatag_line(line)
+    if tags is None:
+        return {}
+    return dict(tags)
+
+
+def _parse_metatag_line(line: str) -> list[tuple[str, str]] | None:
+    """把整行解析为 metatag 序列; 整行不是纯 metatag 时返回 ``None``.
+
+    规则 (与社区实现对比见 :func:`_extract_metadata`):
+
+    * 行首到行尾只允许 metatag 与其间的空白, 否则整行按正文处理.
+    * key 必须匹配 :data:`.regex.METATAG_KEY_REGEX`; key 与 ``:`` 两侧允许空白.
+    * value 允许包含**配对平衡**的方括号: 遇到 ``[`` 深度 +1, 遇到 ``]`` 深度
+      -1, 深度回到 0 的那个 ``]`` 才是本标签的结束位置. 于是
+      ``[al: Album [Deluxe]]`` 得到 ``Album [Deluxe]``, 而
+      ``[ti: a]extra[ar: b]`` 会在 ``extra`` 处失败 (整行不算 metadata,
+      正文不会被静默吞掉).
+    * value 两侧空白会被去掉.
+
+    Returns:
+        ``[(key, value), ...]``; 整行不满足规则时返回 ``None``. 同一行内重复的
+        key 由调用方决定覆盖语义.
+    """
+    key_regex = compile_regex(METATAG_KEY_REGEX)
+    tags: list[tuple[str, str]] = []
+    pos = 0
+    length = len(line)
+
+    while True:
+        # 标签之间的空白
+        while pos < length and line[pos].isspace():
+            pos += 1
+        if pos >= length:
+            break
+        if line[pos] != "[":
+            return None
+        pos += 1
+
+        # key
+        while pos < length and line[pos].isspace():
+            pos += 1
+        key_match = key_regex.match(line, pos)
+        if key_match is None:
+            return None
+        key = key_match.group(0)
+        pos = key_match.end()
+
+        # ':'
+        while pos < length and line[pos].isspace():
+            pos += 1
+        if pos >= length or line[pos] != ":":
+            return None
+        pos += 1
+
+        # value: 扫到配对的第一个 ']'
+        value_start = pos
+        depth = 0
+        while pos < length:
+            char = line[pos]
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                if depth == 0:
+                    break
+                depth -= 1
+            pos += 1
+        if pos >= length:
+            # 方括号不平衡 (比如 "[ti: a [b]"), 无法确定边界
+            return None
+
+        tags.append((key, line[value_start:pos].strip()))
+        pos += 1  # 跳过 ']'
+
+    return tags or None

@@ -23,7 +23,7 @@ import re
 from io import StringIO
 from logging import getLogger
 
-from .exceptions import InvalidLyricsError
+from .exceptions import InvalidLyricsError, TimestampUnderflowError
 from .models import (
     BasicLyricLine,
     LyricLine,
@@ -76,7 +76,8 @@ def _format_ts(ms: int, *, sep: str) -> str:
         sep: 毫秒分隔符, SRT 用 ``","``, WebVTT 用 ``"."``.
     """
     if ms < 0:
-        raise InvalidLyricsError(f"Negative timestamp is not allowed: {ms}ms")
+        # 与 timetag.format_timetag 保持同一异常类型 (同为"负时间戳"下溢)
+        raise TimestampUnderflowError(f"Negative timestamp is not allowed: {ms}ms")
     hours = ms // 3_600_000
     minutes = (ms % 3_600_000) // 60_000
     seconds = (ms % 60_000) // 1000
@@ -97,11 +98,10 @@ def _parse_ts(s: str) -> int:
     seconds = int(match["s"])
     tail = match["ms"]
     # 标准化毫秒到 3 位: "1" -> 100, "12" -> 120, "123456" -> 123
-    if len(tail) > 3:
-        tail = tail[:3]
-    else:
-        tail = tail.ljust(3, "0")
+    tail = tail[:3] if len(tail) > 3 else tail.ljust(3, "0")
     millis = int(tail)
+    if minutes >= 60 or seconds >= 60:
+        raise InvalidLyricsError(f"Invalid subtitle timestamp: {s!r}")
     return millis + seconds * 1000 + minutes * 60_000 + hours * 3_600_000
 
 
@@ -254,7 +254,7 @@ def _parse_subtitle(text: str) -> Lyrics:
         line = _cue_block_to_line(block)
         if line is not None:
             lyrics.append(line)
-    lyrics.data = sorted(lyrics, key=lambda ln: ln.start)
+    lyrics.sort(key=lambda ln: ln.start)
     return lyrics
 
 

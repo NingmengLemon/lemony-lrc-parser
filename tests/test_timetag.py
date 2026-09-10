@@ -132,6 +132,11 @@ class TestParseTimetag:
         # 6 位毫秒 → 截断到 3 位
         assert parse_timetag("[00:00.123456]") == 123
 
+    def test_trailing_newline_rejected(self) -> None:
+        r"""尾随换行不应被接受 (行尾 \Z 严格锚定)."""
+        assert parse_timetag("[00:05.000]\n") is None
+        assert parse_timetag("[00:05.000]\r\n") is None
+
     def test_edge_cases(self) -> None:
         """测试边界情况."""
         # 最大分钟数

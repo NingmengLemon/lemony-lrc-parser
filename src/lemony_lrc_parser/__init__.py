@@ -39,6 +39,7 @@ from .exceptions import (
     TimestampUnderflowError,
 )
 from .models import (
+    COMMON_METADATA_KEYS,
     BasicLyricLine,
     LyricLine,
     LyricLineDict,
@@ -46,6 +47,8 @@ from .models import (
     LyricsDict,
     LyricToken,
     LyricTokenDict,
+    MetadataDict,
+    MetadataKey,
     ParseOptions,
     SerializationOptions,
     SubtitleOptions,
@@ -68,6 +71,9 @@ __all__ = [
     "LyricTokenDict",
     "LyricLineDict",
     "LyricsDict",
+    "MetadataDict",
+    "MetadataKey",
+    "COMMON_METADATA_KEYS",
     "InvalidLyricsError",
     "LyricsParserError",
     "ProgrammingError",

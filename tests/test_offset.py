@@ -169,3 +169,35 @@ class TestShiftOperators:
         _ = ly << 500
 
         assert ly[0].start == 5000
+
+
+class TestLrcOffsetConvention:
+    """LRC 的 ``[offset:...]`` 与 ``apply_delta()`` 的**符号相反**.
+
+    调研见 ``docs/research.md`` 的「offset 标签的正负语义」: 社区文档
+    (Wikipedia / MobileRead) 与实现 (Lyricify ``StartTime -= offset``) 都认定
+    ``offset: +N`` = "歌词整体提前 N 毫秒", 即时间戳 ``-= N``; 而本库的
+    ``apply_delta(+ms)`` 是"时间戳 ``+= ms``"(更晚). 因此从 metadata 应用
+    offset 的写法是 ``apply_delta(-offset)`` —— 这几条测试把它固定下来.
+    """
+
+    def test_positive_lrc_offset_makes_lyrics_appear_earlier(self) -> None:
+        lyrics = Lyrics.loads("[offset: 500]\n[00:05.000]hi\n")
+
+        shifted = lyrics.apply_delta(-int(lyrics.metadata["offset"]))
+
+        assert shifted[0].start == 4500  # 提前 500ms
+
+    def test_negative_lrc_offset_makes_lyrics_appear_later(self) -> None:
+        lyrics = Lyrics.loads("[offset: -500]\n[00:05.000]hi\n")
+
+        shifted = lyrics.apply_delta(-int(lyrics.metadata["offset"]))
+
+        assert shifted[0].start == 5500  # 延后 500ms
+
+    def test_delta_sign_is_the_opposite(self) -> None:
+        """同一份歌词上两个入口方向相反 —— 这就是必须写进文档的原因."""
+        lyrics = Lyrics.loads("[00:05.000]hi\n")
+
+        assert lyrics.apply_delta(500)[0].start == 5500
+        assert lyrics.apply_delta(-500)[0].start == 4500

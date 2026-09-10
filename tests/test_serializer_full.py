@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from lemony_lrc_parser.models import BasicLyricLine, LyricLine, Lyrics, LyricToken
 from lemony_lrc_parser.serializer import dump_lrc
 
@@ -42,6 +44,54 @@ class TestDumpLrcReferenceLines:
         assert "Main" in lines[0]
         assert "翻译1" in lines[1]
         assert "翻译2" in lines[2]
+
+    def test_empty_reference_line_is_not_written(self) -> None:
+        """完全空的参考行不写出, 保证 dumps 稳定.
+
+        写出的孤立行标签 (``[00:01.000]``) 在重新解析时只会被当成"该时间点已
+        存在", 被解析器忽略; 因此这个参考行无论如何都无法往返, 跳过它反而让
+        ``dumps`` 的输出不再多出一行.
+        """
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine([LyricToken(content="Main")]),
+                    reference_lines=[BasicLyricLine()],
+                )
+            ]
+        )
+
+        dumped = dump_lrc(lyrics, options=SerializationOptions(line_separator=""))
+        assert dumped == "[00:01.000]Main\n"
+        assert dump_lrc(Lyrics.loads(dumped)) == dump_lrc(lyrics)
+
+    def test_reference_line_with_only_byword_timings_is_kept(self) -> None:
+        """只有逐字标签、没有正文的参考行仍要写出 (时间信息是数据)."""
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics(
+            [
+                LyricLine(
+                    start=1000,
+                    content=BasicLyricLine([LyricToken(content="Main")]),
+                    reference_lines=[
+                        BasicLyricLine([LyricToken(content="", start=1500, end=2000)])
+                    ],
+                )
+            ]
+        )
+
+        opts = SerializationOptions(line_separator="")
+        dumped = dump_lrc(lyrics, options=opts)
+        assert dumped == "[00:01.000]Main\n[00:01.000]<00:01.500><00:02.000>\n"
+
+        restored = Lyrics.loads(dumped)
+        assert len(restored) == 1
+        ref = restored[0].reference_lines[0]
+        assert [(t.content, t.start, t.end) for t in ref] == [("", 1500, 2000)]
 
     def test_reference_lines_with_byword_tags(self) -> None:
         """测试带逐字标签的参考行."""
@@ -258,3 +308,69 @@ class TestDumpLrcNewOptions:
         # 第二个词 end=1500=500ms → 百分秒 50 → "<00:01.50>"
         assert "<00:01.05>" in result
         assert "<00:01.50>" in result
+
+
+class TestDumpLrcMetadataRoundtripWarnings:
+    """测试 B4: 无法往返的 metadata 项写出时产生 warning, 但仍照常写出."""
+
+    def test_warns_on_non_roundtrippable_key(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """parser 不支持的 key (如非 ASCII) 在写出时告警, 但仍然写出."""
+        import logging
+
+        lyrics = Lyrics(metadata={"作曲": "某人"})
+        with caplog.at_level(logging.WARNING):
+            result = dump_lrc(lyrics)
+        assert "[作曲: 某人]" in result
+        assert "does not match the parser-supported pattern" in caplog.text
+
+    def test_warns_on_overlong_key(self, caplog: pytest.LogCaptureFixture) -> None:
+        """超过 parser 支持长度 (16) 的 key 在写出时告警."""
+        import logging
+
+        lyrics = Lyrics(metadata={"a" * 17: "v"})
+        with caplog.at_level(logging.WARNING):
+            dump_lrc(lyrics)
+        assert "does not match the parser-supported pattern" in caplog.text
+
+    def test_warns_on_value_with_unbalanced_brackets(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """value 方括号不配对时告警 (重新解析无法确定 value 边界)."""
+        import logging
+
+        for value in ("foo]bar", "foo [bar"):
+            lyrics = Lyrics(metadata={"ti": value})
+            with caplog.at_level(logging.WARNING):
+                result = dump_lrc(lyrics)
+            assert f"[ti: {value}]" in result
+            assert "unbalanced brackets" in caplog.text, value
+            caplog.clear()
+
+    def test_balanced_bracket_value_does_not_warn_and_roundtrips(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """配对平衡的方括号在本库语法里可以往返, 因此不告警."""
+        import logging
+
+        from lemony_lrc_parser.models import SerializationOptions
+
+        lyrics = Lyrics(metadata={"al": "Album [Deluxe]"})
+        with caplog.at_level(logging.WARNING):
+            result = dump_lrc(lyrics, options=SerializationOptions(line_separator=""))
+        assert "[al: Album [Deluxe]]" in result
+        assert "unbalanced brackets" not in caplog.text
+        assert Lyrics.loads(result).metadata == {"al": "Album [Deluxe]"}
+
+    def test_no_warning_for_roundtrippable_metadata(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """可往返的 metadata 项不产生 warning (含恰好 16 字符的 key)."""
+        import logging
+
+        lyrics = Lyrics(metadata={"ti": "ok", "a" * 16: "fine"})
+        with caplog.at_level(logging.WARNING):
+            dump_lrc(lyrics)
+        assert "does not match the parser-supported pattern" not in caplog.text
+        assert "unbalanced brackets" not in caplog.text

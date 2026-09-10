@@ -66,11 +66,13 @@ def format_timetag(
 def parse_timetag(s: str) -> int | None:
     """解析一个时间标签字符串, 返回对应毫秒数.
 
-    支持 ``[mm:ss.xxx]`` (三段齐全) 或 ``[mm:ss]`` (省略毫秒部分) 格式,
-    与解析器的行为保持一致. 也可解析 ``<mm:ss.xxx>`` 等通用格式.
+    仅支持方括号行标签: ``[mm:ss.xxx]`` (三段齐全) 或 ``[mm:ss]``
+    (省略毫秒部分) , 与解析器的行为保持一致. 尖括号逐字标签
+    (``<mm:ss.xxx>``) 不在支持范围内, 会返回 ``None``.
     解析失败返回 ``None``.
     """
     # 使用 LINE_TIMETAG_REGEX (而非 TIMETAG_REGEX_STRICT) 以与解析器行为一致.
     # 前者允许省略毫秒、1-6 位尾数、行内空白.
-    match = compile_regex(rf"^{LINE_TIMETAG_REGEX}$").match(s)
+    # 行尾用 \Z 严格锚定: $ 会额外接受一个尾随换行, 这里不希望如此.
+    match = compile_regex(rf"^{LINE_TIMETAG_REGEX}\Z").match(s)
     return match_to_ms(match) if match else None

@@ -9,11 +9,12 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Literal
 
+from ._utils import DC_SLOTS
 from .models import BasicLyricLine, Lyrics
+from .regex import METATAG_KEY_REGEX, compile_regex
 
 __all__ = [
     "ValidationIssue",
@@ -22,27 +23,20 @@ __all__ = [
     "validate_lyrics",
 ]
 
-_DC_SLOTS: dict[str, bool] = (
-    {"slots": True, "weakref_slot": True}
-    if sys.version_info >= (3, 11)
-    else {"slots": True}
-    if sys.version_info >= (3, 10)
-    else {}
-)
-
 ValidationSeverity = Literal["warning", "error"]
 
 
 def _valid_metadata_key(key: str) -> bool:
-    """检查一个 metadata key 是否符合当前 parser 支持的格式."""
-    if not key:
-        return False
-    if not ("a" <= key[0] <= "z" or "A" <= key[0] <= "Z"):
-        return False
-    return all("a" <= c <= "z" or "A" <= c <= "Z" or "0" <= c <= "9" for c in key[1:])
+    """检查一个 metadata key 是否符合当前 parser 支持的格式.
+
+    直接复用 :data:`.regex.METATAG_KEY_REGEX` (以字母开头, 字母/数字组成,
+    总长 1-16), 与解析端保持同一规则来源——此前此处手工实现时缺少长度
+    上限, 超长 key 能通过校验却会在重新解析时丢失.
+    """
+    return compile_regex(rf"^{METATAG_KEY_REGEX}$").match(key) is not None
 
 
-@dataclass(frozen=True, **_DC_SLOTS)
+@dataclass(frozen=True, **DC_SLOTS)
 class ValidationOptions:
     """验证选项.
 
@@ -55,7 +49,7 @@ class ValidationOptions:
     strict: bool = False
 
 
-@dataclass(frozen=True, **_DC_SLOTS)
+@dataclass(frozen=True, **DC_SLOTS)
 class ValidationIssue:
     """一条验证问题.
 
@@ -217,32 +211,34 @@ def _check_line_tokens(
     prev_end: int | None = None
     for tok_idx, token in enumerate(content):
         # ---- 检查内部一致性 (end > start) ----
-        if token.start is not None and token.end is not None:
-            if token.end <= token.start:
-                issues.append(
-                    ValidationIssue(
-                        code="token-end-not-after-start",
-                        message=f"{label} token {tok_idx}: "
-                        f"end={token.end}ms <= start={token.start}ms",
-                        severity="error",
-                        line_index=line_idx,
-                        token_index=tok_idx,
-                    )
+        if (
+            token.start is not None
+            and token.end is not None
+            and token.end <= token.start
+        ):
+            issues.append(
+                ValidationIssue(
+                    code="token-end-not-after-start",
+                    message=f"{label} token {tok_idx}: "
+                    f"end={token.end}ms <= start={token.start}ms",
+                    severity="error",
+                    line_index=line_idx,
+                    token_index=tok_idx,
                 )
+            )
 
         # ---- 检查单调性 ----
-        if prev_end is not None and token.start is not None:
-            if token.start < prev_end:
-                issues.append(
-                    ValidationIssue(
-                        code="token-nonmonotonic",
-                        message=f"{label} token {tok_idx}: "
-                        f"start={token.start}ms < prev_end={prev_end}ms",
-                        severity="error",
-                        line_index=line_idx,
-                        token_index=tok_idx,
-                    )
+        if prev_end is not None and token.start is not None and token.start < prev_end:
+            issues.append(
+                ValidationIssue(
+                    code="token-nonmonotonic",
+                    message=f"{label} token {tok_idx}: "
+                    f"start={token.start}ms < prev_end={prev_end}ms",
+                    severity="error",
+                    line_index=line_idx,
+                    token_index=tok_idx,
                 )
+            )
 
         # 更新 prev_end (优先用 token.end, 其次 token.start)
         if token.end is not None:
@@ -287,7 +283,7 @@ def _check_metadata(lyrics: Lyrics, issues: list[ValidationIssue]) -> None:
                 ValidationIssue(
                     code="invalid-metadata-key",
                     message=f"Metadata key {key!r} does not match expected pattern "
-                    "(alpha-numeric, starting with letter)",
+                    "(alpha-numeric, starting with letter, max 16 chars)",
                     severity="warning",
                 )
             )

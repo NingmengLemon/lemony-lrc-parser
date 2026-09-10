@@ -20,12 +20,11 @@ SAMPLE_LRC = """[ti:Test Song]
 
 def _write_temp_lrc(content: str = SAMPLE_LRC) -> str:
     """写入临时文件并返回路径."""
-    tmp = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w", suffix=".lrc", encoding="utf-8", delete=False
-    )
-    tmp.write(content)
-    tmp.close()
-    return tmp.name
+    ) as tmp:
+        tmp.write(content)
+        return tmp.name
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +45,11 @@ class TestCLIValidate:
             Path(path).unlink(missing_ok=True)
 
     def test_validate_file_not_found(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """文件不存在时返回错误."""
-        with pytest.raises(SystemExit) as exc_info:
-            main(["validate", "/nonexistent/foo.lrc"])
-        assert exc_info.value.code == 1
+        """文件不存在时返回退出码 1, 且不抛 SystemExit."""
+        rc = main(["validate", "/nonexistent/foo.lrc"])
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "file not found" in captured.err
 
     def test_validate_bad_lrc(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -63,10 +63,9 @@ class TestCLIValidate:
         monkeypatch.setattr("lemony_lrc_parser.cli.Lyrics.loads", _failing_loads)
         path = _write_temp_lrc()
         try:
-            with pytest.raises(SystemExit) as exc_info:
-                main(["validate", path])
-            assert exc_info.value.code == 1
+            rc = main(["validate", path])
             captured = capsys.readouterr()
+            assert rc == 1
             assert "failed to parse" in captured.err
         finally:
             Path(path).unlink(missing_ok=True)
@@ -216,10 +215,23 @@ class TestCLIToWebvtt:
 class TestCLIEdgeCases:
     """测试 CLI 边界情况."""
 
+    @pytest.mark.parametrize(
+        "argv",
+        [["validate"], ["offset", "--delta", "500"], ["to-srt"], ["to-webvtt"]],
+    )
+    def test_read_failure_returns_one_for_every_command(
+        self, argv: list[str], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """所有子命令在读取失败时都返回退出码 1 (统一由 main 决定, 不抛 SystemExit)."""
+        rc = main([*argv, "/nonexistent/foo.lrc"])
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "file not found" in captured.err
+
     def test_os_error_during_read(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """读取文件时发生 OSError 应友好报错并退出."""
+        """读取文件时发生 OSError 应友好报错并返回退出码 1."""
 
         def _failing_read_text(*args: object, **kwargs: object) -> object:
             raise OSError("permission denied")
@@ -227,10 +239,9 @@ class TestCLIEdgeCases:
         monkeypatch.setattr("pathlib.Path.read_text", _failing_read_text)
         path = _write_temp_lrc()
         try:
-            with pytest.raises(SystemExit) as exc_info:
-                main(["validate", path])
-            assert exc_info.value.code == 1
+            rc = main(["validate", path])
             captured = capsys.readouterr()
+            assert rc == 1
             assert "failed to read" in captured.err
         finally:
             Path(path).unlink(missing_ok=True)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import lemony_lrc_parser as llp
 from lemony_lrc_parser.models import (
     BasicLyricLine,
@@ -66,6 +68,18 @@ class TestTimestampHelpers:
         for ms in (0, 1, 999, 1000, 61_500, 3_661_500):
             assert _parse_ts(_format_ts(ms, sep=",")) == ms
             assert _parse_ts(_format_ts(ms, sep=".")) == ms
+
+    @pytest.mark.parametrize("value", ["00:60:00,000", "00:00:60,000", "99:99:99,999"])
+    def test_parse_rejects_out_of_range_minutes_and_seconds(self, value: str) -> None:
+        with pytest.raises(llp.InvalidLyricsError):
+            _parse_ts(value)
+
+    def test_format_negative_raises_underflow(self) -> None:
+        """负时间戳抛 TimestampUnderflowError (与 format_timetag 一致)."""
+        from lemony_lrc_parser.exceptions import TimestampUnderflowError
+
+        with pytest.raises(TimestampUnderflowError):
+            _format_ts(-1, sep=",")
 
 
 class TestDumpSrt:
