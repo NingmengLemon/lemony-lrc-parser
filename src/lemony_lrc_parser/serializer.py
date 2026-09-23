@@ -39,13 +39,13 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
 
     sep = options.line_separator
 
-    def write_line_tag(ms: int) -> None:
-        """写一个行首/行尾方括号时间标签."""
+    def write_line_tag(ms: int, *, use_angle: bool = False) -> None:
+        """写一个行首/行尾时间标签."""
         buffer.write(
             format_timetag(
                 ms,
                 tail_digits=options.line_tag_decimal_length,
-                use_angle_bracket=False,
+                use_angle_bracket=use_angle,
             )
         )
 
@@ -55,14 +55,40 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
 
         line_start = line.start
 
-        # 空正文 + 显式行尾 → 输出形如 "[00:01.000][00:02.000]". 重新解析时
-        # 连续的行首标签会被读成"折叠标签", 变成两个空占位行, 行数翻倍.
-        if line.end is not None and not line.text:
-            logger.warning(
-                f"Line at {line_start}ms has an explicit end ({line.end}ms) but no "
-                "text; it is written as '[start][end]', which re-parses as two "
-                "empty placeholder lines instead of one line with a range"
+        # 空正文行: LRC/SPL 里"时间戳后没有文本内容"就是纯结束标记, 方括号写法
+        # 无法表达一条空歌词行. 本库沿用 Enhanced LRC 的尖括号写法 (这也是空 SRT
+        # cue 互转时的形状): 解析端把行首的尖括号标签当行标签, 于是 dumps → loads
+        # 仍是不动点. 若改用方括号写出 "[start][end]", 重新解析会把它当成上一行的
+        # 结束标记, 静默改掉上一行的时间范围.
+        if not line.text:
+            if line.reference_lines:
+                logger.warning(
+                    f"Line at {line_start}ms has no text but has "
+                    f"{len(line.reference_lines)} reference line(s); they are "
+                    f"written as separate lines and will re-parse as translations "
+                    f"of this empty line"
+                )
+            write_line_tag(line_start, use_angle=True)
+            buffer.write(
+                _format_line(
+                    line.content,
+                    line_start=line_start,
+                    line_end=line.end,
+                    use_bracket_for_byword_tag=False,
+                    tail_digits=options.word_tag_decimal_length,
+                )
             )
+            if line.end is not None:
+                write_line_tag(line.end, use_angle=True)
+            buffer.write("\n")
+            for refline in line.reference_lines:
+                _write_reference_line(
+                    buffer,
+                    refline,
+                    line_start=line_start,
+                    options=options,
+                )
+            continue
 
         # 写主行
         write_line_tag(line_start)
@@ -81,28 +107,48 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
 
         # 写参考行 (共享主行的 start)
         for refline in line.reference_lines:
-            formatted = _format_line(
-                refline,
-                line_start=line_start,
-                line_end=None,
-                use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
-                tail_digits=options.word_tag_decimal_length,
+            _write_reference_line(
+                buffer, refline, line_start=line_start, options=options
             )
-            if not formatted:
-                # 既无正文、也没有任何需要写出的逐字标签 → 这个参考行里没有
-                # 任何可保留的信息, 写出的孤立行标签在重新解析时只会被当成
-                # "该时间点已存在" 的占位而被忽略. 跳过它, 输出才是稳定的
-                # (否则同一份歌词 dump 两次会多出一行).
-                logger.debug(
-                    f"Skipping empty reference line of the line at {line_start}ms "
-                    f"(no text and no byword tags to write)"
-                )
-                continue
-            write_line_tag(line_start)
-            buffer.write(formatted)
-            buffer.write("\n")
 
     return buffer.getvalue()
+
+
+def _write_reference_line(
+    buffer: StringIO,
+    refline: BasicLyricLine,
+    *,
+    line_start: int,
+    options: SerializationOptions,
+) -> None:
+    """写一条参考行 (与主行共享 ``line_start``) .
+
+    没有正文的参考行不写出: 只带逐字标签的孤立行在重新解析时是 SPL 的"纯结束
+    标记"(方括号行标签 + 无正文), 会去改上一行的时间范围; 既无正文又无逐字标签
+    的行则完全没有可保留的信息. 两种情况都跳过, 输出才是稳定的.
+    """
+    formatted = _format_line(
+        refline,
+        line_start=line_start,
+        line_end=None,
+        use_bracket_for_byword_tag=options.use_bracket_for_byword_tag,
+        tail_digits=options.word_tag_decimal_length,
+    )
+    if not refline.text:
+        logger.debug(
+            f"Skipping text-less reference line of the line at {line_start}ms "
+            f"(LRC cannot express it; it would re-parse as an end marker)"
+        )
+        return
+    buffer.write(
+        format_timetag(
+            line_start,
+            tail_digits=options.line_tag_decimal_length,
+            use_angle_bracket=False,
+        )
+    )
+    buffer.write(formatted)
+    buffer.write("\n")
 
 
 def _warn_non_roundtrippable_metadata(key: str, value: str) -> None:
@@ -156,6 +202,9 @@ def _format_line(
       结束时间相接, 可省略前缀.
     * 最后一个词元的 ``end`` 与 ``line_end`` 相同 —— 行尾时间已由调用方
       输出, 不重复.
+    * 落在 ``[line_start, line_end]`` 之外 —— SPL 规定越界的逐字标记会被忽略
+      (见 :func:`~.parser.parse_line`), 写出来只会得到一个"读不回来"的标记;
+      省略它, ``dumps`` → ``loads`` 才是严格不动点.
 
     Note:
         当 ``use_bracket_for_byword_tag=True`` 且首个词元的 ``start`` 与
@@ -168,11 +217,16 @@ def _format_line(
     parts: list[str] = []
     last_idx = len(line) - 1
 
+    def in_range(value: int) -> bool:
+        if line_start is not None and value < line_start:
+            return False
+        return not (line_end is not None and value > line_end)
+
     for idx, word in enumerate(line):
         prefix = ""
         suffix = ""
 
-        if word.start is not None:
+        if word.start is not None and in_range(word.start):
             if idx == 0:
                 if word.start != line_start:
                     if not use_angle:
@@ -199,7 +253,7 @@ def _format_line(
                     tail_digits=tail_digits,
                 )
 
-        if word.end is not None:
+        if word.end is not None and in_range(word.end):
             # 若与调用方输出的行尾标签重复则省略
             if idx == last_idx and word.end == line_end:
                 pass

@@ -267,16 +267,20 @@ class TestParseLrcReferenceLines:
         assert refs[2].text == "C"
 
 
-class TestParseLrcSkippedLeadingTag:
-    """行首标签与逐字标签矛盾时, 按首个词元归位 (不再丢整行)."""
+class TestParseLrcOutOfRangeBywordTags:
+    """越界逐字标签按 SPL 忽略: 行标签/行尾标签为准, 标记本身丢弃.
 
-    def test_late_leading_tag_is_clamped_to_first_word(
+    SPL: "逐字标记时间戳需要递增, 如果出现时间戳不在行开始时间和结束时间间
+    或者小于之前的时间戳, 那么此逐字标记时间戳会被忽略".
+    """
+
+    def test_early_byword_tag_is_ignored_line_tag_wins(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """``[00:30.000]<00:10.000>hi``: 行落在 10s, 翻译行照旧挂在它下面.
+        """``[00:30.000]<00:10.000>hi``: 行仍在 30s, 早于行首的标记被忽略.
 
-        旧行为是把这样的整行丢弃, 于是紧随其后的翻译/音译行也变成孤儿行一起
-        消失; 现在标签被归位到首个词元时间, 只丢标签不丢内容.
+        行标签是文件声明的时间, 逐字标记自相矛盾时以行标签为准 (丢弃标记而不是
+        搬动整行); 紧随其后的翻译行照旧挂在它下面, 不会变成孤儿行.
         """
         import logging
 
@@ -285,18 +289,35 @@ class TestParseLrcSkippedLeadingTag:
             lyrics = parse_lrc(lrc)
 
         assert len(lyrics) == 1
-        assert lyrics[0].start == 10000
+        assert lyrics[0].start == 30000
         assert lyrics[0].text == "hi"
+        assert [(t.content, t.start, t.end) for t in lyrics[0].content] == [
+            ("hi", None, None)
+        ]
         assert [r.text for r in lyrics[0].reference_lines] == ["翻译行"]
-        assert "later than the first word start" in caplog.text
+        assert "before the line start" in caplog.text
         assert "orphaned lyric line" not in caplog.text
 
-    def test_clamped_tags_are_deduplicated(self) -> None:
-        """多个行首标签都归位到同一时间点时只注册一次 (不自我复制成参考行).
+    def test_late_byword_tag_does_not_eat_the_line_end(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``a<23s>b<25s>c[24s]``: 晚于行尾的标记被忽略, 行尾标签保住."""
+        import logging
 
-        通过解析器很难走到 (多标签 + 行首词元标签会进 2a 分支), 因此这里直接
-        测内部 helper, 把这个防重复的不变量固定下来.
-        """
+        with caplog.at_level(logging.WARNING):
+            lyrics = parse_lrc("[00:20.000]a<00:23.000>b<00:25.000>c[00:24.000]\n")
+
+        assert len(lyrics) == 1
+        line = lyrics[0]
+        assert (line.start, line.end) == (20000, 24000)
+        assert [(t.content, t.start, t.end) for t in line.content] == [
+            ("a", None, 23000),
+            ("bc", 23000, 24000),
+        ]
+        assert "after the line end" in caplog.text
+
+    def test_no_clamping_of_registered_tags(self) -> None:
+        """越界过滤已在 parse_line 完成, 注册阶段不再改标签值."""
         from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
         from lemony_lrc_parser.parser import _register_line_at_tags
 
@@ -305,18 +326,48 @@ class TestParseLrcSkippedLeadingTag:
 
         registered = _register_line_at_tags(pool, content, [30000, 40000])
 
-        assert registered == [10000]
-        assert sorted(pool) == [10000]
-        assert pool[10000].reference_lines == []
+        assert registered == [30000, 40000]
+        assert sorted(pool) == [30000, 40000]
+
+    def test_folded_line_keeps_both_occurrences(self) -> None:
+        """折叠标签 + 逐字标签: 出现递减 → 按 SPL 当重复行, 两次都在."""
+        lyrics = parse_lrc("[00:20.000][00:30.000]你好[00:23.000]椒盐音乐[00:24.000]\n")
+        assert [(line.start, line.text) for line in lyrics] == [
+            (20000, "你好椒盐音乐"),
+            (30000, "你好椒盐音乐"),
+        ]
+        # 第一行拿到逐字标记, 第二行的标记早于它的行首 → 被忽略
+        assert [(t.content, t.start, t.end) for t in lyrics[0].content] == [
+            ("你好", None, 23000),
+            ("椒盐音乐", 23000, 24000),
+        ]
+        assert [(t.content, t.start, t.end) for t in lyrics[1].content] == [
+            ("你好椒盐音乐", None, None)
+        ]
+
+    def test_delayed_first_word_keeps_single_line(self) -> None:
+        """非递减 → 首字延迟的逐字行, 仍是一行 (真实语料的常见形态)."""
+        lyrics = parse_lrc("[00:05.650][00:05.730]徘[00:06.130]徊[00:06.450]\n")
+        assert len(lyrics) == 1
+        line = lyrics[0]
+        assert line.start == 5650
+        assert [(t.content, t.start, t.end) for t in line.content] == [
+            ("", 5650, 5730),
+            ("徘", 5730, 6130),
+            ("徊", 6130, 6450),
+        ]
 
     def test_multi_leading_tags_with_inline_tag_registers_anchor(self) -> None:
-        """2a 分支: 歧义行按单行解析后, 锚点指向实际注册的时间点."""
+        """2a 分支的折叠路径: 每个行首标签都注册, 锚点指向第一个."""
         lrc = "[00:05.000][00:30.000]<00:10.000>hi\n翻译行\n"
         lyrics = parse_lrc(lrc)
-        assert len(lyrics) == 1
-        assert lyrics[0].start == 5000
-        assert lyrics[0].text == "hi"
-        assert lyrics[0].reference_lines[0].text == "翻译行"
+        assert [(line.start, line.text) for line in lyrics] == [
+            (5000, "hi"),
+            (30000, "hi"),
+        ]
+        assert lyrics[0].reference_lines == []
+        # 翻译行挂在最后注册的那一行下面
+        assert lyrics[1].reference_lines[0].text == "翻译行"
 
 
 class TestParseLrcLenientTimeTags:
@@ -410,19 +461,71 @@ class TestParseLrcFillImplicitEnd:
 
 
 class TestParseLrcEmptyLines:
-    """测试空行处理."""
+    """空正文行 = SPL 的纯结束标记, 不再产生空歌词行."""
 
-    def test_empty_placeholder_line(self) -> None:
-        """测试空占位行 (只有时间标签没有内容) ."""
+    def test_empty_line_closes_the_previous_line(self) -> None:
+        """``[00:05.000]`` 给上一行补 end, 自己不出现在 Lyrics 里."""
         lrc = """[00:01.000]第一行
 [00:05.000]
 [00:10.000]第三行
 """
         lyrics = parse_lrc(lrc)
-        # 空行应该创建一个内容为空的 LyricLine
-        assert len(lyrics) == 3
-        assert lyrics[1].content[0].content == ""
-        assert lyrics[1].start == 5000
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (1000, 5000, "第一行"),
+            (10000, None, "第三行"),
+        ]
+
+    def test_empty_line_sharing_timestamp_with_next_line(self) -> None:
+        """SPL 明说结束标记常与下一句同时间戳: 下一句必须是独立歌词行.
+
+        曾经这里会造一条空占位行, 于是同时间戳的真实歌词被挂成它的参考行
+        (翻译), 按 ``line.text`` 遍历的消费者整行丢失.
+        """
+        lrc = """[00:17.230]main
+[00:20.820]
+[00:20.820]フィクション
+[00:20.820]
+[00:20.820]喜欢虚构的
+"""
+        lyrics = parse_lrc(lrc)
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (17230, 20820, "main"),
+            (20820, None, "フィクション"),
+        ]
+        assert [r.text for r in lyrics[1].reference_lines] == ["喜欢虚构的"]
+
+    def test_leading_empty_line_has_no_target_and_is_dropped(self) -> None:
+        """文件首行的空标记没有可收尾的上一行 → 直接忽略."""
+        lyrics = parse_lrc("[00:00.000]\n[00:01.000]hello\n")
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (1000, None, "hello")
+        ]
+
+    def test_inline_line_end_wins_over_end_marker(self) -> None:
+        """同行内的行尾标签优先于后面孤立的结束标记."""
+        lyrics = parse_lrc("[00:10.000]a[00:15.000]\n[00:20.000]\n")
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (10000, 15000, "a")
+        ]
+
+    def test_end_marker_keeps_fill_implicit_end_from_winning(self) -> None:
+        """结束标记写下的 end 不会被 fill_implicit_line_end 覆盖."""
+        from lemony_lrc_parser.models import ParseOptions
+
+        lrc = "[00:01.000]a\n[00:05.000]\n[00:10.000]b\n"
+        lyrics = parse_lrc(lrc, options=ParseOptions(fill_implicit_line_end=True))
+        assert [(line.start, line.end) for line in lyrics] == [
+            (1000, 5000),
+            (10000, None),
+        ]
+
+    def test_whitespace_only_body_is_still_content(self) -> None:
+        """标签之后只剩空白仍算正文 (A5a), 不是结束标记."""
+        lyrics = parse_lrc("[00:01.000]a\n[00:05.000]  \n")
+        assert [(line.start, line.text) for line in lyrics] == [
+            (1000, "a"),
+            (5000, "  "),
+        ]
 
 
 class TestParseLrcWordLevel:
@@ -672,15 +775,17 @@ ref for B
         assert lyrics[0].text == "main A"
         assert lyrics[1].text == "main B"
 
-    def test_filter_empty_placeholder_line(self) -> None:
-        """空占位行: 空字符串是否被匹配取决于 filter 值."""
+    def test_filter_empty_line_is_an_end_marker_not_a_line(self) -> None:
+        """空正文行不再产生歌词行, 因此也不参与 line_filter 的匹配."""
         lrc = """[00:01.000]real
 [00:05.000]
 [00:10.000]another
 """
-        # 用非空 filter → 空行不应被过滤
         lyrics = self._parse(lrc, "drop")
-        assert len(lyrics) == 3  # 空行保留
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (1000, 5000, "real"),
+            (10000, None, "another"),
+        ]
 
     def test_filter_none_noop(self) -> None:
         """line_filter=None 时行为与不传选项一致."""
@@ -726,7 +831,7 @@ class TestParseLrcErrorLineInfo:
         import lemony_lrc_parser.parser as parser_mod
         from lemony_lrc_parser.exceptions import InvalidLyricsError
 
-        def _fail_parse_line(line: str) -> None:
+        def _fail_parse_line(line: str, **kwargs: object) -> None:
             raise InvalidLyricsError("simulated failure")
 
         monkeypatch.setattr(parser_mod, "parse_line", _fail_parse_line)
@@ -742,17 +847,14 @@ class TestParseLrcErrorLineInfo:
     def test_ambiguous_leading_tags_error_has_line_info(self) -> None:
         """多行首标签 + 含时间标签的正交 且无法产生 line start 时,
         错误应带 line_no / raw_line."""
-        # 场景: 多个行首 [time] 标签, 剩余正文还含有时间标签,
-        # 但 parse_line 返回 None 导致 line_start 为 None
-        # 这里构造一段 parse_line 返回非 None 但第一个 token start=None 的情况
-        # 实际上 parse_line 对空内容返回 None, 这让 2a 分支走 continue。
-        # 公平起见用 monkeypatch 让 parse_line 返回 line.start=None 的数据
+        # 场景: 多个行首 [time] 标签, 剩余正文还含有时间标签 (标签非递减,
+        # 因此走"首字延迟"的单行读法), 但 parse_line 返回的 line.start 为 None
         import lemony_lrc_parser.parser as parser_mod
         from lemony_lrc_parser.exceptions import InvalidLyricsError
 
         orig = parser_mod.parse_line
 
-        def _bad_parse_line(line: str) -> BasicLyricLine | None:
+        def _bad_parse_line(line: str, **kwargs: object) -> BasicLyricLine | None:
             from lemony_lrc_parser.models import BasicLyricLine, LyricToken
 
             return BasicLyricLine([LyricToken(content="x", start=None, end=None)])
@@ -760,7 +862,7 @@ class TestParseLrcErrorLineInfo:
         try:
             # mypy 不需要抑制 (签名一致), ty 认为模块属性不可重新赋值
             parser_mod.parse_line = _bad_parse_line  # ty: ignore[invalid-assignment]
-            lrc = "[00:01.000][00:02.000]text <00:01.500>extra"
+            lrc = "[00:01.000][00:01.500]text <00:02.000>extra"
             with pytest.raises(InvalidLyricsError) as exc_info:
                 parse_lrc(lrc)
             err = exc_info.value

@@ -68,8 +68,17 @@ class TestDumpLrcReferenceLines:
         assert dumped == "[00:01.000]Main\n"
         assert dump_lrc(Lyrics.loads(dumped)) == dump_lrc(lyrics)
 
-    def test_reference_line_with_only_byword_timings_is_kept(self) -> None:
-        """只有逐字标签、没有正文的参考行仍要写出 (时间信息是数据)."""
+    def test_reference_line_with_only_byword_timings_is_not_written(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """只有逐字标签、没有正文的参考行不写出 (LRC 无法表达它).
+
+        SPL 规定"时间戳后不接任何文本内容的行是纯粹的结束标记", 因此
+        ``[00:01.000]<00:01.500><00:02.000>`` 重新解析时是上一行的结束标记,
+        而不是一条参考行. 与其写出一个会被读成别的东西的行, 不如跳过并告警.
+        """
+        import logging
+
         from lemony_lrc_parser.models import SerializationOptions
 
         lyrics = Lyrics(
@@ -85,13 +94,14 @@ class TestDumpLrcReferenceLines:
         )
 
         opts = SerializationOptions(line_separator="")
-        dumped = dump_lrc(lyrics, options=opts)
-        assert dumped == "[00:01.000]Main\n[00:01.000]<00:01.500><00:02.000>\n"
+        with caplog.at_level(logging.DEBUG):
+            dumped = dump_lrc(lyrics, options=opts)
+        assert dumped == "[00:01.000]Main\n"
+        assert "text-less reference line" in caplog.text
 
         restored = Lyrics.loads(dumped)
         assert len(restored) == 1
-        ref = restored[0].reference_lines[0]
-        assert [(t.content, t.start, t.end) for t in ref] == [("", 1500, 2000)]
+        assert restored[0].reference_lines == []
 
     def test_reference_lines_with_byword_tags(self) -> None:
         """测试带逐字标签的参考行."""

@@ -272,28 +272,34 @@ def test_subtitle_export_keeps_cue_count(doc: str) -> None:
 class TestKnownLossyBehaviors:
     """把"已知有损"写成显式规格, 避免它们悄悄扩散成默认行为."""
 
-    def test_empty_text_with_range_becomes_two_placeholders(
+    def test_empty_text_line_is_written_with_angle_tags(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """空正文 + 显式区间: 写出 ``[start][end]``, 重新解析变成两个占位行.
+        """空正文行用尖括号写出, 重新解析仍是同一条空正文行.
 
-        LRC 里没有"空正文但带区间"的无歧义写法, 因此这里选择保留 end 并告警
-        (与 metadata 的 warn-but-write 策略一致), 而不是静默丢掉区间.
+        LRC/SPL 里方括号的"时间戳后没有文本"是纯结束标记, 无法表达一条空歌词行;
+        尖括号写法是 Enhanced LRC 的扩展, 也是空 SRT cue 的形状. 换成方括号会
+        静默改掉上一行的时间范围, 因此这里固定住尖括号写法.
         """
         lyrics = Lyrics.loads("<00:01.000><00:02.000>")
         assert [(line.start, line.end, line.text) for line in lyrics] == [
             (1000, 2000, "")
         ]
 
-        with caplog.at_level(logging.WARNING):
-            dumped = lyrics.dumps(options=DUMPS_OPTS)
-        assert dumped == "[00:01.000][00:02.000]\n"
-        assert "no text" in caplog.text
+        dumped = lyrics.dumps(options=DUMPS_OPTS)
+        assert dumped == "<00:01.000><00:02.000>\n"
 
         reparsed = Lyrics.loads(dumped)
         assert [(line.start, line.end, line.text) for line in reparsed] == [
-            (1000, None, ""),
-            (2000, None, ""),
+            (1000, 2000, "")
+        ]
+        assert caplog.text == ""
+
+    def test_bracket_empty_line_becomes_an_end_marker(self) -> None:
+        """方括号写法的空行是上一行的结束标记, 不产生新行 (SPL)."""
+        lyrics = Lyrics.loads("[00:01.000]hello\n[00:02.000]\n")
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (1000, 2000, "hello")
         ]
 
     def test_bracket_byword_tag_duplicates_line_on_reparse(
@@ -322,15 +328,15 @@ class TestKnownLossyBehaviors:
         # 默认 (尖括号) 写法没有这个问题
         assert Lyrics.loads(lyrics.dumps(options=DUMPS_OPTS)) == lyrics
 
-    def test_late_leading_tag_is_clamped_not_dropped(self) -> None:
-        """行首标签晚于首个词元时归位保留 (本行与翻译行都不丢).
+    def test_early_byword_tag_is_ignored_line_tag_wins(self) -> None:
+        """越界逐字标签被忽略, 行标签为准 (SPL); 本行与翻译行都不丢.
 
-        这曾经是"整行丢弃 + 后续翻译行变孤儿"的取舍 (B1 的旧行为); 现在标签被
-        归位到首个词元时间, 只有标签本身被丢弃.
+        这曾经是"整行丢弃 + 后续翻译行变孤儿"(B1 旧行为), 也曾经是"把整行挪到
+        首词元时间"(A2 旧行为); 现在按 SPL 丢弃越界的标记本身.
         """
         lyrics = Lyrics.loads("[00:30.000]<00:10.000>hi\n翻译行\n")
         assert [(line.start, line.end, line.text) for line in lyrics] == [
-            (10000, None, "hi")
+            (30000, None, "hi")
         ]
         assert [r.text for r in lyrics[0].reference_lines] == ["翻译行"]
 
@@ -348,26 +354,38 @@ class TestInferredEndIsNeverDegenerate:
     @pytest.mark.parametrize(
         "doc",
         [
-            "[00:10.000]a<00:05.000>b<00:06.000>",
-            "[00:10.000] <00:05.000>",
-            "[00:10.000]a<00:05.000>b[00:06.000]",
             "[00:01.000]text[00:01.000]",
+            "[00:10.000]a<00:15.000>b[00:10.000]",
             "[00:05.000]b[00:05.000][00:05.000]",
         ],
     )
-    def test_degenerate_inferred_end_is_discarded(
-        self, doc: str, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """末词元推断出的 end 与行首矛盾时置回 None, 并给出 warning."""
-        with caplog.at_level(logging.WARNING):
-            lyrics = Lyrics.loads(doc)
+    def test_degenerate_inferred_end_is_discarded(self, doc: str) -> None:
+        """末词元推断出的 end 与行首矛盾时置回 None."""
+        lyrics = Lyrics.loads(doc)
         assert len(lyrics) == 1
         line = lyrics[0]
         assert line.end is None or line.end > line.start
         assert line.end is None
-        assert "discarding the inferred end" in caplog.text
+
+    def test_discarded_end_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        """归一化不是静默的: 丢弃推断出的 end 要留 warning."""
+        with caplog.at_level(logging.WARNING):
+            lyrics = Lyrics.loads("[00:10.000]a<00:15.000>b[00:10.000]")
+        assert lyrics[0].end is None
         # 词元自身的时间戳原样保留, 不因归一化而丢数据
-        assert line.content[-1].end is not None
+        assert lyrics[0].content[-1].end == 10000
+        assert "discarding the inferred end" in caplog.text
+
+    def test_out_of_range_byword_tag_is_logged(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """被忽略的越界逐字标签同样留 warning (宽松解析 + 可诊断)."""
+        with caplog.at_level(logging.WARNING):
+            lyrics = Lyrics.loads("[00:10.000]a<00:05.000>b<00:06.000>")
+        assert [(t.content, t.start, t.end) for t in lyrics[0].content] == [
+            ("ab", None, None)
+        ]
+        assert "before the line start" in caplog.text
 
     def test_usable_byword_line_keeps_its_end(self) -> None:
         """正常逐字行不受影响: 行尾仍取末词元的 end."""
@@ -380,9 +398,9 @@ class TestInferredEndIsNeverDegenerate:
     ) -> None:
         """解析器写出的文件, CLI ``validate --strict`` 不应因 error 而失败.
 
-        残留的 ``token-before-line-start`` 是 warning (数据本身确实自相矛盾),
-        所以这里只要求没有 ``[ERROR]``; 这既守住不变量 1, 也保住了"宽松解析 +
-        可诊断"的取向.
+        越界逐字标签按 SPL 忽略之后, 解析器不再产出自相矛盾的词元时间, 因此这里
+        既要求没有 ``[ERROR]``, 也要求没有 ``token-before-line-start`` 之类的
+        残留 warning.
         """
         path = tmp_path / "self-produced.lrc"
         path.write_text(
@@ -393,7 +411,7 @@ class TestInferredEndIsNeverDegenerate:
         captured = capsys.readouterr()
         assert rc == 0, captured.err
         assert "[ERROR]" not in captured.err
-        assert "token-before-line-start" in captured.err
+        assert "token-before-line-start" not in captured.err
 
 
 class TestWhitespaceContentRoundtrip:
