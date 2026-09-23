@@ -29,7 +29,12 @@ Wikipedia / 各家播放器文档 / 事实参考实现（ffmpeg）之间互相�
   被截断），而真实用户文件里就是这么写的 —— 见 [research.md](research.md#metadata-语法)。
 - 转义语法根本不存在（`<`/`>` 与 `[]` 都没有），谁引入谁就是在造方言。
 - 逐字标签 `<>` 与行标签 `[]` 组合出的歧义（同一行有多个方括号标签时到底是
-  "折叠行" 还是 "空词元 + 逐字行"）没有任何文档可依。
+  "折叠行" 还是 "空词元 + 逐字行"）在很长一段时间里没有任何文档可依。
+
+唯一像样的书面参照是 [SPL](https://moriafly.com/standards/spl.html)（Salt Player
+Lyrics，2024-12-16 制定、2026-09-19 修订），本项目按它逐条对照过一遍，
+一致与偏离之处见 [research.md](research.md#spl-对照2026-09-19-修订版) 与
+[`tests/test_spl_conformance.py`](../tests/test_spl_conformance.py)。
 
 所以本项目的策略是：**默认宽松解析 + 把不确定的地方告警而不是猜**，并把每个判断的
 依据与代价都写进 [design.md](design.md#待决策--已知取舍)。

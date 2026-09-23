@@ -16,6 +16,7 @@
 | NEW-CLI | CLI 入口 | 工具化 | 高 | ✅ v0.4.0b3 |
 | B7 | 逐字时间戳与行时间范围一致性校验 | 正确性 | 高 | ✅ v0.4.0b3 |
 | NEW-ROUNDTRIP | Roundtrip Fidelity 测试矩阵 | 回归保障 | 高 | ✅ 0.4.0 |
+| NEW-SPL-CONFORM | SPL 标准逐条对照与一致性测试 | 正确性 | 高 | ✅ 0.4.0（差异清单见 README / risks.md#11） |
 
 ### P1 / 中优先级：稳定核心后推进
 
@@ -60,6 +61,9 @@
 - `NEW-CLI` → `lemonyrics` / `python -m lemony_lrc_parser`。
 - `B7` → `_check_line_tokens()` 的词元越界与单调性检查。
 - `NEW-ROUNDTRIP` → `tests/test_roundtrip_matrix.py` (三条不变量 + 随机语料)。
+- `NEW-SPL-CONFORM` → `tests/test_spl_conformance.py` + README「与 SPL 的一致性」
+  + `docs/research.md` 的「SPL 对照」; 空正文行语义与越界逐字标记按 SPL 收敛,
+  剩下的 6 处有意偏离记在 `risks.md#11`。
 - `F-CONTAINS` → `contains_text()` / `find_text()` 显式 API + `in` 的
   `DeprecationWarning` (结论: 不扩大 `in` 的语义)。
 
@@ -80,15 +84,15 @@ CRLF 变成 LF、2 位尾数（占全部时间标签的 6.7%）被补成 3 位�
 
 ### NEW-PARSE-REPORT：解析报告对象
 
-动机：目前"某行被丢弃 / 被归位 / 被降级为参考行"只体现在日志里，调用方拿不到
-结构化数据（真实语料里存在孤儿行、被归位的行首标签等形态）。
+动机：目前"某行被丢弃 / 被降级为参考行 / 逐字标记被忽略"只体现在日志里，调用方拿不到
+结构化数据（真实语料里存在孤儿行、越界被忽略的逐字标记等形态）。
 
 建议：
 
 - `parse_lrc(text, options=...)` 之外提供 `parse_with_report(text) -> (Lyrics, ParseReport)`，
   或让 `ParseOptions.collect_report = True`。
-- `ParseReport` 提供：被丢弃的行（原文 + 行号 + 原因）、被归位的时间标签、
-  被当作参考行挂载的行数、metadata 提取结果等。
+- `ParseReport` 提供：被丢弃的行（原文 + 行号 + 原因）、被忽略的越界 / 乱序逐字标记、
+  被当作参考行挂载的行数、被空标记收尾的行、metadata 提取结果等。
 - 与 `F-STRICT` 天然互补：报告是"事后审计"，strict 是"当场拒绝"。
 
 ### MF-COMMENT-LINE：`#` 开头的注释行
