@@ -80,13 +80,6 @@ ignore = [
     "RET505",
 ]
 
-[tool.mypy]
-# mypy 1.19 起不再接受 3.9 作为被检查版本, 因此这里取"能表达的最低版本";
-# 3.9 的实际兼容性由 tox 的 3.9 环境负责验证.
-python_version = "3.10"
-strict = true
-files = ["src", "tests", "tools"]
-
 [tool.coverage.run]
 source = ["lemony_lrc_parser"]
 branch = true
@@ -101,8 +94,6 @@ exclude_also = [
 [dependency-groups]
 dev = [
     "coverage>=7.10.7",
-    "ipykernel>=6.31.0",
-    "mypy>=1.19.1",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.9",
@@ -127,6 +118,5 @@ commands = [
 
 [tool.ty.rules]
 # Lyrics 有意收窄 UserList 的运算符重载签名 (禁用 __mul__ 系列, __add__ 仅
-# 接受 Lyrics 等), 属设计取舍而非笔误; mypy 侧以 type: ignore 处理, ty 侧以
-# 本规则整体忽略.
+# 接受 Lyrics 等), 属设计取舍而非笔误, 因此整体忽略该规则.
 invalid-method-override = "ignore"

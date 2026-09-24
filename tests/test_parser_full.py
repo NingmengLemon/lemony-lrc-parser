@@ -860,7 +860,7 @@ class TestParseLrcErrorLineInfo:
             return BasicLyricLine([LyricToken(content="x", start=None, end=None)])
 
         try:
-            # mypy 不需要抑制 (签名一致), ty 认为模块属性不可重新赋值
+            # ty 认为模块属性不可重新赋值, 这里的 monkeypatch 是刻意的
             parser_mod.parse_line = _bad_parse_line  # ty: ignore[invalid-assignment]
             lrc = "[00:01.000][00:01.500]text <00:02.000>extra"
             with pytest.raises(InvalidLyricsError) as exc_info:

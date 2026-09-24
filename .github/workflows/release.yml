@@ -4,8 +4,8 @@ name: Release
 # 并创建 GitHub Release。重复推送同一个版本号不会重复发布（tag 已存在即跳过）。
 #
 # - 预发布版本（PEP 440 的 aN / bN / rcN，如 0.5.0b1）自动标记为 prerelease。
-# - Release 正文取自 CHANGELOG.md 里对应版本的段落（没有则回退到自动生成的
-#   release notes）。
+# - Release 正文取自 CHANGELOG.md 里对应版本的段落；版本号滚动了却没有对应段落
+#   （或段落是空的）会让这一步直接失败，而不是发一个正文空白的 Release。
 # - sdist / wheel 会作为附件上传，并做一次内容检查（tools/check_sdist.py）。
 #
 # 想再往前一步（自动发布到 PyPI）时，推荐用 PyPI Trusted Publishing：
@@ -90,7 +90,15 @@ jobs:
               re.M | re.S,
           )
           match = pattern.search(text)
-          print(match.group("body").strip() if match else "")
+          if match is None:
+              raise SystemExit(
+                  f"CHANGELOG.md 里找不到 '## [{version}]' 段落; "
+                  "版本号滚动时必须补上对应段落 (否则会发出正文空白的 Release)"
+              )
+          body = match.group("body").strip()
+          if not body:
+              raise SystemExit(f"CHANGELOG.md 的 '## [{version}]' 段落是空的")
+          print(body)
           PY
           echo "--- release body ---"
           head -n 20 release-body.md

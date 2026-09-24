@@ -111,10 +111,8 @@ class TestLyricLineText:
 
         # 旧行为保留: BasicLyricLine 的子串语义, LyricLine 仍是词元相等判定
         # (即 str 恒为 False) —— 两者都会发 DeprecationWarning.
-        # mypy 的非重叠检查只看容器的元素类型, 不认 __contains__ 的自定义语义,
-        # 因此下面两处是已知误报.
         with pytest.warns(DeprecationWarning, match="BasicLyricLine.contains_text"):
-            assert "Hello" in line.content  # type: ignore[comparison-overlap]
+            assert "Hello" in line.content
         with pytest.warns(DeprecationWarning, match="LyricLine.contains_text"):
             assert "Hello" not in line
 
@@ -197,7 +195,8 @@ class TestLyricsAdd:
     def test_add_with_non_lyrics(self) -> None:
         """测试与非 Lyrics 对象相加应该返回 NotImplemented."""
         lyrics = Lyrics()
-        result = lyrics.__add__("not lyrics")  # type: ignore
+        # 故意传错类型: 运行时会走 isinstance 分支返回 NotImplemented
+        result = lyrics.__add__("not lyrics")  # ty: ignore[invalid-argument-type]
         assert result is NotImplemented
 
     def test_add_keeps_unmatched_lines(self) -> None:
@@ -243,7 +242,7 @@ class TestLyricLineStartValidation:
         from lemony_lrc_parser.exceptions import ProgrammingError
 
         with pytest.raises(ProgrammingError):
-            LyricLine(start=None)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            LyricLine(start=None)  # ty: ignore[invalid-argument-type]
 
 
 class TestLyricsCombineDuplicateStarts:
@@ -287,14 +286,14 @@ class TestLyricsCombineDuplicateStarts:
         lyrics = Lyrics([_line(1000, "a")])
 
         with pytest.raises(TypeError):
-            lyrics.combine(_line(2000, "b"))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            lyrics.combine(_line(2000, "b"))  # ty: ignore[invalid-argument-type]
 
     def test_combine_rejects_str(self) -> None:
         """传入字符串应显式报错, 而不是被当成字符序列静默忽略."""
         lyrics = Lyrics([_line(1000, "a")])
 
         with pytest.raises(TypeError):
-            lyrics.combine("not lyrics")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            lyrics.combine("not lyrics")  # ty: ignore[invalid-argument-type]
 
     @pytest.mark.parametrize(
         "other",
@@ -306,7 +305,7 @@ class TestLyricsCombineDuplicateStarts:
         lyrics = Lyrics([_line(1000, "a")])
 
         with pytest.raises(TypeError) as exc_info:
-            lyrics.combine(other)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            lyrics.combine(other)  # ty: ignore[invalid-argument-type]
         assert "iterable of LyricLine" in str(exc_info.value)
 
     @pytest.mark.parametrize(
@@ -316,7 +315,7 @@ class TestLyricsCombineDuplicateStarts:
         """真正的空容器仍然是合法的 no-op."""
         lyrics = Lyrics([_line(1000, "a")])
 
-        combined = lyrics.combine(other)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        combined = lyrics.combine(other)  # ty: ignore[invalid-argument-type]
         assert [line.text for line in combined] == ["a"]
 
     def test_combine_does_not_mutate_metadata_when_rejecting(self) -> None:
@@ -326,7 +325,7 @@ class TestLyricsCombineDuplicateStarts:
         other = {"ar": "Whoever"}
 
         with pytest.raises(TypeError):
-            lyrics.combine_inplace(other)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            lyrics.combine_inplace(other)  # ty: ignore[invalid-argument-type]
         assert lyrics.metadata == {"ti": "Main"}
 
     def test_combine_reports_offending_item_types(self) -> None:
@@ -334,7 +333,7 @@ class TestLyricsCombineDuplicateStarts:
         lyrics = Lyrics([_line(1000, "a")])
 
         with pytest.raises(TypeError) as exc_info:
-            lyrics.combine([1, "x"])  # type: ignore[list-item]  # ty: ignore[invalid-argument-type]
+            lyrics.combine([1, "x"])  # ty: ignore[invalid-argument-type]
         assert "int" in str(exc_info.value) and "str" in str(exc_info.value)
 
 
@@ -376,7 +375,7 @@ class TestTextSearch:
         lyrics = self._lyrics()
 
         with pytest.warns(DeprecationWarning, match="Lyrics.contains_text"):
-            assert "Hello" not in lyrics  # type: ignore[comparison-overlap]
+            assert "Hello" not in lyrics
 
     def test_line_in_lyrics_still_works_without_warning(self) -> None:
         """行对象判定不受影响, 也不该打扰用户."""

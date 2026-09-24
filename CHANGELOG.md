@@ -11,7 +11,32 @@
 > [`docs/design.md`](docs/design.md), 调研与语料数据见
 > [`docs/research.md`](docs/research.md).
 
-## [0.4.1] — 未发布
+## [Unreleased]
+
+### Tooling
+
+- **dev 依赖瘦身: 去掉 mypy 与 ipykernel**. 类型检查统一交给 ty (它已经能覆盖本库
+  需要的检查), 而 ipykernel 只服务于"开发时开个 notebook 玩一玩", 仓库里既没有
+  `.ipynb` 也没有任何文档引用它.
+  - mypy 侧: 删掉 `[tool.mypy]` 与 dev 依赖里的 `mypy`. 两套检查器并存只会带来
+    两套忽略注释 (`# type: ignore[...]` 与 `# ty: ignore[...]`) 与两份配置;
+    实测 ty 不认带错误码的 `# type: ignore`, 所以那些"双写"注释里的 mypy 部分
+    已经成了纯噪音.
+  - CI 的 lint 作业改为 `ruff check` / `ruff format --check` / `ty check`.
+  - 代码里删掉只为 mypy 存在的忽略注释 (`__add__` / `__iadd__` 的
+    `# type: ignore[override]` 由 `[tool.ty.rules] invalid-method-override`
+    统一忽略; 两处 `comparison-overlap` 误报 ty 不报).
+  - `.gitignore` 与 `tools/check_sdist.py` 里的 `.mypy_cache/` 保留: 前者是上游
+    Python 模板, 后者是"任何缓存目录都不该进 sdist"的通用防护.
+  - 去掉 ipykernel 后 `uv.lock` 少掉 20 余个包 (ipython / jupyter-client /
+    pyzmq / tornado 等).
+- **发布流程加闸门**: 版本号滚动了却在 CHANGELOG 里找不到对应段落 (或段落为空)
+  时, 提取正文那一步直接失败, 而不是发出一个正文空白的 Release.
+- CI 里 `lowest` 作业的注释补上实测数据: tox 4.30.3 在 py<3.11 上要求
+  `typing-extensions>=4.14.1`, 所以 3.9 那一档的"最低依赖"解析到的是 4.14.1 而不是
+  本库声明的 4.4.0 —— 精确下限由 `lowest-typing-extensions` 作业钉版本验证.
+
+## [0.4.1] — 2026-09-23
 
 按 [SPL 标准](https://moriafly.com/standards/spl.html)（Salt Player Lyrics，
 最近修订 2026-09-19）逐条对照之后的一轮语义修正。SPL 是目前唯一把 LRC 家族多年
@@ -311,6 +336,7 @@
 ### Added
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...HEAD
 [0.4.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b3...v0.4.0
 [0.4.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b2...0.4.0b3

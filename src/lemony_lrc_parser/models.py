@@ -523,7 +523,7 @@ class Lyrics(UserList[LyricLine]):
         return item in self.data
 
     @override
-    def __add__(self, other: Lyrics) -> Lyrics:  # type: ignore[override]
+    def __add__(self, other: Lyrics) -> Lyrics:
         """``a + b``: 按时间戳合并两份歌词, 返回新实例, **不丢弃任何行**.
 
         与 :meth:`combine` 的区别: 这里固定使用 ``other_as_refline_only=False``,
@@ -536,7 +536,7 @@ class Lyrics(UserList[LyricLine]):
         return self.combine(other, other_as_refline_only=False)
 
     @override
-    def __iadd__(self, value: Lyrics) -> Self:  # type: ignore[override]
+    def __iadd__(self, value: Lyrics) -> Self:
         """``a += b``: 原地按时间戳合并, 语义与 :meth:`__add__` 一致 (不丢行)."""
         if not isinstance(value, Lyrics):
             return NotImplemented
