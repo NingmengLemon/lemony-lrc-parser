@@ -108,8 +108,9 @@ def _warn_ambiguous_contains(owner: str, method: str) -> None:
     ``contains_text()`` / ``find_text()``.
     """
     warnings.warn(
-        f"`str in {owner}` 的语义有歧义 (子串? 词元相等? 行相等?); "
-        f"文本查找请改用 `{method}()`。行为保持不变, 但该用法将在后续版本移除。",
+        f"`str in {owner}` is ambiguous (substring? token equality? line "
+        f"equality?); use `{method}()` for text lookup. Behavior is unchanged, "
+        f"but this usage will be removed in a future version.",
         DeprecationWarning,
         stacklevel=3,
     )
