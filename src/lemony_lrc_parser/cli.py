@@ -158,4 +158,4 @@ def main(args: list[str] | None = None) -> int:
         output = lyrics.to_webvtt()
         return 0 if _write_output(output, ns.output) else 1
 
-    return 0
+    return 0  # pragma: no cover - argparse required=True 保证命令必然匹配上面某支
