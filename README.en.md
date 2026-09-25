@@ -25,7 +25,7 @@ Lemon-flavored LRC Parser for Python.
 - Text lookup (`contains_text()` / `find_text()`)
 - Round-trip fidelity invariant tests (`parser output always validates` /
   `dumps converges in one round` / `line structure is stable`)
-- CLI tool (`lemonyrics` / `python -m lemony_lrc_parser`)
+- CLI tool (`python -m lemony_lrc_parser`)
 - Parse errors carry the line number and raw line
   (`InvalidLyricsError.line_no` / `.raw_line`)
 - Full type annotations
@@ -146,7 +146,7 @@ from lemony_lrc_parser import Lyrics
 
 lyrics = Lyrics.loads(lrc_text)
 
-lyrics.contains_text("love")  # whether any line (incl. reference lines) contains the substring
+lyrics.contains_text("love")  # whether any line (incl. reference lines) has it
 matching = lyrics.find_text("love")  # list of matching line objects
 line = lyrics[0]
 line.contains_text("love")  # search the main line only
@@ -508,23 +508,22 @@ constructed a self-contradictory object.
 
 ### CLI Usage
 
-After installation, use it directly from the command line:
+The library registers no console script; call it as
+`python -m lemony_lrc_parser` (the same shape as `python -m json.tool`):
 
 ```bash
 # validate LRC file data consistency
-lemonyrics validate song.lrc
-lemonyrics validate --strict song.lrc    # exit code 1 when there are errors
+python -m lemony_lrc_parser validate song.lrc
+python -m lemony_lrc_parser validate --strict song.lrc    # exit code 1 when there are errors
 
 # global time offset (milliseconds)
-lemonyrics offset --delta 500 song.lrc           # output to stdout
-lemonyrics offset --delta -200 song.lrc -o out.lrc  # output to a file
+python -m lemony_lrc_parser offset --delta 500 song.lrc           # output to stdout
+python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # output to a file
 
 # convert to subtitle formats
-lemonyrics to-srt song.lrc
-lemonyrics to-webvtt song.lrc -o song.vtt
+python -m lemony_lrc_parser to-srt song.lrc
+python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
-
-You can also use `python -m lemony_lrc_parser` as the entry point.
 
 ### Subtitle Conversion (SRT / WebVTT)
 

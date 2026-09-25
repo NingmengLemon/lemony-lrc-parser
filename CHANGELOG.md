@@ -13,6 +13,15 @@
 
 ## [Unreleased]
 
+### Removed
+
+- **破坏性**: 移除 `lemonyrics` console script, CLI 改为只用
+  `python -m lemony_lrc_parser` 调用 (与 `python -m json.tool` 同样的形态).
+  `pyproject.toml` 的 `[project.scripts]` 整块删掉; argparse 的 `prog` 随之显式
+  写成 `python -m lemony_lrc_parser`, 否则走 `-m` 时 usage 里会出现
+  `__main__.py`. 已经装过旧版本的环境升级后 `lemonyrics` 会 command not found,
+  脚本 / 文档里引用它的地方需要改写成 `python -m lemony_lrc_parser`.
+
 ### Docs
 
 - **README 拆成中英双份**: `README.md` 为简体中文, 新增 `README.en.md` 为英文, 两份

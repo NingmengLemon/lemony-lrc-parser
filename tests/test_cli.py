@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -373,3 +376,32 @@ class TestCLIEdgeCases:
         captured = capsys.readouterr()
         # argparse 会将用法打印到 stderr
         assert "usage:" in captured.err or "error:" in captured.err
+
+
+class TestModuleEntryPoint:
+    """``python -m lemony_lrc_parser`` 是本库唯一的 CLI 入口 (没有 console script).
+
+    其余用例都直接调 :func:`main`, 覆盖不到 ``__main__.py`` 与 ``-m`` 的接线,
+    而这条接线正是"去掉 console script"之后用户唯一的入口, 因此单独钉一个用例.
+    """
+
+    def test_dash_m_runs_the_cli(self) -> None:
+        """``python -m`` 能跑通, 且 usage 里的 prog 不是 ``__main__.py``."""
+        result = subprocess.run(
+            [sys.executable, "-m", "lemony_lrc_parser", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0
+        assert result.stdout.startswith("usage: python -m lemony_lrc_parser")
+        assert "__main__.py" not in result.stdout
+
+    def test_no_console_script_is_declared(self) -> None:
+        """``pyproject.toml`` 里不应再声明 ``[project.scripts]``.
+
+        用行首锚定的正则而不是子串判定, 免得注释里提一句就误报.
+        """
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        text = pyproject.read_text(encoding="utf-8")
+        assert re.search(r"^\[project\.scripts\]", text, re.MULTILINE) is None

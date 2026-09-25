@@ -1,6 +1,6 @@
 """命令行入口.
 
-通过安装后的 ``lemonyrics`` 命令或 ``python -m lemony_lrc_parser`` 使用.
+通过 ``python -m lemony_lrc_parser`` 使用 (本库不注册 console script).
 优先支持的命令:
 
 * ``validate`` —— 验证歌词数据一致性.
@@ -23,7 +23,9 @@ from .validation import ValidationOptions
 def _resolve_args(args: list[str] | None = None) -> argparse.Namespace:
     """构建并解析命令行参数."""
     parser = argparse.ArgumentParser(
-        prog="lemonyrics",
+        # 显式指定 prog: 走 ``python -m`` 时 sys.argv[0] 是 __main__.py 的完整
+        # 路径, 交给 argparse 自行推断会让 usage 里出现 "__main__.py".
+        prog="python -m lemony_lrc_parser",
         description="LRC 歌词解析与处理工具.",
     )
     sub = parser.add_subparsers(dest="command", required=True)

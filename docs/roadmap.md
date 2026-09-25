@@ -59,7 +59,7 @@
 
 - `F-VALIDATE` → `validation.py` (`validate_lyrics` / `Lyrics.validate`)。
 - `NEW-ERROR-LINE` → `InvalidLyricsError.line_no` / `.raw_line`。
-- `NEW-CLI` → `lemonyrics` / `python -m lemony_lrc_parser`。
+- `NEW-CLI` → `python -m lemony_lrc_parser` (不注册 console script)。
 - `B7` → `_check_line_tokens()` 的词元越界与单调性检查。
 - `NEW-ROUNDTRIP` → `tests/test_roundtrip_matrix.py` (三条不变量 + 随机语料)。
 - `NEW-SPL-CONFORM` → `tests/test_spl_conformance.py`、README「关于 SPL」与

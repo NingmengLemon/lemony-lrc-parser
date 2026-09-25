@@ -24,7 +24,7 @@
 - 数据一致性验证 API (`validate_lyrics` / `Lyrics.validate()`)
 - 文本查找 (`contains_text()` / `find_text()`)
 - 往返保真度不变量测试 (`解析结果必过校验` / `dumps 一轮收敛` / `行结构稳定`)
-- CLI 命令行工具 (`lemonyrics` / `python -m lemony_lrc_parser`)
+- CLI 命令行工具 (`python -m lemony_lrc_parser`)
 - 解析错误附带行号与原始行 (`InvalidLyricsError.line_no` / `.raw_line`)
 - 完整的类型注解
 
@@ -178,7 +178,9 @@ print(line.reference_lines[0][0].content)  # "虽然歌声无形"
 
 ```python
 main = llp.loads("[00:33.810]帰り道は夕日を背に\n[00:39.580]君の少し後ろを歩く\n")
-translation = llp.loads("[00:33.810]背着夕阳走在返家的路上\n[00:39.580]跟在你的后面一起走着\n")
+translation = llp.loads(
+    "[00:33.810]背着夕阳走在返家的路上\n[00:39.580]跟在你的后面一起走着\n"
+)
 
 # combine 方法: 翻译行挂到同时间点的 reference_lines 中
 combined = main.combine(translation)
@@ -467,23 +469,22 @@ issues = lyrics.validate(options=ValidationOptions(strict=True))
 
 ### 命令行
 
-安装后可通过命令行直接使用:
+本库不注册 console script, 用 `python -m lemony_lrc_parser` 调用 (与
+`python -m json.tool` 同样的形态):
 
 ```bash
 # 验证 LRC 文件数据一致性
-lemonyrics validate song.lrc
-lemonyrics validate --strict song.lrc    # 有 error 时退出码为 1
+python -m lemony_lrc_parser validate song.lrc
+python -m lemony_lrc_parser validate --strict song.lrc    # 有 error 时退出码为 1
 
 # 整体时间偏移 (毫秒)
-lemonyrics offset --delta 500 song.lrc           # 输出到 stdout
-lemonyrics offset --delta -200 song.lrc -o out.lrc  # 输出到文件
+python -m lemony_lrc_parser offset --delta 500 song.lrc           # 输出到 stdout
+python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # 输出到文件
 
 # 转换为字幕格式
-lemonyrics to-srt song.lrc
-lemonyrics to-webvtt song.lrc -o song.vtt
+python -m lemony_lrc_parser to-srt song.lrc
+python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
-
-也可以使用 `python -m lemony_lrc_parser` 作为入口.
 
 ### 字幕格式转换 (SRT / WebVTT)
 
