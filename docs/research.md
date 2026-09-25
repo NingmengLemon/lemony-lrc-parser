@@ -77,13 +77,12 @@
 那 `450000` 也可以读成 0.450000 秒 = 450 毫秒。两种读法给出的结果相差 1000 倍，本库选
 后者（写文件的人的本意），并在测试里固定下来。
 
-
 ## 术语与 ID 标签标准集
 
 社区整理（[LRC 文件格式](https://github.com/TriM-Organization/Lyric/blob/master/docs/Lrc%E6%96%87%E4%BB%B6%E6%A0%BC%E5%BC%8F.md)）
 给出的标准 ID 标签是：
 
-```
+```text
 [ar:演唱者] [al:专辑] [ti:标题] [au:歌词作者] [length:长度]
 [by:LRC 制作者] [re:制作者程序] [ve:程序版本] [offset:时间补偿(ms)]
 ```
@@ -166,7 +165,7 @@ LRC 里 `[ti: a]` 出现两次是合法的（真实文件里少见但存在，�
 
 同一份社区整理列出了这些被真实文件使用的写法（本库全部接受）：
 
-```
+```text
 [mm:ss.fff]  [mm:ss.xx]  [hh:mm:ss]  [hh:mm:ss.fff]  [hh:mm:ss.xx]  [mm:ss]
 [mm:ss.xx][mm:ss.xx][mm:ss.xx]重复出现的歌词
 ```
@@ -190,7 +189,8 @@ LRC 里 `[ti: a]` 出现两次是合法的（真实文件里少见但存在，�
 
 两种失败模式：
 
-- 3.12–3.14 + 4.4/4.5：`TypeError: type 'typing.TypeVar' is not an acceptable base type`
+- 3.12–3.14 + 4.4/4.5：
+  `TypeError: type 'typing.TypeVar' is not an acceptable base type`
   ——老版本 typing-extensions 不认识新解释器的 typing 内部结构；
 - 3.15 + 4.10–4.13：`AttributeError: module 'typing' has no attribute …`
   ——中间几个版本引用了 3.15 里已改名/移除的属性，到 4.14.0 才修好。

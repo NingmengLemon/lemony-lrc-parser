@@ -74,7 +74,7 @@ jobs:
       - run: uv run --no-sync pytest
 
   lint:
-    name: ruff / ty
+    name: ruff / ty / markdownlint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,6 +86,13 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run ty check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Markdown 排版闸门, 配置见仓库根目录的 .markdownlint-cli2.jsonc.
+      # markdownlint-cli2 把 markdownlint 钉成精确版本 (0.23.0 → markdownlint
+      # 0.41.0), 所以写死版本号就能保证 CI 与本地规则一致; 升级时同步改这里.
+      - run: npx --yes markdownlint-cli2@0.23.0
 
   sdist:
     name: sdist 内容检查
