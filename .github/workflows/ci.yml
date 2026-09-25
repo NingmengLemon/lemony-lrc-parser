@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # 3.15 尚未正式发布, 因此不放进矩阵; 本地 tox 的 env_list 里仍保留它,
+      # 等解释器可用后再加进来.
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest
+
+  lowest:
+    name: 最低依赖版本 (Python 3.9)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.9"
+          enable-cache: true
+      # 直接依赖取声明的最低版本, 验证 pyproject 里的下限没有说谎.
+      # 注意: dev 依赖自己会抬高传递下限 —— 例如 tox 4.30.3 在 py<3.11 上要求
+      # typing-extensions>=4.14.1, 于是 3.9 这一档实际解析到 4.14.1, 远高于本库
+      # 声明的 4.4.0. 所以这里只保证"解析出来的就是最低允许集合", 精确的
+      # typing-extensions 下限由下一个 job 直接钉版本验证.
+      # (不能用 --locked, 它与 --resolution 互斥.)
+      - run: uv sync --resolution lowest-direct
+      - name: 打印实际装到的依赖版本
+        run: uv run --no-sync python -c "import importlib.metadata as m; print('typing-extensions', m.version('typing-extensions'))"
+      # 必须 --no-sync: 否则 uv run 会按默认 resolution 重新同步, 把降级/最低版本装回去
+      - run: uv run --no-sync pytest
+
+  lowest-typing-extensions:
+    name: 最低 typing-extensions (${{ matrix.python-version }} + ${{ matrix.typing-extensions }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 每一档都对应 pyproject 里声明的下限 (实测见 docs/research.md).
+        # 3.15 的解释器可用后, 追加 {python-version: "3.15", typing-extensions: "4.14.0"}.
+        include:
+          - { python-version: "3.9", typing-extensions: "4.4.0" }
+          - { python-version: "3.12", typing-extensions: "4.6.0" }
+          - { python-version: "3.14", typing-extensions: "4.6.0" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: 降级到该 Python 版本对应的声明下限
+        run: uv pip install "typing-extensions==${{ matrix.typing-extensions }}"
+      - run: uv run --no-sync python -c "import importlib.metadata as m; print('typing-extensions', m.version('typing-extensions'))"
+      # 必须 --no-sync, 否则 uv run 会重新同步并覆盖掉上面的降级
+      - run: uv run --no-sync pytest
+
+  lint:
+    name: ruff / ty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run ty check
+
+  sdist:
+    name: sdist 内容检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv build
+      # 回归防护: 曾经把构建用的 .uv-cache/ (含 Scripts/python.exe) 打进 sdist
+      - run: uv run python tools/check_sdist.py

@@ -13,16 +13,27 @@ from .models import BasicLyricLine, Lyrics
 __all__ = [
     "apply_delta",
     "iter_all_timestamps",
+    "max_timestamp",
+    "min_timestamp",
 ]
+
+
+def max_timestamp(lyrics: Lyrics) -> int | None:
+    """获取所有时间戳中的最大值; 歌词不含时间戳时返回 ``None``."""
+    return max(iter_all_timestamps(lyrics), default=None)
+
+
+def min_timestamp(lyrics: Lyrics) -> int | None:
+    """获取所有时间戳中的最小值; 歌词不含时间戳时返回 ``None``."""
+    return min(iter_all_timestamps(lyrics), default=None)
 
 
 def apply_delta(lyrics: Lyrics, delta: int) -> None:
     """将所有时间戳增加 ``delta`` ms
 
     注意此处为底层函数没有下溢保护, 且为原地修改"""
-    for line in lyrics.lines:
-        if line.start is not None:
-            line.start += delta
+    for line in lyrics:
+        line.start += delta
         if line.end is not None:
             line.end += delta
         _apply_word_delta(line.content, delta)
@@ -40,9 +51,8 @@ def _apply_word_delta(words: BasicLyricLine, delta: int) -> None:
 
 def iter_all_timestamps(lyrics: Lyrics) -> Iterator[int]:
     """迭代 :class:`Lyrics` 中出现过的所有时间戳 (含参考行)."""
-    for line in lyrics.lines:
-        if line.start is not None:
-            yield line.start
+    for line in lyrics:
+        yield line.start
         if line.end is not None:
             yield line.end
         yield from _iter_word_timestamps(line.content)

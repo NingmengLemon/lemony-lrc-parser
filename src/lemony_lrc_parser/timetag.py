@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-import re
 from logging import getLogger
 
+from ._utils import match_to_ms
 from .exceptions import ProgrammingError, TimestampUnderflowError
-from .regex import TIMETAG_REGEX_STRICT, compile_regex
+from .regex import LINE_TIMETAG_REGEX, compile_regex
 
 logger = getLogger(__name__)
 
@@ -31,7 +31,7 @@ def format_timetag(
     """将毫秒数格式化为 LRC 时间标签字符串.
 
     Args:
-        ms: 毫秒时间戳 (允许为负, 调用方应自行保证语义合理) .
+        ms: 毫秒时间戳 (不允许为负) .
         use_angle_bracket: True 使用 ``<...>`` (逐字标签) , False 使用 ``[...]`` (行标签) .
         tail_digits: 毫秒尾部补齐的位数.
 
@@ -64,41 +64,15 @@ def format_timetag(
 
 
 def parse_timetag(s: str) -> int | None:
-    """解析一个严格格式的时间标签字符串, 返回对应毫秒数.
+    """解析一个时间标签字符串, 返回对应毫秒数.
 
-    严格格式要求形如 ``[mm:ss.xxx]`` (方括号、三段齐全、毫秒 1-3 位) .
+    仅支持方括号行标签: ``[mm:ss.xxx]`` (三段齐全) 或 ``[mm:ss]``
+    (省略毫秒部分) , 与解析器的行为保持一致. 尖括号逐字标签
+    (``<mm:ss.xxx>``) 不在支持范围内, 会返回 ``None``.
     解析失败返回 ``None``.
     """
-    match = compile_regex(rf"^{TIMETAG_REGEX_STRICT}$").match(s)
-    return _match_to_ms(match) if match else None
-
-
-def _match_to_ms(match: re.Match[str]) -> int:
-    """从正则匹配对象中提取毫秒数.
-
-    兼容两类命名组:
-
-    * 标准命名组 ``min`` / ``sec`` / ``tail`` (见 ``LINE_TIMETAG_REGEX`` 等) .
-    * 前缀命名组 ``line_min`` / ``word_min`` 等 (见 ``GENERIC_TIMETAG_REGEX``) .
-    """
-    groups = match.groupdict()
-
-    # 优先使用前缀命名组, 再退回到标准命名组
-    min_val = groups.get("line_min") or groups.get("word_min") or groups.get("min")
-    sec_val = groups.get("line_sec") or groups.get("word_sec") or groups.get("sec")
-    tail_val = groups.get("line_tail") or groups.get("word_tail") or groups.get("tail")
-
-    minutes = int(min_val or 0)
-    seconds = int(sec_val or 0)
-
-    if tail_val:
-        # 将毫秒标准化到 3 位
-        if len(tail_val) > 3:
-            tail_val = tail_val[:3]  # 截断: "123456" -> "123"
-        elif len(tail_val) < 3:
-            tail_val = tail_val.ljust(3, "0")  # 补齐: "1" -> "100"
-        millis = int(tail_val)
-    else:
-        millis = 0
-
-    return millis + seconds * 1000 + minutes * 60_000
+    # 使用 LINE_TIMETAG_REGEX (而非 TIMETAG_REGEX_STRICT) 以与解析器行为一致.
+    # 前者允许省略毫秒、1-6 位尾数、行内空白.
+    # 行尾用 \Z 严格锚定: $ 会额外接受一个尾随换行, 这里不希望如此.
+    match = compile_regex(rf"^{LINE_TIMETAG_REGEX}\Z").match(s)
+    return match_to_ms(match) if match else None

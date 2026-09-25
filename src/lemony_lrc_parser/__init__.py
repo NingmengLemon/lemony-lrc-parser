@@ -24,11 +24,13 @@
        lyrics = llp.loads(lrc_text)
        out = llp.dumps(lyrics)
 
-3. **底层函数与工具**: :func:`parse_lrc` / :func:`parse_line` / :func:`dump_lrc`
-   以及时间标签工具 :func:`format_timetag` / :func:`parse_timetag`.
+3. **底层函数与工具**: :func:`parse_lrc` / :func:`parse_line`
+    以及时间标签工具 :func:`format_timetag` / :func:`parse_timetag`.
 """
 
 from __future__ import annotations
+
+from typing import TextIO
 
 from .exceptions import (
     InvalidLyricsError,
@@ -37,35 +39,64 @@ from .exceptions import (
     TimestampUnderflowError,
 )
 from .models import (
+    COMMON_METADATA_KEYS,
     BasicLyricLine,
     LyricLine,
+    LyricLineDict,
     Lyrics,
+    LyricsDict,
     LyricToken,
+    LyricTokenDict,
+    MetadataDict,
+    MetadataKey,
     ParseOptions,
     SerializationOptions,
+    SubtitleOptions,
 )
 from .parser import parse_line, parse_lrc
-from .serializer import dump_lrc
+from .subtitle import dump_srt, dump_webvtt, parse_srt, parse_webvtt
 from .timetag import format_timetag, parse_timetag
+from .validation import (
+    ValidationIssue,
+    ValidationOptions,
+    ValidationSeverity,
+    validate_lyrics,
+)
 
 __all__ = [
     "BasicLyricLine",
     "LyricLine",
     "LyricToken",
     "Lyrics",
+    "LyricTokenDict",
+    "LyricLineDict",
+    "LyricsDict",
+    "MetadataDict",
+    "MetadataKey",
+    "COMMON_METADATA_KEYS",
     "InvalidLyricsError",
     "LyricsParserError",
     "ProgrammingError",
     "TimestampUnderflowError",
     "ParseOptions",
     "SerializationOptions",
+    "SubtitleOptions",
+    "ValidationIssue",
+    "ValidationOptions",
+    "ValidationSeverity",
+    "validate_lyrics",
     "dumps",
     "loads",
-    "dump_lrc",
+    "dump",
+    "load",
     "parse_line",
     "parse_lrc",
     "format_timetag",
     "parse_timetag",
+    "dump_srt",
+    "dump_webvtt",
+    "parse_srt",
+    "parse_webvtt",
 ]
 
 
@@ -83,3 +114,21 @@ def dumps(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> str
     等价于 ``lyrics.dumps(options=options)``
     """
     return lyrics.dumps(options=options)
+
+
+def load(fp: TextIO, *, options: ParseOptions | None = None) -> Lyrics:
+    """从文件加载 LRC 内容.
+
+    等价于 :meth:`Lyrics.load`.
+    """
+    return Lyrics.load(fp, options=options)
+
+
+def dump(
+    lyrics: Lyrics, fp: TextIO, *, options: SerializationOptions | None = None
+) -> None:
+    """把 :class:`Lyrics` 保存到文件.
+
+    等价于 :meth:`Lyrics.dump`
+    """
+    lyrics.dump(fp, options=options)

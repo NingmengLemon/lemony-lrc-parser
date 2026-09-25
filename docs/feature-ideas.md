@@ -1,0 +1,40 @@
+# Feature Ideas（索引）
+
+`lemony-lrc-parser` 的开发笔记。原本全部堆在这一个文件里，现在按"问题类型"拆开，
+本文件只做索引与约定说明。
+
+| 文件 | 内容 |
+| --- | --- |
+| [roadmap.md](roadmap.md) | 优先级路线图、候选功能与设计改进、我的新增想法、观望项 |
+| [design.md](design.md) | 当前能力与设计取舍、模块立体化/重构方向、**待决策 / 已知取舍** |
+| [risks.md](risks.md) | 可能的问题与风险、已关闭 / 不计划项 |
+| [research.md](research.md) | LRC 现状调研（带出处）、真实语料基线数据 |
+| [../CHANGELOG.md](../CHANGELOG.md) | 版本历史与已落地功能（本目录不再记录"已完成"） |
+
+## 约定
+
+- 条目 ID（`F-*` / `NEW-*` / `MF-*` / `MY-*` / `A1`–`A7` / `B1`–`B7`）是稳定的，
+  代码注释、测试 docstring 与 CHANGELOG 都会直接引用它们，改名时请全局搜索。
+- 每个候选条目写清：**动机 → 建议做法 → 风险**；已经在做的写"状态"。
+- 调研结论一律带出处。原因是下面这条。
+
+## 为什么这些取舍读起来这么绕
+
+因为 **LRC 从来没有官方规范**：它是从 Winamp 时代的播放器行为里"长"出来的格式，
+Wikipedia / 各家播放器文档 / 事实参考实现（ffmpeg）之间互相矛盾的地方不少：
+
+- `offset` 的正负语义，社区文档说的是"+ 让歌词提前"，而真实实现（KDE Elisa）
+  曾经反着做并被单独修过 —— 见 [research.md](research.md#offset-标签的正负语义)。
+- metadata 的 value 能不能含 `]`：ffmpeg 取第一个 `]` 收尾（于是 `Album [Deluxe]`
+  被截断），而真实用户文件里就是这么写的 —— 见 [research.md](research.md#metadata-语法)。
+- 转义语法根本不存在（`<`/`>` 与 `[]` 都没有），谁引入谁就是在造方言。
+- 逐字标签 `<>` 与行标签 `[]` 组合出的歧义（同一行有多个方括号标签时到底是
+  "折叠行" 还是 "空词元 + 逐字行"）在很长一段时间里没有任何文档可依。
+
+唯一像样的书面参照是 [SPL](https://moriafly.com/standards/spl.html)（Salt Player
+Lyrics，2024-12-16 制定、2026-09-19 修订），本项目按它逐条对照过一遍，
+一致与偏离之处见 [research.md](research.md#spl-对照2026-09-19-修订版) 与
+[`tests/test_spl_conformance.py`](../tests/test_spl_conformance.py)。
+
+所以本项目的策略是：**默认宽松解析 + 把不确定的地方告警而不是猜**，并把每个判断的
+依据与代价都写进 [design.md](design.md#待决策--已知取舍)。

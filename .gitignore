@@ -99,6 +99,9 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 # uv.lock
+#   `uv build --cache-dir .uv-cache` 之类用法会在仓库根留下缓存目录, 曾经被
+#   hatchling 原样打进 sdist (含 Scripts/python.exe), 因此必须忽略.
+.uv-cache/
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.

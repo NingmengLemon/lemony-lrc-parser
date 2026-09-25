@@ -3,20 +3,43 @@
 定义 LRC 歌词的核心数据结构: :class:`LyricToken`、:class:`LyricLine` 和
 作为顶层容器的 :class:`Lyrics`.
 
-本模块只承载数据层语义; 解析 (LRC 文本 → :class:`Lyrics`) 与序列化
- (:class:`Lyrics` → LRC 文本) 的实现分别位于 :mod:`.parser` 与
-:mod:`.serializer`, 这里仅通过延迟导入把它们暴露成 :class:`Lyrics` 的方法.
+本模块采用**充血模型**: :class:`Lyrics` 除承载数据外, 还聚合了解析、序列化、
+字幕互转与时间偏移等操作方法. 这些操作的具体实现分散在 :mod:`.parser`、
+:mod:`.serializer`、:mod:`.subtitle`、:mod:`.offset` 中, 由 :class:`Lyrics`
+的方法通过函数级延迟导入委托调用. 因此 :mod:`.models` 是整个包的**聚合层**,
+而非单纯的数据层——这是有意的取舍, 换取更易用的面向对象 API.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from copy import deepcopy
+import re
+import sys
+import warnings
+from collections import UserList
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from logging import getLogger
-from typing import overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    SupportsIndex,
+    TextIO,
+    TypedDict,
+    overload,
+)
 
+from typing_extensions import Self, override
+
+from ._utils import DC_SLOTS
 from .exceptions import ProgrammingError, TimestampUnderflowError
+
+if TYPE_CHECKING:
+    from .validation import ValidationIssue, ValidationOptions
+
+if sys.version_info >= (3, 10):
+    from types import NotImplementedType
+else:
+    NotImplementedType = type(NotImplemented)
 
 __all__ = [
     "BasicLyricLine",
@@ -25,7 +48,95 @@ __all__ = [
     "Lyrics",
     "ParseOptions",
     "SerializationOptions",
+    "SubtitleOptions",
+    "LyricTokenDict",
+    "LyricLineDict",
+    "LyricsDict",
+    "MetadataDict",
+    "MetadataKey",
+    "COMMON_METADATA_KEYS",
 ]
+
+
+#: LRC 里最常见的 ID 标签 key (标准集见 LRC 文档: ``ar`` / ``al`` / ``ti`` /
+#: ``au`` / ``length`` / ``by`` / ``re`` / ``ve`` / ``offset``).
+#:
+#: 仅作为**类型提示**与文档用途: ``Lyrics.metadata`` 运行时就是普通
+#: ``dict[str, str]``, 库不会校验、也不会拒绝其它 key (真实语料里常见
+#: ``ly`` / ``mu`` / ``total`` / ``tool`` 这类非标准 key).
+MetadataKey = Literal["ar", "al", "ti", "au", "length", "by", "re", "ve", "offset"]
+
+#: :data:`MetadataKey` 的运行时形态, 便于遍历 / 做模板.
+COMMON_METADATA_KEYS: tuple[MetadataKey, ...] = (
+    "ar",
+    "al",
+    "ti",
+    "au",
+    "length",
+    "by",
+    "re",
+    "ve",
+    "offset",
+)
+
+
+class MetadataDict(TypedDict, total=False):
+    """常见 ID 标签的类型提示 (``total=False``, 允许只出现其中几个).
+
+    Note:
+        这是给调用方**可选**使用的类型别名 (例如写自己的函数签名时用
+        ``def f(meta: MetadataDict)``), 库内部仍把 ``metadata`` 当普通
+        ``dict[str, str]``, 不做任何强制校验或补全.
+    """
+
+    ar: str
+    al: str
+    ti: str
+    au: str
+    length: str
+    by: str
+    re: str
+    ve: str
+    offset: str
+
+
+def _warn_ambiguous_contains(owner: str, method: str) -> None:
+    """提示 ``str in <owner>`` 这类歧义用法.
+
+    只发告警, **不改变行为**: ``in`` 在这些模型上历史语义各不相同 (子串 /
+    词元相等 / 行相等), 用户很容易误读, 因此引导到显式的
+    ``contains_text()`` / ``find_text()``.
+    """
+    warnings.warn(
+        f"`str in {owner}` 的语义有歧义 (子串? 词元相等? 行相等?); "
+        f"文本查找请改用 `{method}()`。行为保持不变, 但该用法将在后续版本移除。",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+class LyricTokenDict(TypedDict):
+    """:meth:`LyricToken.to_dict` 的返回结构."""
+
+    start: int | None
+    end: int | None
+    content: str
+
+
+class LyricLineDict(TypedDict):
+    """:meth:`LyricLine.to_dict` 的返回结构."""
+
+    start: int
+    end: int | None
+    content: list[LyricTokenDict]
+    reference_lines: list[list[LyricTokenDict]]
+
+
+class LyricsDict(TypedDict):
+    """:meth:`Lyrics.to_dict` 的返回结构."""
+
+    metadata: dict[str, str]
+    lines: list[LyricLineDict]
 
 
 @dataclass
@@ -35,9 +146,19 @@ class ParseOptions:
     Attributes:
         fill_implicit_line_end: 若为 ``True``, 则当某行没有显式结束时间时,
             自动用下一行的开始时间作为其结束时间.
+        line_filter: 黑名单过滤. 正则表达式: 传入字符串会在
+            :meth:`__post_init__` 中被 :func:`re.compile` 编译, 之后用
+            ``pattern.search`` 匹配行文本. 匹配到的行在解析时会被丢弃.
+            ``None`` 表示不过滤. 若需精确子串匹配, 请使用 :func:`re.escape`.
     """
 
     fill_implicit_line_end: bool = False
+    line_filter: str | re.Pattern[str] | None = None
+
+    def __post_init__(self) -> None:
+        """把字符串形式的 ``line_filter`` 统一编译为正则."""
+        if isinstance(self.line_filter, str):
+            self.line_filter = re.compile(self.line_filter)
 
 
 @dataclass
@@ -47,16 +168,19 @@ class SerializationOptions:
     Attributes:
         with_metadata: 是否输出 metadata 段.
         use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``. 在 foobar2000 等老式播放器上可能会有用.
-        line_tag_decimal_length: 行标签毫秒位数 (默认 2).
-        word_tag_decimal_length: 逐字标签毫秒位数 (默认 2).
-        line_separator: 行间分隔字符串 (默认 ``"\n"`` 表示行间插入空行).
+            **该选项不保证往返**: 若某行首个词元的开始时间与行首时间不同,
+            写出的 ``[start][word]`` 会被重新解析成两个行首标签, 整行拆成两行
+            (写出时会产生 warning).
+        line_tag_decimal_length: 行标签毫秒位数 (默认 3), 使用更小的值会损失精度.
+        word_tag_decimal_length: 逐字标签毫秒位数 (默认 3), 使用更小的值会损失精度.
+        line_separator: 行间分隔字符串 (默认 ``"\\n"`` 表示行间插入空行).
             设为 ``""`` 可省去空行.
     """
 
     with_metadata: bool = True
     use_bracket_for_byword_tag: bool = False
-    line_tag_decimal_length: int = 2
-    word_tag_decimal_length: int = 2
+    line_tag_decimal_length: int = 3
+    word_tag_decimal_length: int = 3
     line_separator: str = "\n"
 
     def __post_init__(self) -> None:
@@ -72,6 +196,34 @@ class SerializationOptions:
 
 
 @dataclass
+class SubtitleOptions:
+    """字幕 (SRT / WebVTT) 转换选项.
+
+    仅在 :class:`Lyrics` 与字幕格式互转时使用, 见 :mod:`.subtitle`.
+
+    Attributes:
+        fill_end_from_next: 当某行缺少结束时间时, 是否用下一行的开始时间
+            作为其结束时间. 为 ``False`` 或已是最后一行时, 改用
+            ``start + default_duration_ms``.
+        default_duration_ms: 无法推断结束时间时使用的默认时长 (毫秒).
+            也用于修正 ``end <= start`` 的非法区间.
+        include_reference_lines: 导出字幕时是否把参考行 (翻译/音译) 作为
+            cue 内的附加文本行一并输出.
+    """
+
+    fill_end_from_next: bool = True
+    default_duration_ms: int = 5000
+    include_reference_lines: bool = True
+
+    def __post_init__(self) -> None:
+        """校验参数合法性."""
+        if self.default_duration_ms <= 0:
+            raise ProgrammingError(
+                f"default_duration_ms must be positive, got {self.default_duration_ms}"
+            )
+
+
+@dataclass(**DC_SLOTS)
 class LyricToken:
     """一个歌词词元 (可以是一个字、一个词, 或整行纯文本) .
 
@@ -85,119 +237,445 @@ class LyricToken:
     start: int | None = None
     end: int | None = None
 
+    def __str__(self) -> str:
+        return self.content
 
-#: 一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
-#:
-#: 对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
-BasicLyricLine = list[LyricToken]
+    def contains_text(self, needle: str) -> bool:
+        """词元文本是否包含 ``needle`` (子串判定, 区分大小写)."""
+        return needle in self.content
+
+    def __contains__(self, key: object) -> bool:
+        """成员判定: ``str`` 走子串判定, 其它类型恒为 ``False``.
+
+        Note:
+            ``str`` 用法会发 :class:`DeprecationWarning` —— ``in`` 既可能被
+            理解成"文本包含"也可能被理解成"词元相等", 文本查找请用
+            :meth:`contains_text`. 行为本身保持不变.
+        """
+        if isinstance(key, str):
+            _warn_ambiguous_contains("token", "LyricToken.contains_text")
+            return key in self.content
+        return False
+
+    def copy(self) -> LyricToken:
+        return LyricToken(content=self.content, start=self.start, end=self.end)
+
+    def to_dict(self) -> LyricTokenDict:
+        return LyricTokenDict(content=self.content, start=self.start, end=self.end)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LyricToken:
+        return cls(
+            content=data.get("content", ""),
+            start=data["start"],
+            end=data.get("end"),
+        )
 
 
-@dataclass
+class BasicLyricLine(UserList[LyricToken]):
+    """一行歌词主体 (由若干 :class:`LyricToken` 组成的线性序列) .
+
+    对于单段整行歌词, 此列表长度通常为 1; 对于逐字歌词, 长度为各词元数量.
+
+    Note:
+        文本查找请用 :meth:`contains_text` (子串判定) 或 :meth:`LyricLine.contains_text`;
+        ``"xxx" in line`` 虽然保留旧的子串语义, 但会发
+        :class:`DeprecationWarning` —— 同一个 ``in`` 在不同模型上语义不一致,
+        容易误读. 词元相等判定请直接用 ``token in line`` 以外的显式写法
+        (``any(token == t for t in line)``) 或列表方法.
+
+    Note:
+        构造函数会**深拷贝**传入的词元; 而 :meth:`~collections.UserList.append`
+        / ``extend`` / ``insert`` / 下标赋值沿用 ``list`` 语义存**引用**.
+    """
+
+    __slots__ = ()
+
+    def __init__(self, tokens: Iterable[LyricToken] | None = None) -> None:
+        super().__init__((t.copy() for t in tokens) if tokens is not None else None)
+
+    def contains_text(self, needle: str) -> bool:
+        """本行文本是否包含 ``needle`` (子串判定, 区分大小写)."""
+        return needle in self.text
+
+    def __contains__(self, item: object) -> bool:
+        """成员判定: ``str`` 走子串判定, 其它类型走列表相等判定.
+
+        Note:
+            ``str`` 用法会发 :class:`DeprecationWarning`; 文本查找请用
+            :meth:`contains_text`. 行为本身保持不变.
+        """
+        if isinstance(item, str):
+            _warn_ambiguous_contains("line", "BasicLyricLine.contains_text")
+            return item in self.text
+        return super().__contains__(item)
+
+    def __str__(self) -> str:
+        return self.text
+
+    @property
+    def text(self) -> str:
+        return "".join(token.content for token in self)
+
+    def copy(self) -> BasicLyricLine:
+        return BasicLyricLine(self)
+
+    def to_dict(self) -> list[LyricTokenDict]:
+        return [token.to_dict() for token in self]
+
+    @classmethod
+    def from_dict(cls, data: list[dict[str, Any]]) -> BasicLyricLine:
+        return BasicLyricLine([LyricToken.from_dict(token_data) for token_data in data])
+
+
+@dataclass(**DC_SLOTS)
 class LyricLine:
     """一行歌词.
 
     Attributes:
         start: 行开始时间 (毫秒) .
         end: 行结束时间 (毫秒) .
-        content: 主语言行内容, 见 :data:`BasicLyricLine`.
+        content: 主语言行内容, 见 :class:`BasicLyricLine`.
         reference_lines: 参考行列表, 常用于存放翻译/音译等辅助行.
     """
 
-    start: int | None = None
+    start: int
     end: int | None = None
-    content: BasicLyricLine = field(default_factory=list)
+    content: BasicLyricLine = field(default_factory=BasicLyricLine)
     reference_lines: list[BasicLyricLine] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.start is None:
+            # 调用方编程错误, 按 exceptions.py 的约定使用 ProgrammingError
+            raise ProgrammingError("LyricLine.start cannot be None")
+
+    def copy(self) -> LyricLine:
+        return LyricLine(
+            start=self.start,
+            end=self.end,
+            content=self.content.copy(),
+            reference_lines=[rl.copy() for rl in self.reference_lines],
+        )
 
     @property
     def text(self) -> str:
-        """拼接整行主语言的纯文本 (便于日志与简单展示) ."""
-        return "".join(word.content for word in self.content)
-
-
-@dataclass
-class Lyrics:
-    """一份完整的歌词.
-
-    Attributes:
-        lines: 按时间顺序排列的歌词行.
-        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) .
-
-    :class:`Lyrics` 同时是序列容器, 可直接 ``for line in lyrics`` 迭代、
-    ``len(lyrics)`` 取行数, 或通过下标/切片访问具体行.
-    """
-
-    lines: list[LyricLine] = field(default_factory=list)
-    metadata: dict[str, str] = field(default_factory=dict)
-
-    def __iter__(self) -> Iterator[LyricLine]:
-        return iter(self.lines)
+        return self.content.text
 
     def __len__(self) -> int:
-        return len(self.lines)
+        return len(self.content)
+
+    def __iter__(self) -> Iterator[LyricToken]:
+        return iter(self.content)
+
+    def contains_text(
+        self, needle: str, *, include_reference_lines: bool = False
+    ) -> bool:
+        """本行文本是否包含 ``needle`` (子串判定, 区分大小写).
+
+        Args:
+            needle: 要查找的子串.
+            include_reference_lines: 为 ``True`` 时一并搜索参考行 (翻译/音译).
+                默认只搜主行, 与 :attr:`text` 的口径一致
+                (:meth:`Lyrics.contains_text` 默认搜全部).
+        """
+        if self.content.contains_text(needle):
+            return True
+        return include_reference_lines and any(
+            ref.contains_text(needle) for ref in self.reference_lines
+        )
+
+    def __contains__(self, item: object) -> bool:
+        """成员判定: 按**词元相等**判定 (与历史行为一致).
+
+        ``LyricLine`` 只迭代词元, 所以 ``"hello" in line`` 恒为 ``False``;
+        文本查找请用 :meth:`contains_text`. ``str`` 用法会发
+        :class:`DeprecationWarning`, 但**行为不变** (仍是词元相等判定).
+        """
+        if isinstance(item, str):
+            _warn_ambiguous_contains("lyric_line", "LyricLine.contains_text")
+        return any(token == item for token in self.content)
 
     @overload
-    def __getitem__(self, index: int) -> LyricLine: ...
+    def __getitem__(self, index: int) -> LyricToken: ...
 
     @overload
-    def __getitem__(self, index: slice) -> list[LyricLine]: ...
+    def __getitem__(self, index: slice) -> BasicLyricLine: ...
 
-    def __getitem__(self, index: int | slice) -> LyricLine | list[LyricLine]:
-        return self.lines[index]
+    def __getitem__(self, index: int | slice) -> LyricToken | BasicLyricLine:
+        return self.content[index]
 
+    def to_dict(self) -> LyricLineDict:
+        return LyricLineDict(
+            start=self.start,
+            end=self.end,
+            content=self.content.to_dict(),
+            reference_lines=[rl.to_dict() for rl in self.reference_lines],
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LyricLine:
+        return cls(
+            start=data["start"],
+            end=data.get("end"),
+            content=BasicLyricLine.from_dict(data["content"]),
+            reference_lines=[
+                BasicLyricLine.from_dict(rl) for rl in data.get("reference_lines", [])
+            ],
+        )
+
+
+class Lyrics(UserList[LyricLine]):
+    """一份完整的歌词.
+
+    :class:`Lyrics` 直接继承 :class:`~collections.UserList`, 其**自身**就是按
+    时间顺序排列的歌词行序列. 可直接 ``for line in lyrics`` 迭代、``len(lyrics)``
+    取行数, 或通过下标/切片访问具体行, 也支持 ``append`` / ``extend`` 等标准
+    列表操作.
+
+    Note:
+        相等性比较继承自 ``UserList``: 只比较行序列, **不含** ``metadata``
+        (两份仅 ``metadata`` 不同的 ``Lyrics`` 会被判为相等) .
+
+    Note:
+        拷贝语义与 ``list`` 有出入: 构造函数 (``Lyrics(lines)``) 与切片会
+        **深拷贝**行 (``lyrics[:][0] is lyrics[0]`` 为 ``False``), 而
+        ``append`` / ``extend`` / 下标赋值沿用 ``list`` 语义存**引用**
+        (``lyrics.append(line)`` 之后再改动 ``line`` 会直接影响 ``lyrics``) .
+
+    Note:
+        按文本查找用 :meth:`contains_text` / :meth:`find_text` (子串, 区分大小写);
+        ``"xxx" in lyrics`` 是**行相等**判定, 对字符串恒为 ``False``, 该用法会发
+        :class:`DeprecationWarning`.
+
+    Attributes:
+        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) . 运行时是普通
+            ``dict[str, str]``; 常见 key 的类型提示见 :data:`MetadataKey` /
+            :class:`MetadataDict` (库不校验、也不限制 key) .
+    """
+
+    __slots__ = ("metadata",)
+
+    def __init__(
+        self,
+        lines: Iterable[LyricLine] | None = None,
+        *,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__((i.copy() for i in lines) if lines is not None else None)
+        self.metadata: dict[str, str] = metadata.copy() if metadata is not None else {}
+
+    @overload
+    def __getitem__(self, index: SupportsIndex) -> LyricLine: ...
+
+    @overload
+    def __getitem__(
+        self,
+        index: slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None],
+    ) -> Lyrics: ...
+
+    @override
+    def __getitem__(
+        self,
+        index: SupportsIndex
+        | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None],
+    ) -> LyricLine | Lyrics:
+        if isinstance(index, slice):
+            return Lyrics(self.data[index], metadata=self.metadata)
+        return self.data[index]
+
+    def contains_text(self, needle: str) -> bool:
+        """任一行 (含参考行) 的文本是否包含 ``needle``.
+
+        子串判定, 区分大小写. 这是"按文本找歌词"的唯一明确入口;
+        ``"xxx" in lyrics`` 保留旧的**行相等**语义 (对 ``str`` 恒为 ``False``)
+        并发 :class:`DeprecationWarning`.
+        """
+        return any(
+            line.contains_text(needle, include_reference_lines=True) for line in self
+        )
+
+    def find_text(self, needle: str) -> list[LyricLine]:
+        """返回所有"主行或参考行文本包含 ``needle``"的行.
+
+        Args:
+            needle: 要查找的子串 (区分大小写).
+
+        Returns:
+            命中的行 (行对象本身, 不是文本), 按现有顺序; 未命中时为 ``[]``.
+            用于替换 ``[line for line in lyrics if "xxx" in line.text]`` 这类写法.
+        """
+        return [
+            line
+            for line in self
+            if line.contains_text(needle, include_reference_lines=True)
+        ]
+
+    def __contains__(self, item: object) -> bool:
+        """成员判定: 按**行相等**判定 (与 ``UserList`` 的历史行为一致).
+
+        Note:
+            ``str`` 会发 :class:`DeprecationWarning` (``"xxx" in lyrics`` 恒为
+            ``False``, 但很容易被误读成文本搜索); 文本查找请用
+            :meth:`contains_text` / :meth:`find_text`. 行为本身不变.
+        """
+        if isinstance(item, str):
+            _warn_ambiguous_contains("lyrics", "Lyrics.contains_text")
+        return item in self.data
+
+    @override
     def __add__(self, other: Lyrics) -> Lyrics:
+        """``a + b``: 按时间戳合并两份歌词, 返回新实例, **不丢弃任何行**.
+
+        与 :meth:`combine` 的区别: 这里固定使用 ``other_as_refline_only=False``,
+        即 ``other`` 中在 ``self`` 里找不到同 ``start`` 的行会作为新行保留,
+        而不是被静默丢弃 (符合 ``+`` 的直觉语义). 需要"仅作为参考行合并"的
+        翻译合并场景, 请直接使用 :meth:`combine`.
+        """
         if not isinstance(other, Lyrics):
             return NotImplemented
-        return self.combine(other)
+        return self.combine(other, other_as_refline_only=False)
 
-    def combine(self, other: Lyrics, *, other_as_refline_only: bool = True) -> Lyrics:
+    @override
+    def __iadd__(self, value: Lyrics) -> Self:
+        """``a += b``: 原地按时间戳合并, 语义与 :meth:`__add__` 一致 (不丢行)."""
+        if not isinstance(value, Lyrics):
+            return NotImplemented
+        self.combine_inplace(value, other_as_refline_only=False)
+        return self
+
+    @override
+    def __radd__(self, other: Any) -> NotImplementedType:
+        return NotImplemented
+
+    @override
+    def __mul__(self, value: SupportsIndex) -> NotImplementedType:
+        return NotImplemented
+
+    @override
+    def __rmul__(self, value: SupportsIndex) -> NotImplementedType:
+        return NotImplemented
+
+    @override
+    def __imul__(self, value: SupportsIndex) -> NotImplementedType:
+        return NotImplemented
+
+    def combine_inplace(
+        self,
+        other: Lyrics | Iterable[LyricLine],
+        *,
+        other_as_refline_only: bool = True,
+    ) -> None:
+        """:meth:`combine` 的原地版本: 语义一致, 但直接修改 ``self``.
+
+        Raises:
+            TypeError: ``other`` 不是 :class:`Lyrics` 或 ``LyricLine``
+                可迭代对象, 或非空却没有产出任何 :class:`LyricLine`
+                (例如传入了 ``dict`` / ``bytes`` 这类"可迭代但元素类型不对"
+                的对象, 此前会被静默当成空集) .
+        """
+        # 先做入参校验再改动 self: 否则 metadata 可能已被合并而随后的
+        # TypeError 把调用方留在"改了一半"的状态.
+        if isinstance(other, LyricLine):
+            # LyricLine 自身可迭代 (迭代出词元), 不拦会静默 no-op
+            raise TypeError(
+                "combine expects Lyrics or an iterable of LyricLine, "
+                "not a single LyricLine (did you mean [lyric_line]?)"
+            )
+        if isinstance(other, str):
+            raise TypeError(
+                "combine expects Lyrics or an iterable of LyricLine, not str"
+            )
+        if not isinstance(other, Iterable):
+            raise TypeError(
+                "Lyrics or Iterable[LyricLine] is expected as combine argument",
+            )
+        raw_items = list(other)
+        other_lines = [item for item in raw_items if isinstance(item, LyricLine)]
+        if raw_items and not other_lines:
+            kinds = sorted({type(item).__name__ for item in raw_items})
+            raise TypeError(
+                "combine expects an iterable of LyricLine; "
+                f"got {len(raw_items)} item(s) of type {kinds}"
+            )
+
+        # metadata 以 self 为准, other 作为补充
+        if isinstance(other, Lyrics):
+            for k, v in other.metadata.items():
+                self.metadata.setdefault(k, v)
+
+        # self 中同一 start 可能存在多行 (手工构造 / from_srt 等来源),
+        # 全部保留, 不再用 dict 按 start 覆盖 (B2); other 的行按 start
+        # 匹配时挂到该时间点**首次出现**的主行上, 与 parser 对重复
+        # 时间戳的折叠语义一致.
+        anchors: dict[int, LyricLine] = {}
+        for line in self:
+            anchors.setdefault(line.start, line)
+
+        for line in other_lines:
+            anchor = anchors.get(line.start)
+            if anchor is not None:
+                anchor.reference_lines.append(line.content.copy())
+                anchor.reference_lines.extend(rl.copy() for rl in line.reference_lines)
+            elif not other_as_refline_only:
+                new_line = line.copy()
+                anchors[line.start] = new_line
+                self.data.append(new_line)
+
+        # 稳定排序: self 内同 start 的多行保持原有相对顺序
+        self.data.sort(key=lambda line: line.start)
+
+    def combine(
+        self, other: Lyrics | Iterable[LyricLine], *, other_as_refline_only: bool = True
+    ) -> Lyrics:
         """将另一份 :class:`Lyrics` 合并进当前对象, 返回新实例.
 
         常见用途是把翻译版本合并到主歌词: 翻译的每一行会被挂在 ``self`` 中
         同 ``start`` 行的 :attr:`LyricLine.reference_lines` 列表里.
 
         Args:
-            other: 要合并进来的另一份歌词.
+            other: 要合并进来的另一份 :class:`Lyrics` 或
+                :class:`LyricLine` 可迭代对象. 单个 ``LyricLine`` 与 ``str``
+                会被拒绝 (前者本身可迭代出词元, 会被静默当作空集); 非空却
+                一条 :class:`LyricLine` 都没有的可迭代对象 (如 ``dict`` /
+                ``bytes``) 同样会被拒绝.
             other_as_refline_only: 若为 ``True`` (默认) , ``other`` 中在
                 ``self`` 里找不到对应时间点的行会被丢弃; 若为 ``False``,
                 这些行会被保留为新行.
 
         Returns:
             合并后的新 :class:`Lyrics` 对象; ``self`` 与 ``other`` 均不受影响.
+            ``self`` 中同一 ``start`` 的多行 (如对唱) 全部保留, ``other``
+            的行挂到该时间点首次出现的主行上.
+
+        Raises:
+            TypeError: ``other`` 不是 :class:`Lyrics` 或 ``LyricLine``
+                可迭代对象 (如传入单个 ``LyricLine`` / 字符串 / ``dict``) .
         """
-        new = Lyrics()
-        # metadata 以 self 为准, other 作为补充
-        new.metadata.update(other.metadata)
-        new.metadata.update(self.metadata)
-
-        logger = getLogger(__name__)
-
-        pool: dict[int, LyricLine] = {}
-        for line in self.lines:
-            if line.start is None:
-                logger.warning(
-                    f"Skipping line without start time during combine: {line.text!r}"
-                )
-                continue
-            # 深拷贝 self 的行, 避免污染原始对象
-            pool[line.start] = deepcopy(line)
-        for line in other.lines:
-            if line.start is None:
-                logger.warning(
-                    f"Skipping other line without start time during combine: "
-                    f"{line.text!r}"
-                )
-                continue
-            if line.start in pool:
-                # 深拷贝 other 的行内容, 避免共享引用
-                pool[line.start].reference_lines.append(deepcopy(line.content))
-                pool[line.start].reference_lines.extend(
-                    deepcopy(rl) for rl in line.reference_lines
-                )
-            elif not other_as_refline_only:
-                pool[line.start] = deepcopy(line)
-
-        new.lines = sorted(pool.values(), key=lambda line: line.start or 0)
+        new = self.copy()
+        new.combine_inplace(other, other_as_refline_only=other_as_refline_only)
         return new
+
+    def copy(self) -> Lyrics:
+        return Lyrics(self, metadata=self.metadata)
+
+    @classmethod
+    def load(cls, fp: TextIO, *, options: ParseOptions | None = None) -> Lyrics:
+        """从文件加载 LRC 内容.
+
+        Args:
+            fp: LRC 文件指针.
+            options: 解析选项.
+        """
+        return cls.loads(fp.read(), options=options)
+
+    def dump(self, fp: TextIO, *, options: SerializationOptions | None = None) -> None:
+        """将当前对象写入文件.
+
+        Args:
+            fp: LRC 文件指针.
+            options: 序列化选项.
+        """
+        fp.write(self.dumps(options=options))
 
     @classmethod
     def loads(cls, s: str, *, options: ParseOptions | None = None) -> Lyrics:
@@ -220,6 +698,48 @@ class Lyrics:
         from .serializer import dump_lrc
 
         return dump_lrc(self, options=options)
+
+    def to_srt(self, *, options: SubtitleOptions | None = None) -> str:
+        """把当前对象转换为 SRT (SubRip) 字幕文本.
+
+        Args:
+            options: 字幕转换选项.
+        """
+        from .subtitle import dump_srt
+
+        return dump_srt(self, options=options)
+
+    def to_webvtt(self, *, options: SubtitleOptions | None = None) -> str:
+        """把当前对象转换为 WebVTT 字幕文本.
+
+        Args:
+            options: 字幕转换选项.
+        """
+        from .subtitle import dump_webvtt
+
+        return dump_webvtt(self, options=options)
+
+    @classmethod
+    def from_srt(cls, s: str) -> Lyrics:
+        """从 SRT (SubRip) 字幕文本解析出一份 :class:`Lyrics`.
+
+        Args:
+            s: SRT 源文本.
+        """
+        from .subtitle import parse_srt
+
+        return parse_srt(s)
+
+    @classmethod
+    def from_webvtt(cls, s: str) -> Lyrics:
+        """从 WebVTT 字幕文本解析出一份 :class:`Lyrics`.
+
+        Args:
+            s: WebVTT 源文本.
+        """
+        from .subtitle import parse_webvtt
+
+        return parse_webvtt(s)
 
     def apply_delta(self, ms: int) -> Lyrics:
         """深拷贝当前对象并在新副本上应用时间偏移, 返回新对象.
@@ -244,7 +764,7 @@ class Lyrics:
         from .offset import apply_delta, iter_all_timestamps
 
         if ms == 0:
-            return deepcopy(self)
+            return self.copy()
 
         # 先做下溢检测, 避免异常路径上的 deepcopy 浪费
         all_times = list(iter_all_timestamps(self))
@@ -256,7 +776,7 @@ class Lyrics:
                     f"timestamp {min_time}ms negative"
                 )
 
-        result = deepcopy(self)
+        result = self.copy()
         apply_delta(result, ms)
         return result
 
@@ -280,3 +800,48 @@ class Lyrics:
 
     def __str__(self) -> str:
         return self.dumps()
+
+    def validate(
+        self,
+        *,
+        options: ValidationOptions | None = None,
+    ) -> list[ValidationIssue]:
+        """验证歌词数据一致性, 返回问题列表.
+
+        委托给 :func:`~.validation.validate_lyrics` 做纯数据校验,
+        本方法额外处理 ``strict`` 行为.
+
+        Args:
+            options: 验证选项. ``strict=True`` 时遇到 error 级别问题
+                会抛出 :class:`~.exceptions.InvalidLyricsError`.
+        """
+        from .validation import validate_lyrics
+
+        issues = validate_lyrics(self)
+        if options and options.strict:
+            errors = [i for i in issues if i.severity == "error"]
+            if errors:
+                from .exceptions import InvalidLyricsError
+
+                raise InvalidLyricsError(
+                    f"Validation failed with {len(errors)} error(s): "
+                    + "; ".join(f"[{e.code}] {e.message}" for e in errors)
+                )
+        return issues
+
+    def to_dict(self) -> LyricsDict:
+        return LyricsDict(
+            metadata=self.metadata.copy(),
+            lines=[line.to_dict() for line in self],
+        )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Lyrics:
+        metadata = data.get("metadata")
+        metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+        return cls(
+            lines=[
+                LyricLine.from_dict(line_data) for line_data in data.get("lines", [])
+            ],
+            metadata=metadata,
+        )

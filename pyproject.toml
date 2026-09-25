@@ -1,6 +1,6 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.3.1"
+version = "0.4.1"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."
@@ -24,7 +24,20 @@ classifiers = [
     "Typing :: Typed",
 ]
 requires-python = ">=3.9,<3.16"
-dependencies = []
+dependencies = [
+    # typing-extensions 的下限按 Python 版本分档, 每一档都是实测出来的
+    # (逐版本跑全量测试, 见 docs/research.md 的"typing-extensions 下限实测"):
+    #   3.9–3.11: 4.4.0  (Self 需 4.0+, override 需 4.4+)
+    #   3.12–3.14: 4.6.0  (4.4/4.5 在 3.12+ 上会 TypeError: TypeVar 不能作基类)
+    #   >=3.15:   4.14.0  (4.10–4.13 在 3.15 上 AttributeError; 区间不连续,
+    #                      所以只能写成 >=4.14.0 而不是沿用 4.6.0)
+    "typing-extensions>=4.4.0; python_version < '3.12'",
+    "typing-extensions>=4.6.0; python_version >= '3.12' and python_version < '3.15'",
+    "typing-extensions>=4.14.0; python_version >= '3.15'",
+]
+
+[project.scripts]
+lemonyrics = "lemony_lrc_parser.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/NingmengLemon/lemony-lrc-parser"
@@ -35,14 +48,57 @@ Issues = "https://github.com/NingmengLemon/lemony-lrc-parser/issues"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.sdist]
+# 显式列出 sdist 内容: 默认行为会带上工作区里任何"未被 VCS 忽略"的目录
+# (曾把构建用的 .uv-cache/ 连同 Scripts/python.exe 一起打进 sdist).
+include = [
+    "/src",
+    "/tests",
+    "/tools",
+    "/docs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/uv.lock",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET", "PIE"]
+ignore = [
+    # 中文 docstring / 注释的视觉宽度与字符数不成比例; 代码本身的排版由
+    # ruff format 负责, 行长检查只会制造噪音.
+    "E501",
+    # CLI 的子命令分派刻意保留 elif 链, 便于按命令顺序阅读.
+    "RET505",
+]
+
+[tool.coverage.run]
+source = ["lemony_lrc_parser"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if sys\\.version_info",
+]
+
 [dependency-groups]
 dev = [
     "coverage>=7.10.7",
-    "mypy>=1.19.1",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.9",
     "tox>=4.30.3",
+    "ty>=0.0.79",
 ]
 
 [tool.tox]
@@ -59,3 +115,8 @@ commands = [
         ], extend = true },
     ],
 ]
+
+[tool.ty.rules]
+# Lyrics 有意收窄 UserList 的运算符重载签名 (禁用 __mul__ 系列, __add__ 仅
+# 接受 Lyrics 等), 属设计取舍而非笔误, 因此整体忽略该规则.
+invalid-method-override = "ignore"

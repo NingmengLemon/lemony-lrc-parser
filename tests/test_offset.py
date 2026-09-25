@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from lemony_lrc_parser import Lyrics
 from lemony_lrc_parser.exceptions import TimestampUnderflowError
+from lemony_lrc_parser.offset import max_timestamp, min_timestamp
 from lemony_lrc_parser.parser import parse_lrc as parse_file
 from lemony_lrc_parser.serializer import dump_lrc as construct_lrc
 
@@ -21,6 +23,17 @@ _SAMPLE_LRC = """\
 """
 
 
+class TestTimestampBounds:
+    """测试时间戳上下界聚合函数."""
+
+    def test_empty_lyrics_returns_none(self) -> None:
+        """空歌词没有时间戳时，上下界均返回 None."""
+        lyrics = Lyrics()
+
+        assert min_timestamp(lyrics) is None
+        assert max_timestamp(lyrics) is None
+
+
 class TestApplyOffset:
     """针对 Lyrics.apply_delta 方法的测试."""
 
@@ -30,16 +43,16 @@ class TestApplyOffset:
         shifted = ly.apply_delta(500)
         out = construct_lrc(shifted)
 
-        # 原 5000ms -> 5500ms (line.start) → 5500ms 百分秒 = 55
-        assert "[00:05.50]" in out
-        # 原 10000ms -> 10500ms (line.start) → 10500ms 百分秒 = 50
-        assert "[00:10.50]" in out
+        # 原 5000ms -> 5500ms (line.start), 默认 3 位小数 = 毫秒 500
+        assert "[00:05.500]" in out
+        # 原 10000ms -> 10500ms (line.start)
+        assert "[00:10.500]" in out
         # 原 11500ms -> 12000ms (中间的 word tag, 保持尖括号)
-        assert "<00:12.00>" in out
+        assert "<00:12.000>" in out
         # 原 7000ms -> 7500ms (行尾标签, 方括号)
-        assert "[00:07.50]" in out
-        # 原 12000ms -> 12500ms (line.end) → 12500ms 百分秒 = 50
-        assert "[00:12.50]" in out
+        assert "[00:07.500]" in out
+        # 原 12000ms -> 12500ms (line.end)
+        assert "[00:12.500]" in out
 
     def test_negative_offset_applied(self) -> None:
         """负 ms 应让时间标签整体减小."""
@@ -48,9 +61,9 @@ class TestApplyOffset:
         out = construct_lrc(shifted)
 
         # 5000 + (-2000) = 3000
-        assert "[00:03.00]" in out
+        assert "[00:03.000]" in out
         # 10000 + (-2000) = 8000
-        assert "[00:08.00]" in out
+        assert "[00:08.000]" in out
 
     def test_negative_offset_overflow_raises(self) -> None:
         """负偏移超过最小时间标签时应直接报错."""
@@ -67,9 +80,9 @@ class TestApplyOffset:
         out = construct_lrc(shifted)
 
         # 原 5000 + (-5000) = 0
-        assert "[00:00.00]" in out
+        assert "[00:00.000]" in out
         # 原 10000 + (-5000) = 5000
-        assert "[00:05.00]" in out
+        assert "[00:05.000]" in out
 
     def test_original_not_mutated(self) -> None:
         """apply_delta 不应修改原始对象."""
@@ -77,7 +90,7 @@ class TestApplyOffset:
         _ = ly.apply_delta(-2000)
 
         # 原始对象应保持不变
-        assert ly.lines[0].start == 5000
+        assert ly[0].start == 5000
         assert ly.metadata.get("offset") == "500"
 
     def test_zero_offset_returns_copy(self) -> None:
@@ -87,8 +100,8 @@ class TestApplyOffset:
         out = construct_lrc(shifted)
 
         # 时间标签原样
-        assert "[00:05.00]" in out
-        assert "[00:10.00]" in out
+        assert "[00:05.000]" in out
+        assert "[00:10.000]" in out
         # 是不同对象
         assert shifted is not ly
 
@@ -99,7 +112,7 @@ class TestApplyOffset:
         _ = ly.apply_delta(200)
         _ = ly.apply_delta(300)
         # 原始对象始终不变
-        assert ly.lines[0].start == 5000
+        assert ly[0].start == 5000
         assert ly.metadata.get("offset") == "500"
 
 
@@ -112,9 +125,9 @@ class TestShiftOperators:
         shifted = ly >> 500
         out = construct_lrc(shifted)
 
-        # 5500ms → 百分秒 = 55, 10500ms → 百分秒 = 50
-        assert "[00:05.50]" in out
-        assert "[00:10.50]" in out
+        # 5500ms, 10500ms (默认 3 位小数)
+        assert "[00:05.500]" in out
+        assert "[00:10.500]" in out
 
     def test_lshift_positive_advances(self) -> None:
         """``<<`` 正数 → 歌词提前."""
@@ -122,8 +135,8 @@ class TestShiftOperators:
         shifted = ly << 2000
         out = construct_lrc(shifted)
 
-        assert "[00:03.00]" in out
-        assert "[00:08.00]" in out
+        assert "[00:03.000]" in out
+        assert "[00:08.000]" in out
 
     def test_lshift_overflow_raises(self) -> None:
         """``<<`` 导致下溢时应报错."""
@@ -146,8 +159,8 @@ class TestShiftOperators:
         shifted = (ly >> 100) >> 200
         out = construct_lrc(shifted)
 
-        # 5000 + 100 + 200 = 5300 → 300ms 百分秒 = 30
-        assert "[00:05.30]" in out
+        # 5000 + 100 + 200 = 5300 → 毫秒 300
+        assert "[00:05.300]" in out
 
     def test_original_unaffected_by_operators(self) -> None:
         """运算符不修改原始对象."""
@@ -155,4 +168,36 @@ class TestShiftOperators:
         _ = ly >> 500
         _ = ly << 500
 
-        assert ly.lines[0].start == 5000
+        assert ly[0].start == 5000
+
+
+class TestLrcOffsetConvention:
+    """LRC 的 ``[offset:...]`` 与 ``apply_delta()`` 的**符号相反**.
+
+    调研见 ``docs/research.md`` 的「offset 标签的正负语义」: 社区文档
+    (Wikipedia / MobileRead) 与实现 (Lyricify ``StartTime -= offset``) 都认定
+    ``offset: +N`` = "歌词整体提前 N 毫秒", 即时间戳 ``-= N``; 而本库的
+    ``apply_delta(+ms)`` 是"时间戳 ``+= ms``"(更晚). 因此从 metadata 应用
+    offset 的写法是 ``apply_delta(-offset)`` —— 这几条测试把它固定下来.
+    """
+
+    def test_positive_lrc_offset_makes_lyrics_appear_earlier(self) -> None:
+        lyrics = Lyrics.loads("[offset: 500]\n[00:05.000]hi\n")
+
+        shifted = lyrics.apply_delta(-int(lyrics.metadata["offset"]))
+
+        assert shifted[0].start == 4500  # 提前 500ms
+
+    def test_negative_lrc_offset_makes_lyrics_appear_later(self) -> None:
+        lyrics = Lyrics.loads("[offset: -500]\n[00:05.000]hi\n")
+
+        shifted = lyrics.apply_delta(-int(lyrics.metadata["offset"]))
+
+        assert shifted[0].start == 5500  # 延后 500ms
+
+    def test_delta_sign_is_the_opposite(self) -> None:
+        """同一份歌词上两个入口方向相反 —— 这就是必须写进文档的原因."""
+        lyrics = Lyrics.loads("[00:05.000]hi\n")
+
+        assert lyrics.apply_delta(500)[0].start == 5500
+        assert lyrics.apply_delta(-500)[0].start == 4500
