@@ -13,6 +13,24 @@
 
 ## [Unreleased]
 
+### Docs
+
+- **README 拆成中英双份**: `README.md` 为简体中文, 新增 `README.en.md` 为英文, 两份
+  顶部互链; 示例歌词按语种各自取材 (中文版用中文 / 日文曲目, 英文版用英文曲目),
+  其余结构与结论一一对应. `pyproject.toml` 的 sdist `include` 与
+  `tools/check_sdist.py` 的必检项同步补上 `README.en.md`.
+- README 的 SPL 小节改名「关于 SPL」, `CHANGELOG` / `docs/roadmap.md` /
+  `docs/risks.md` 里对它的引用一并更新 (原来的 `README.md#与-spl-的一致性` 锚点
+  在改名后已失效).
+- 修正 README 里两处与实现不符的表述: `[行标签][首字标签]文本` 只在"整行标签
+  非递减且正文里还有其它时间标签"时才按"首字延迟"读成一行, 否则仍是重复行简写;
+  往返保真度的有损写法有两类 (选项自身的代价照常写出 + warning, 无法用 LRC 表达的
+  跳过 + debug 日志), 而不是"唯一的一类".
+- 新增 `.markdownlint-cli2.jsonc`, 把仓库内 Markdown 纳入 markdownlint 检查
+  (`MD013` 只约束正文段落, `MD024` 只查同级重名, 以适应中文排版与 Keep a
+  Changelog 的重复小节标题); 顺带修掉它报出的排版问题 (标题 / 列表前后空行、
+  代码块语言、过长的正文行).
+
 ### Tooling
 
 - **dev 依赖瘦身: 去掉 mypy 与 ipykernel**. 类型检查统一交给 ty (它已经能覆盖本库
@@ -41,7 +59,7 @@
 按 [SPL 标准](https://moriafly.com/standards/spl.html)（Salt Player Lyrics，
 最近修订 2026-09-19）逐条对照之后的一轮语义修正。SPL 是目前唯一把 LRC 家族多年
 踩到的兼容性问题写成条文的文档；对照结果与 6 处有意偏离见
-[README「与 SPL 的一致性」](README.md#与-spl-的一致性) 与
+[README「关于 SPL」](README.md#关于-spl) 与
 [`docs/research.md`](docs/research.md#spl-对照2026-09-19-修订版)，逐条用例在
 `tests/test_spl_conformance.py`。
 
@@ -58,7 +76,7 @@
   歌词, 也不参与翻译识别", 而且这种标记**常与下一句歌词使用相同的时间戳**.
   0.4.0 为它造了一条空正文行, 于是:
 
-  ```
+  ```text
   [00:20.82]
   [00:20.82]フィクション
   [00:20.82]
@@ -259,6 +277,7 @@
 ## [0.4.0b3] — 2026-07-25
 
 ### Added
+
 - 数据一致性验证子系统 `validation.py`: `ValidationIssue` / `ValidationOptions` /
   `ValidationSeverity` / `validate_lyrics()`, 以及 `Lyrics.validate()`
   (`strict=True` 时遇 error 抛 `InvalidLyricsError`). 检查排序、重复 `start`、
@@ -268,12 +287,14 @@
 - `InvalidLyricsError.line_no` / `.raw_line`: 解析错误与 warning 日志都带行号.
 
 ### Fixed
+
 - 歧义行首标签 (`[00:05.000][00:30.000]<00:10.000>hi`) 不再把锚点指向未注册的
   时间点.
 
 ## [0.4.0b2] — 2026-07-21
 
 ### Added
+
 - SRT / WebVTT 互转: `Lyrics.to_srt()` / `from_srt()` / `to_webvtt()` /
   `from_webvtt()`, 顶层 `dump_srt` / `parse_srt` / `dump_webvtt` / `parse_webvtt`,
   以及 `SubtitleOptions`.
@@ -281,15 +302,18 @@
   `BasicLyricLine` / `LyricToken`; `copy()` 系列方法.
 
 ### Changed
+
 - **破坏性**: `Lyrics` 改为纯 `UserList[LyricLine]` 容器 (移除 `lyrics.lines`
   兼容层), 运算符语义随之调整.
 
 ## [0.4.0b0] — 2026-07-01
 
 ### Added
+
 - `ParseOptions.line_filter`: 按正则丢弃匹配的行 (str 形式自动 `re.compile`).
 
 ### Changed
+
 - **破坏性**: `LyricLine.start` 收敛为必需的 `int`, 无时间戳行不再进入正常行模型.
 - **破坏性**: `Lyrics` / `LyricLine` / `BasicLyricLine` / `LyricToken` 的序列化
   与容器语义重设计 (基于 `UserList`).
@@ -297,43 +321,51 @@
   折算并 warning).
 
 ### Fixed
+
 - 序列化时保留词元结束时间戳, 不再写出重复的时间标签.
 - `combine()` 对非法入参 (单个 `LyricLine` / `str`) 显式抛 `TypeError`.
 
 ## [0.3.1] — 2026-05-13
 
 ### Added
+
 - `SerializationOptions.line_separator` / `line_tag_decimal_length` /
   `word_tag_decimal_length` / `use_bracket_for_byword_tag`.
 
 ### Fixed
+
 - 序列化时不再产生重复时间标签; metadata 处理细化.
 
 ## [0.3.0] — 2026-05-09
 
 ### Changed
+
 - **破坏性**: `LyricWord` 更名为 `LyricToken`; 时间偏移 API 重设计
   (`apply_delta()` / `<<` / `>>`).
 
 ## [0.3.0a1] — 2026-05-08
 
 ### Changed
+
 - 公共 API 分层入口 (`Lyrics` 方法 + 顶层 `loads` / `dumps` / `load` / `dump`),
   新增时间标签工具 `parse_timetag` / `format_timetag`.
 
 ## [0.3.0a0] — 2026-05-08
 
 ### Added
+
 - 首次发布到 PyPI 的预发布版本 (解析 / 序列化 / 参考行 / 逐字标签的基础实现).
 
 ## [0.2.1] — 2026-04-11
 
 ### Fixed
+
 - 修正 `pyproject.toml` 元数据与类型标注.
 
 ## [0.2.0] — 2026-04-10
 
 ### Added
+
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
 [Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...HEAD

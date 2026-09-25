@@ -112,7 +112,7 @@ ASS 支持样式、定位、特效，完整支持会显著扩大复杂度。
 
 逐条对照 [SPL](https://moriafly.com/standards/spl.html) 之后仍有 6 处有意偏离
 （分 4 位、毫秒 4-6 位的读法、标签后只剩空白、`[行标签][首字标签]` 的读法、默认不填
-隐式行尾、尖括号空行）。理由与语料实测值写在 README「与 SPL 的一致性」与
+隐式行尾、尖括号空行）。理由与语料实测值写在 README「关于 SPL」与
 [research.md](research.md#其余差异)，逐条钉在 `tests/test_spl_conformance.py` 里。
 
 建议：
@@ -121,6 +121,7 @@ ASS 支持样式、定位、特效，完整支持会显著扩大复杂度。
 - 若要改动其中任何一条，先补语料统计再改行为。
 
 ---
+
 ## 已关闭 / 不计划
 
 - **[NEW-META-ESCAPE] metadata 引入反斜杠转义**

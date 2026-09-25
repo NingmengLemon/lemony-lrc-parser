@@ -48,6 +48,7 @@
 | F-LOGGING | warning / logging 审计 | 体验 | 低 | 不宜过度打扰用户 |
 
 ---
+
 ## 候选功能与设计改进
 
 ### 已落地 (设计稿已迁出)
@@ -61,8 +62,8 @@
 - `NEW-CLI` → `lemonyrics` / `python -m lemony_lrc_parser`。
 - `B7` → `_check_line_tokens()` 的词元越界与单调性检查。
 - `NEW-ROUNDTRIP` → `tests/test_roundtrip_matrix.py` (三条不变量 + 随机语料)。
-- `NEW-SPL-CONFORM` → `tests/test_spl_conformance.py` + README「与 SPL 的一致性」
-  + `docs/research.md` 的「SPL 对照」; 空正文行语义与越界逐字标记按 SPL 收敛,
+- `NEW-SPL-CONFORM` → `tests/test_spl_conformance.py`、README「关于 SPL」与
+  `docs/research.md` 的「SPL 对照」; 空正文行语义与越界逐字标记按 SPL 收敛,
   剩下的 6 处有意偏离记在 `risks.md#11`。
 - `F-CONTAINS` → `contains_text()` / `find_text()` 显式 API + `in` 的
   `DeprecationWarning` (结论: 不扩大 `in` 的语义)。
@@ -330,6 +331,7 @@ def get_metadata_float(
 风险：metadata 与歌词正文中的 `[xxx:yyy]` 更容易误判，需要配合“行首时间标签优先”的现有逻辑继续保护。
 
 ---
+
 ## 我的新增想法
 
 ### MY-SOURCE-MAP：保留源位置信息（可选）
@@ -344,7 +346,8 @@ class SourceLocation:
     raw_line: str | None = None
 ```
 
-不建议直接塞进默认 `LyricLine`，避免污染轻量模型。可以通过 `ParseOptions(preserve_source_location=True)` 开启，并存到 side table 或扩展字段。
+不建议直接塞进默认 `LyricLine`，避免污染轻量模型。可以通过
+`ParseOptions(preserve_source_location=True)` 开启，并存到 side table 或扩展字段。
 
 价值：
 
@@ -443,6 +446,7 @@ lyrics.to_path(path, encoding="utf-8")
 这类测试特别适合防止未来重构破坏边界行为。
 
 ---
+
 ## 极低优先级 / 观望
 
 - **[MF-DUET] Walaoke 对唱扩展**
