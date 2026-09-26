@@ -68,35 +68,45 @@
 - 有“状态 / 策略 / 报告 / 诊断信息”的功能适合立体化；纯转换、纯格式化工具不必硬拆。
 - 趁 beta 阶段优先完成内部边界整理，避免未来稳定版后再做破坏性调整。
 
-### A1：解析器从平铺函数升级为有上下文的 `LrcParser`
+### A1：解析器从平铺函数升级为有上下文的 `LrcParser` ✅ 已落地 (0.5.0)
 
-当前 `parse_lrc()` 内部已经承载了多种解析状态：metadata、行池、参考行锚点、warning
-策略、歧义处理等。随着 strict mode、行号错误、source map、unsynced line 收集等功能
+原先 `parse_lrc()` 把多种解析状态摊在局部变量里：metadata、行池、参考行锚点、结束
+标记的收尾目标。随着 strict mode、行号错误、source map、unsynced line 收集等功能
 加入，继续平摊在单个函数里会越来越难维护。
 
-建议引入内部解析器对象：
+现在这些状态挂在 `LrcParser` 实例上，`parse_lrc` 退化成薄包装：
 
 ```python
 class LrcParser:
-    def __init__(self, options: ParseOptions): ...
-    def parse(self, text: str) -> Lyrics: ...
+    options: ParseOptions
+    metadata: Metadata
+    line_pool: dict[int, LyricLine]
+    last_tag: int | None
+    last_text_tags: list[int]
+
+    def reset(self) -> None: ...
+    def parse(self, lrc: str) -> Lyrics: ...
     def parse_raw_line(self, line_no: int, raw_line: str) -> None: ...
     def finalize(self) -> Lyrics: ...
 ```
 
-对外仍保留原入口：
+要点：
 
-```python
-def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
-    return LrcParser(options or ParseOptions()).parse(lrc)
-```
+- 对象是**内部**的（不在 `parser.__all__` 里，也不在顶层导出），对外入口仍是
+  `parse_lrc`；`parse_raw_line` 支持逐步喂行，是后续解析报告 / source map 的挂载点。
+- 三个会改动行池的 helper（注册行、写显式行尾、结束标记收尾）变成方法，不再靠
+  参数传 `line_pool` / `last_text_tags`。
+- `parse()` 先调 `reset()`，所以实例可复用；手动逐行喂时重置由调用方负责。
+- 重构本身不改行为：把新旧逐行处理体去掉 `self.` / 参数前缀 / 折行之后逐字符比对，
+  两者完全相同（验证脚本在提交信息里说明），1521 个既有用例全绿。
 
 收益：
 
 - 行号、原始行、source map 有明确承载位置。
 - strict / warning / 宽松解析策略可以统一收口。
 - 解析状态不再散落在局部变量与 helper 之间。
-- 更容易测试单行处理、metadata 处理、reference line 锚定等内部步骤。
+- 更容易测试单行处理、metadata 处理、reference line 锚定等内部步骤
+  （`tests/test_parser_full.py` 的 `TestLrcParserObject`）。
 
 ### A2：新增 `validation.py`，让验证成为独立子系统 ✅ 已落地 (0.4.0b3)
 

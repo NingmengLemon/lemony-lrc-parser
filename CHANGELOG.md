@@ -57,6 +57,13 @@
   metadata 沿用 `Metadata` 的口径比全部条目, 所以同名 key 的重复项与标签顺序
   都算数 (`[ti: A]` + `[ar: B]` 不等于 `[ar: B]` + `[ti: A]`).
 
+- 内部重构 (A1): `parse_lrc` 的解析状态收进新的 `LrcParser` 实例 —— metadata /
+  行池 / 参考行锚点 / 结束标记的收尾目标不再摊在局部变量里, 三个会改行池的 helper
+  (注册行、写显式行尾、结束标记收尾) 变成方法, 不再靠参数传递. `parse_lrc` 退化成
+  薄包装, 对外行为不变 (把新旧逐行处理体去掉 `self.` / 参数前缀 / 折行后逐字符比对,
+  两者完全相同). `LrcParser` 是内部对象, 不在顶层导出; `parse_raw_line` 支持逐步
+  喂行, 后续的解析报告 / source map 有了挂载点.
+
 ### Removed
 
 - **破坏性**: 移除 `lemonyrics` console script, CLI 改为只用

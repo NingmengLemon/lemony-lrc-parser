@@ -6,8 +6,8 @@ import re
 
 import pytest
 
-from lemony_lrc_parser import BasicLyricLine, Lyrics
-from lemony_lrc_parser.parser import parse_line, parse_lrc
+from lemony_lrc_parser import BasicLyricLine, Lyrics, ParseOptions
+from lemony_lrc_parser.parser import LrcParser, parse_line, parse_lrc
 
 
 class TestParseLrcMetadata:
@@ -318,16 +318,16 @@ class TestParseLrcOutOfRangeBywordTags:
 
     def test_no_clamping_of_registered_tags(self) -> None:
         """越界过滤已在 parse_line 完成, 注册阶段不再改标签值."""
-        from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
-        from lemony_lrc_parser.parser import _register_line_at_tags
+        from lemony_lrc_parser.models import BasicLyricLine, LyricToken
+        from lemony_lrc_parser.parser import LrcParser
 
         content = BasicLyricLine([LyricToken(content="hi", start=10000)])
-        pool: dict[int, LyricLine] = {}
+        parser = LrcParser()
 
-        registered = _register_line_at_tags(pool, content, [30000, 40000])
+        registered = parser._register_line_at_tags(content, [30000, 40000])
 
         assert registered == [30000, 40000]
-        assert sorted(pool) == [30000, 40000]
+        assert sorted(parser.line_pool) == [30000, 40000]
 
     def test_folded_line_keeps_both_occurrences(self) -> None:
         """折叠标签 + 逐字标签: 出现递减 → 按 SPL 当重复行, 两次都在."""
@@ -884,3 +884,80 @@ class TestParseLrcErrorLineInfo:
         assert "orphaned lyric line" in caplog.text
         # 新格式包含 "Line N:" 前缀
         assert "Line 3:" in caplog.text
+
+
+class TestLrcParserObject:
+    """``LrcParser``: 解析状态挂在实例上, 支持整份解析与逐步喂行 (A1)."""
+
+    SAMPLE = "[ti: T]\n[00:01.000]a\n[00:02.000]b\n"
+
+    def test_parse_matches_parse_lrc(self) -> None:
+        assert LrcParser().parse(self.SAMPLE) == parse_lrc(self.SAMPLE)
+
+    def test_incremental_matches_batch(self) -> None:
+        """自己逐行喂再 finalize, 结果应与整份解析一致."""
+        parser = LrcParser()
+        for line_no, raw_line in enumerate(self.SAMPLE.splitlines(), start=1):
+            parser.parse_raw_line(line_no, raw_line)
+        assert parser.finalize() == parse_lrc(self.SAMPLE)
+
+    def test_parse_is_reusable(self) -> None:
+        """``parse`` 会先 reset, 所以同一个实例可以解析多份文本."""
+        parser = LrcParser()
+        first = parser.parse(self.SAMPLE)
+        second = parser.parse("[ti: U]\n[00:05.000]z\n")
+        assert second == parse_lrc("[ti: U]\n[00:05.000]z\n")
+        assert first == parse_lrc(self.SAMPLE)  # 第一份的结果不受影响
+        assert second.metadata["ti"] == "U"
+
+    def test_reset_clears_state_but_keeps_options(self) -> None:
+        options = ParseOptions(fill_implicit_line_end=True)
+        parser = LrcParser(options)
+        parser.parse(self.SAMPLE)
+        assert parser.line_pool and parser.metadata
+
+        parser.reset()
+
+        assert parser.line_pool == {}
+        assert parser.metadata == {}
+        assert parser.last_tag is None
+        assert parser.last_text_tags == []
+        assert parser.options is options
+
+    def test_metadata_line_only_touches_metadata(self) -> None:
+        parser = LrcParser()
+        parser.parse_raw_line(1, "[ti: T]")
+        assert parser.metadata == {"ti": "T"}
+        assert parser.line_pool == {}
+
+    def test_finalize_without_parse_is_empty(self) -> None:
+        lyrics = LrcParser().finalize()
+        assert len(lyrics) == 0
+        assert lyrics.metadata == {}
+
+    def test_options_are_honoured(self) -> None:
+        lrc = "[00:01.000]a\n[00:02.000]b\n"
+        filled = LrcParser(ParseOptions(fill_implicit_line_end=True)).parse(lrc)
+        assert [line.end for line in filled] == [2000, None]
+
+    def test_line_filter_is_honoured(self) -> None:
+        lrc = "[00:01.000]keep\n[00:02.000]drop me\n"
+        filtered = LrcParser(ParseOptions(line_filter="drop")).parse(lrc)
+        assert [line.text for line in filtered] == ["keep"]
+
+    def test_error_carries_line_no_when_fed_manually(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """逐步喂行时抛出的 InvalidLyricsError 同样补好 line_no / raw_line."""
+        import lemony_lrc_parser.parser as parser_mod
+        from lemony_lrc_parser.exceptions import InvalidLyricsError
+
+        def _fail(line: str, **kwargs: object) -> None:
+            raise InvalidLyricsError("simulated")
+
+        monkeypatch.setattr(parser_mod, "parse_line", _fail)
+        parser = LrcParser()
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parser.parse_raw_line(7, "[00:01.000]x")
+        assert exc_info.value.line_no == 7
+        assert exc_info.value.raw_line == "[00:01.000]x"
