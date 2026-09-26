@@ -417,9 +417,62 @@ class TestMetadataTypingHints:
 
         assert tuple(get_args(MetadataKey)) == COMMON_METADATA_KEYS
 
-    def test_metadata_is_a_plain_dict_at_runtime(self) -> None:
+    def test_non_standard_keys_are_freely_usable(self) -> None:
         """非标准 key 依旧可以自由使用 (库不做校验)."""
         lyrics = Lyrics.loads("[tool: whatever]\n[00:01.000]x\n")
 
         assert lyrics.metadata == {"tool": "whatever"}
         assert lyrics.metadata["tool"] == "whatever"
+
+
+class TestLyricsEquality:
+    """两份 ``Lyrics`` 比行序列 + metadata; 与普通列表比只比行."""
+
+    def test_identical_lyrics_are_equal(self) -> None:
+        text = "[ti: A]\n[00:01.000]x\n"
+        assert Lyrics.loads(text) == Lyrics.loads(text)
+
+    def test_metadata_difference_makes_them_unequal(self) -> None:
+        """改前这里会判为相等 —— 拿 ``==`` 检查往返就是假阳性."""
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ti: B]\n[00:01.000]x\n")
+        assert left != right
+
+    def test_missing_metadata_makes_them_unequal(self) -> None:
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[00:01.000]x\n")
+        assert left != right
+
+    def test_metadata_order_matters(self) -> None:
+        """metadata 按全部条目比, 标签顺序也算数."""
+        left = Lyrics.loads("[ti: A]\n[ar: B]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ar: B]\n[ti: A]\n[00:01.000]x\n")
+        assert left != right
+
+    def test_line_difference_makes_them_unequal(self) -> None:
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ti: A]\n[00:01.000]y\n")
+        assert left != right
+
+    def test_roundtrip_equality_is_a_real_check(self) -> None:
+        lyrics = Lyrics.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+        assert Lyrics.loads(lyrics.dumps()) == lyrics
+
+    def test_slice_is_equal(self) -> None:
+        lyrics = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        assert lyrics[:] == lyrics
+
+    def test_plain_list_compares_lines_only(self) -> None:
+        """列表没有 metadata 可比, 所以这一支沿用 ``UserList`` 的语义.
+
+        于是会出现"两份 Lyrics 不相等, 但其中一份等于另一份的行列表"这种不对称,
+        这是刻意的: 与列表比较时无从谈起 metadata.
+        """
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ti: B]\n[00:01.000]x\n")
+        assert left != right
+        assert list(left) == list(right)
+        assert left == list(right)
+
+    def test_not_equal_to_unrelated_type(self) -> None:
+        assert Lyrics.loads("[00:01.000]x\n") != 42

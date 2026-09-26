@@ -49,6 +49,14 @@
   导出, 既有 import 路径不受影响. 无损导出用 `lyrics.metadata.to_pairs()`
   (`Lyrics.to_dict()` 保持"有损但方便"的定位不变).
 
+- **破坏性**: `Lyrics` 的相等性改为比较**行序列 + metadata**. 改前继承
+  `UserList` 的语义只比行, 于是"仅 metadata 不同"的两份歌词被判为相等 ——
+  `Lyrics.loads(lyrics.dumps()) == lyrics` 在 metadata 丢掉的情况下照样为真,
+  拿 `==` 检查往返是假阳性 (roundtrip 测试此前只能把 metadata 单独断言一遍).
+  与普通列表 / 其它 `UserList` 比较时仍只比行 (它们没有 metadata 可比);
+  metadata 沿用 `Metadata` 的口径比全部条目, 所以同名 key 的重复项与标签顺序
+  都算数 (`[ti: A]` + `[ar: B]` 不等于 `[ar: B]` + `[ti: A]`).
+
 ### Removed
 
 - **破坏性**: 移除 `lemonyrics` console script, CLI 改为只用

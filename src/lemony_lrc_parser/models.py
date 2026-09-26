@@ -393,8 +393,12 @@ class Lyrics(UserList[LyricLine]):
     列表操作.
 
     Note:
-        相等性比较继承自 ``UserList``: 只比较行序列, **不含** ``metadata``
-        (两份仅 ``metadata`` 不同的 ``Lyrics`` 会被判为相等) .
+        相等性比较: 两份 :class:`Lyrics` 比**行序列 + metadata**; 与普通列表或
+        其它 ``UserList`` 比较时仍只比行 (它们没有 metadata) . 改前只比行, 于是
+        "仅 ``metadata`` 不同"的两份歌词会被判为相等 —— 拿 ``==`` 检查往返时
+        这是假阳性 (``loads(dumps(x)) == x`` 在 metadata 丢掉的情况下照样为真) .
+        metadata 的相等性沿用 :class:`~.metadata.Metadata` 的口径: 比全部条目,
+        因此同名 key 的重复项与标签顺序都算数.
 
     Note:
         拷贝语义与 ``list`` 有出入: 构造函数 (``Lyrics(lines)``) 与切片会
@@ -514,6 +518,25 @@ class Lyrics(UserList[LyricLine]):
         if isinstance(item, str):
             _warn_ambiguous_contains("lyrics", "Lyrics.contains_text")
         return item in self.data
+
+    @override
+    def __eq__(self, other: object) -> bool:
+        """相等性: 两份 :class:`Lyrics` 比行序列 + metadata, 其它类型沿用 ``UserList``.
+
+        Note:
+            ``UserList`` 只看行序列, 于是"仅 metadata 不同"的两份歌词会被判为
+            相等; 这里把 metadata 一并纳入, ``loads(dumps(x)) == x`` 才真的能当
+            往返检查用. 与普通列表 / 其它 ``UserList`` 比较时仍只比行, 因为它们
+            没有 metadata 可比.
+
+        Note:
+            metadata 按 :class:`~.metadata.Metadata` 的规则比全部条目, 所以同名
+            key 的重复项与标签顺序都算数 (``[ti: A]`` + ``[ar: B]`` 与
+            ``[ar: B]`` + ``[ti: A]`` 不相等) .
+        """
+        if isinstance(other, Lyrics):
+            return self.data == other.data and self.metadata == other.metadata
+        return super().__eq__(other)
 
     @override
     def __add__(self, other: Lyrics) -> Lyrics:

@@ -105,6 +105,11 @@ lrc_output = lyrics.dumps()
 print(lyrics)
 ```
 
+`Lyrics` 的相等性比**行序列 + metadata**: 两份只有 `[ti:]` 不同的歌词不相等, 所以
+`Lyrics.loads(lyrics.dumps()) == lyrics` 可以直接当往返检查用. 与普通列表比较时
+只比行 (列表没有 metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部
+条目, 因此同名 key 的重复项与标签顺序都算数.
+
 ### 逐字歌词
 
 解析逐字 (Enhanced LRC / SPL) 歌词:

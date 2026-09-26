@@ -50,6 +50,10 @@
 - `str in <模型>` 保留旧行为但发 `DeprecationWarning`（同一个 `in` 在
   `LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics` 上语义各不相同），
   文本查找统一走 `contains_text()` / `find_text()`。
+- `Lyrics` 的相等性比**行序列 + metadata**（两份仅 metadata 不同的歌词不相等），
+  与普通列表比较时只比行（列表没有 metadata 可比）。0.5.0 之前只比行，于是
+  `loads(dumps(x)) == x` 在 metadata 丢掉的情况下照样为真，拿 `==` 当往返检查
+  是假阳性。metadata 侧沿用 `Metadata` 的全条目口径，重复项与标签顺序都算数。
 - 内部时间精度是毫秒；输出为百分秒或其他尾数长度时可能有损。
 - subtitle 互转会丢弃逐字标签与 metadata，这是格式差异导致的预期行为。
 

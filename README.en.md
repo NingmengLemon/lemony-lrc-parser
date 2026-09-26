@@ -108,6 +108,13 @@ lrc_output = lyrics.dumps()
 print(lyrics)
 ```
 
+`Lyrics` equality compares the **line sequence plus metadata**: two lyrics
+differing only in `[ti:]` are not equal, so
+`Lyrics.loads(lyrics.dumps()) == lyrics` works as a round-trip check. Compared
+against a plain list only the lines count (a list has no metadata). Metadata
+equality follows `Metadata`: every entry counts, so duplicated keys and tag
+order both matter.
+
 ### Word-level Lyrics
 
 Parsing word-level (Enhanced LRC / SPL) lyrics:
