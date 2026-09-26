@@ -13,6 +13,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- `parse_with_report(lrc, *, options=None) -> (Lyrics, ParseReport)`: 在
+  `parse_lrc` 的结果之外给出结构化解析报告 (`report.py` 的 `ParseReport` /
+  `ParseEvent`), 把"哪些行被丢弃 / 哪些逐字标记被忽略 / 哪条行尾推断被丢弃"从日志
+  变成可编程检查的数据. 与 `validate()` 互补: 报告审计解析过程, 校验检查结果数据.
+
+  报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾) 只进
+  `reference_lines_attached` / `end_markers_applied` 两个计数, 因此干净文件的报告
+  是空的 (`bool(report)` 为 `False`). 事件代码 (`orphaned-line` / `line-filtered` /
+  `byword-before-line-start` / `byword-after-line-end` / `byword-unordered` /
+  `end-marker-ignored` / `inferred-end-discarded`) 与 `ValidationIssue` 同属一套
+  kebab-case 命名, 后续 strict 模式直接复用.
+
+- `parse_line(..., on_event=...)`: 新增关键字参数, 让调用方拿到发生在 `parse_line`
+  内部的"逐字标记被忽略"事件 (回调收 `(code, message)`, 行号由调用方自己补).
+  不传时行为与之前完全一致 (仍然只打日志), 因此这是纯增量.
+
 ### Changed
 
 - **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`

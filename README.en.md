@@ -519,6 +519,36 @@ print(min_timestamp(lyrics))  # minimum timestamp (ms), None if there are none
 print(max_timestamp(lyrics))  # maximum timestamp (ms), None if there are none
 ```
 
+### Parse Report
+
+Besides `parse_lrc` there is `parse_with_report`: it returns the lyrics plus a
+structured report of what the parse dropped or ignored. It complements
+`validate()` — the report audits the parse, validation checks the resulting data.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics, report = llp.parse_with_report("[00:01.000]a\n\norphan\n[00:02.000]\n")
+
+if report:  # the report of a clean file is empty
+    for event in report:
+        print(f"[{event.code}] line {event.line_no}: {event.message}")
+
+report.dropped_lines  # lines that never made it into the result
+report.of_code("byword-unordered")  # filter by event code
+report.reference_lines_attached, report.end_markers_applied  # normal work, counts
+```
+
+Event codes: `orphaned-line`, `line-filtered`, `byword-before-line-start`,
+`byword-after-line-end`, `byword-unordered`, `end-marker-ignored`,
+`inferred-end-discarded`.
+
+Only events worth knowing about are reported; normal work (attaching reference
+lines, closing a line with an end marker) only bumps the two counters above, so
+a clean file yields an empty `report` (`bool(report)` is `False`). Logging is
+unchanged: the word-tag warnings keep their old format, the report just adds the
+line number.
+
 ### Validation
 
 Use `lyrics.validate()` to check the data consistency of the lyrics:

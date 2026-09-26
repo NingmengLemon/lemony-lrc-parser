@@ -478,6 +478,34 @@ print(min_timestamp(lyrics))  # 最小时间戳 (ms), 无时间戳时为 None
 print(max_timestamp(lyrics))  # 最大时间戳 (ms), 无时间戳时为 None
 ```
 
+### 解析报告
+
+`parse_lrc` 之外还有 `parse_with_report`: 除歌词外再给一份结构化报告, 说明这次
+解析"丢了什么 / 忽略了什么". 与 `validate()` 互补 —— 报告是事后审计, 校验是查
+结果数据本身是否自相矛盾.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics, report = llp.parse_with_report("[00:01.000]a\n\norphan\n[00:02.000]\n")
+
+if report:  # 干净文件的报告是空的
+    for event in report:
+        print(f"[{event.code}] line {event.line_no}: {event.message}")
+
+report.dropped_lines  # 整行没进结果的 (孤儿行 / 被 line_filter 丢掉的行)
+report.of_code("byword-unordered")  # 按事件代码筛选
+report.reference_lines_attached, report.end_markers_applied  # 正常操作只计数
+```
+
+事件代码: `orphaned-line`、`line-filtered`、`byword-before-line-start`、
+`byword-after-line-end`、`byword-unordered`、`end-marker-ignored`、
+`inferred-end-discarded`.
+
+报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾) 只进上面两个
+计数, 所以干净文件的 `report` 为空 (`bool(report)` 是 `False`). 日志行为不变:
+逐字标记那几条仍按原格式打印, 只是报告里会补上行号.
+
 ### 校验
 
 使用 `lyrics.validate()` 检查歌词数据一致性:

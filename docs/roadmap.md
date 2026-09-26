@@ -29,7 +29,7 @@
 | NEW-SEARCH | 全文搜索 | API | 中 | `find_text()` 已覆盖子串；正则 / 跨行 / 结果定位待做 |
 | MF-FUZZY | 合并歌词时模糊匹配 | 实用增强 | 中 | 翻译歌词时间轴常有轻微偏差 |
 | F-REPR | 自定义紧凑 repr | DX | 中 | 调试体验改善明显 |
-| NEW-PARSE-REPORT | 解析报告对象 | 可诊断性 | 中 | 把"丢了哪些行 / 为什么丢"从日志变成可读数据 |
+| NEW-PARSE-REPORT | 解析报告对象 | 可诊断性 | 中 | ✅ 0.5.0 以 `parse_with_report()` / `report.py` 落地 |
 
 ### P2 / 低优先级：有需求再做
 
@@ -70,6 +70,9 @@
 - `F-META-MULTI` → `metadata.py` 的 `Metadata` (有序、同名可重复); 取舍写在
   [design.md](design.md#3-metadata-的容器形态已按有序-multimap-落地),
   用例在 `tests/test_metadata.py`。
+- `NEW-PARSE-REPORT` → `report.py` 的 `ParseReport` / `ParseEvent` 与
+  `parse_with_report()`; `LrcParser.report` 累积, `parse_line` 通过 `on_event`
+  上报自己内部的事件。用例在 `tests/test_report.py`。
 
 ### NEW-PRESERVE-STYLE：写回时保留原文件风格
 
@@ -86,18 +89,16 @@ CRLF 变成 LF、2 位尾数（占全部时间标签的 6.7%）被补成 3 位�
 - 尾数位数保持按行 / 按词探测（同一文件里 2 位与 3 位混用很常见）。
 - 仍要允许显式覆盖，避免"想统一格式却改不动"。
 
-### NEW-PARSE-REPORT：解析报告对象
+### ~~NEW-PARSE-REPORT~~（已落地）
 
-动机：目前"某行被丢弃 / 被降级为参考行 / 逐字标记被忽略"只体现在日志里，调用方拿不到
-结构化数据（真实语料里存在孤儿行、越界被忽略的逐字标记等形态）。
+0.5.0 起提供 `parse_with_report(text) -> (Lyrics, ParseReport)`（选的是独立入口，
+不是 `ParseOptions` 开关）：`ParseReport` 给出被丢弃的行（原文 + 行号 + 原因）、
+被忽略的越界 / 乱序逐字标记、被丢弃的行尾推断，以及"被挂成参考行"与"被结束标记
+收尾"两个计数。事件代码与 `ValidationIssue` 同属一套命名，后续 strict 模式直接
+复用。见 `report.py`、`tests/test_report.py`，以及 A1 的
+`LrcParser.report`（`parse_line` 通过 `on_event` 回调上报自己内部的事件）。
 
-建议：
-
-- `parse_lrc(text, options=...)` 之外提供 `parse_with_report(text) -> (Lyrics, ParseReport)`，
-  或让 `ParseOptions.collect_report = True`。
-- `ParseReport` 提供：被丢弃的行（原文 + 行号 + 原因）、被忽略的越界 / 乱序逐字标记、
-  被当作参考行挂载的行数、被空标记收尾的行、metadata 提取结果等。
-- 与 `F-STRICT` 天然互补：报告是"事后审计"，strict 是"当场拒绝"。
+与 `F-STRICT` 的关系不变：报告是"事后审计"，strict 是"当场拒绝"。
 
 ### MF-COMMENT-LINE：`#` 开头的注释行
 

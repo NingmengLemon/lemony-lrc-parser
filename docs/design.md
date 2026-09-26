@@ -93,7 +93,8 @@ class LrcParser:
 要点：
 
 - 对象是**内部**的（不在 `parser.__all__` 里，也不在顶层导出），对外入口仍是
-  `parse_lrc`；`parse_raw_line` 支持逐步喂行，是后续解析报告 / source map 的挂载点。
+  `parse_lrc`；`parse_raw_line` 支持逐步喂行，报告（`LrcParser.report`）与后续的
+  source map 都挂在这里。
 - 三个会改动行池的 helper（注册行、写显式行尾、结束标记收尾）变成方法，不再靠
   参数传 `line_pool` / `last_text_tags`。
 - `parse()` 先调 `reset()`，所以实例可复用；手动逐行喂时重置由调用方负责。

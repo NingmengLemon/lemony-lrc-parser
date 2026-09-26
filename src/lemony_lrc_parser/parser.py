@@ -4,13 +4,17 @@
 
 * :func:`parse_line` —— 解析单行歌词 (不含行首的重复时间标签) .
 * :func:`parse_lrc`  —— 解析整份 LRC 文本.
+* :func:`parse_with_report` —— 同上, 但额外返回结构化的 :class:`.report.ParseReport`.
 
-其它以下划线开头的函数均为内部实现细节, 后续版本可能调整.
+内部实现是 :class:`LrcParser`: 解析状态挂在实例上, :func:`parse_lrc` 只是它的薄
+包装. 其它以下划线开头的函数均为内部实现细节, 后续版本可能调整.
 """
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Callable
 from logging import getLogger
 
 from ._utils import match_to_ms
@@ -24,12 +28,20 @@ from .regex import (
     WORD_TIMETAG_REGEX,
     compile_regex,
 )
+from .report import ParseEvent, ParseReport
 
 logger = getLogger(__name__)
+
+#: 事件回调的签名: ``(code, message) -> None``.
+#:
+#: :func:`parse_line` 与 :func:`_finalize_lyrics` 用它在内部事件发生时就地通知
+#: 调用方; 行号 / 原始行由调用方自己补 (只有它知道).
+EventCallback = Callable[[str, str], None]
 
 __all__ = [
     "parse_line",
     "parse_lrc",
+    "parse_with_report",
 ]
 
 
@@ -38,8 +50,9 @@ def parse_line(
     *,
     line_start: int | None = None,
     line_end: int | None = None,
+    on_event: EventCallback | None = None,
 ) -> BasicLyricLine | None:
-    """解析单行歌词为 :data:`.models.BasicLyricLine`.
+    """解析单行歌词为 :data:`.models.LyricLine` 的内容部分.
 
     输入行应已经去除了行首的重复行时间标签 (见 :func:`_split_leading_line_timetags`) .
     若该行为空或只含空白, 返回 ``None``.
@@ -51,6 +64,8 @@ def parse_line(
             ``None`` 表示未知, 不做下界过滤.
         line_end: 本行的结束时间 (毫秒) . 晚于它的时间标签同样被忽略.
             ``None`` 表示未知, 不做上界过滤.
+        on_event: 忽略逐字标记时的回调, 收到 ``(code, message)``; 见
+            :data:`.report.ParseEventCode`. 默认 ``None`` 表示只打日志.
 
     Note:
         "忽略" 指丢弃标记本身并把两侧文本合并, 不丢字. 这与
@@ -97,7 +112,7 @@ def parse_line(
     # 于是整行的结束时间就丢了. 行尾时间由调用方另行记在 ``LyricLine.end`` 上
     # (见 :func:`_apply_explicit_line_end`), 这里只保证词元时间不退化。
     texts, times = _drop_unusable_times(
-        texts, times, line_start=line_start, line_end=line_end
+        texts, times, line_start=line_start, line_end=line_end, on_event=on_event
     )
 
     # 所有时间标签都被忽略 → 退化成一行纯文本 (文本已被合并成一段)
@@ -172,6 +187,7 @@ def _drop_unusable_times(
     *,
     line_start: int | None = None,
     line_end: int | None = None,
+    on_event: EventCallback | None = None,
 ) -> tuple[list[str], list[int]]:
     """丢弃越界或非严格递增的时间标签, 并把它们前后的文本合并.
 
@@ -184,25 +200,39 @@ def _drop_unusable_times(
     * ``now == prev``: 逐字行里很常见 (空格词元与下一个词共享时间戳), 合并后
       语义不变, 只记 ``debug``, 不当成用户需要处理的异常.
     * ``now < prev``: 真的乱序, 记 ``warning``.
+
+    Args:
+        on_event: 前三种情况各自的回调 (见 :data:`.report.ParseEventCode`);
+            相等合并属于正常写法, 不进报告. 默认 ``None`` 表示只打日志.
     """
     texts = list(texts)
     times = list(times)
+
+    def _report(code: str, message: str) -> None:
+        """打日志并通知回调 (相等合并那类正常写法不走这里)."""
+        logger.warning(message)
+        if on_event is not None:
+            on_event(code, message)
+
     idx = 0
     while idx < len(times):
         value = times[idx]
         if line_start is not None and value < line_start:
-            logger.warning(
+            _report(
+                "byword-before-line-start",
                 f"Time tag {value}ms is before the line start {line_start}ms; "
-                f"ignoring the tag and keeping the line tag (SPL)"
+                f"ignoring the tag and keeping the line tag (SPL)",
             )
         elif line_end is not None and value > line_end:
-            logger.warning(
+            _report(
+                "byword-after-line-end",
                 f"Time tag {value}ms is after the line end {line_end}ms; "
-                f"ignoring the tag and keeping the line end (SPL)"
+                f"ignoring the tag and keeping the line end (SPL)",
             )
         elif idx > 0 and times[idx - 1] > value:
-            logger.warning(
-                f"Unordered time tag dropped: prev={times[idx - 1]}ms, now={value}ms"
+            _report(
+                "byword-unordered",
+                f"Unordered time tag dropped: prev={times[idx - 1]}ms, now={value}ms",
             )
         elif idx > 0 and times[idx - 1] == value:
             logger.debug(f"Redundant equal time tag merged: {value}ms")
@@ -227,11 +257,16 @@ class LrcParser:
 
     * 整份解析: ``LrcParser(options).parse(text)``。
     * 逐步喂行: 自己按行调用 :meth:`parse_raw_line`, 最后 :meth:`finalize`;
-      这样调用方能在中途查看行池, 也是后续解析报告 / source map 的挂载点.
+      这样调用方能在中途查看行池, 也是解析报告 / source map 的挂载点.
 
     Note:
         状态挂在实例上, 所以同一个实例不要跨文档复用而不重置: :meth:`parse` 会
         先调用 :meth:`reset`, 手动逐行喂时重置由调用方负责.
+
+    Note:
+        "丢了什么 / 忽略了什么" 除日志外还会累积成 :attr:`report`. 只有真正值得
+        调用方知道的事件才进报告, 所以干净文件的报告是空的; 日志格式不受影响
+        (逐字标记那几条仍按原格式打印, 但报告里会补上行号).
     """
 
     def __init__(self, options: ParseOptions | None = None) -> None:
@@ -246,7 +281,7 @@ class LrcParser:
         self.reset()
 
     def reset(self) -> None:
-        """清空已累积的解析状态 (行池 / metadata / 锚点), 选项保持不变."""
+        """清空已累积的解析状态 (行池 / metadata / 锚点 / 报告), 选项保持不变."""
         #: 已提取的 ID 标签; 同名 key 全部保留 (见 :class:`~.metadata.Metadata`).
         self.metadata: Metadata = Metadata()
         #: 时间点 -> 歌词行. 同一时间点后到的行会挂成先到者的参考行.
@@ -256,6 +291,18 @@ class LrcParser:
         #: 最近一行**有正文**的歌词所占的时间点. 与 ``last_tag`` 不同, 它不被空行
         #: 重置, 也不被参考行/结束标记影响 —— SPL 的"纯结束标记"要收尾的正是这一行.
         self.last_text_tags: list[int] = []
+        self._events: list[ParseEvent] = []
+        self._reference_lines_attached = 0
+        self._end_markers_applied = 0
+
+    @property
+    def report(self) -> ParseReport:
+        """本次解析的结构化报告 (每次访问都按当前已累积的事件重建)."""
+        return ParseReport(
+            events=tuple(self._events),
+            reference_lines_attached=self._reference_lines_attached,
+            end_markers_applied=self._end_markers_applied,
+        )
 
     def parse(self, lrc: str) -> Lyrics:
         """解析整份 LRC 文本, 返回组装好的 :class:`Lyrics`.
@@ -274,6 +321,50 @@ class LrcParser:
             self.parse_raw_line(line_no, raw_line)
         return self.finalize()
 
+    def _record(
+        self,
+        code: str,
+        message: str,
+        *,
+        line_no: int | None = None,
+        raw_line: str | None = None,
+    ) -> None:
+        """只记进报告, 不打日志 (给"日志已经打过了"的那些事件用)."""
+        self._events.append(
+            ParseEvent(code=code, message=message, line_no=line_no, raw_line=raw_line)
+        )
+
+    def _emit(
+        self,
+        code: str,
+        message: str,
+        *,
+        line_no: int | None = None,
+        raw_line: str | None = None,
+        level: int = logging.WARNING,
+    ) -> None:
+        """打日志并记进报告.
+
+        日志文本由 ``Line N: `` 前缀与 `` (raw=...)`` 后缀拼出来, 拼法与重构前
+        逐字一致, 免得既有的日志断言失效; 报告里则把行号 / 原始行存成独立字段.
+        """
+        location = f"Line {line_no}: " if line_no is not None else ""
+        raw = f" (raw={raw_line!r})" if raw_line is not None else ""
+        logger.log(level, f"{location}{message}{raw}")
+        self._record(code, message, line_no=line_no, raw_line=raw_line)
+
+    def _line_event_callback(self, line_no: int, raw_line: str) -> EventCallback:
+        """构造给 :func:`parse_line` 用的回调: 只收集, 不打日志.
+
+        逐字标记那几条 warning 已经由 :func:`_drop_unusable_times` 打过, 这里再打
+        一遍就会重复; 报告里补上行号才是新增的价值.
+        """
+
+        def _callback(code: str, message: str) -> None:
+            self._record(code, message, line_no=line_no, raw_line=raw_line)
+
+        return _callback
+
     def parse_raw_line(self, line_no: int, raw_line: str) -> None:
         """处理一行原始文本 (metadata / 行标签 / 逐字标签 / 参考行 / 结束标记).
 
@@ -286,6 +377,8 @@ class LrcParser:
         """
         # 去除行首缩进以识别标签, 但保留正文尾随空白。正文空白是有效文本。
         line_str = raw_line.lstrip()
+        # 逐字标记被忽略时, parse_line 只知道 code / message, 行号得由这里补.
+        on_event = self._line_event_callback(line_no, raw_line)
 
         # 1. 若行首是时间标签 (方括号或尖括号) 则直接按歌词行处理,
         #    避免 metadata 误匹配.
@@ -322,7 +415,8 @@ class LrcParser:
         #     Note: 整行不含方括号标签 (即用尖括号写出的空行) 不走这里, 见 2b.
         if time_tags and not _body_has_text(line_str):
             for tag in time_tags:
-                self._apply_line_end_marker(tag)
+                if self._apply_line_end_marker(tag, line_no=line_no, raw_line=raw_line):
+                    self._end_markers_applied += 1
             return
 
         # 2b. 若行首存在多个连续方括号时间标签, 且剩余正文还含有时间标签,
@@ -335,7 +429,10 @@ class LrcParser:
             if _is_non_decreasing_timetags(raw_lyric_line):
                 try:
                     line = parse_line(
-                        raw_lyric_line, line_start=time_tags[0], line_end=line_end
+                        raw_lyric_line,
+                        line_start=time_tags[0],
+                        line_end=line_end,
+                        on_event=on_event,
                     )
                 except InvalidLyricsError as exc:
                     exc.line_no = exc.line_no or line_no
@@ -356,7 +453,9 @@ class LrcParser:
                     self.last_text_tags = [line_start]
             else:
                 for tag in time_tags:
-                    line = parse_line(line_str, line_start=tag, line_end=line_end)
+                    line = parse_line(
+                        line_str, line_start=tag, line_end=line_end, on_event=on_event
+                    )
                     if not line:  # pragma: no cover - 正文有文字, 不可能是空白
                         continue
                     registered = self._register_line_at_tags(line, [tag])
@@ -370,6 +469,7 @@ class LrcParser:
                 line_str,
                 line_start=time_tags[0] if time_tags else None,
                 line_end=line_end,
+                on_event=on_event,
             )
         except InvalidLyricsError as exc:
             exc.line_no = exc.line_no or line_no
@@ -395,24 +495,29 @@ class LrcParser:
                     self.last_text_tags = [line[0].start]
                 return
             if self.last_tag is None:
-                logger.warning(
-                    f"Line {line_no}: orphaned lyric line (no anchor): "
-                    f"{line!r} (raw={raw_line!r})"
+                self._emit(
+                    "orphaned-line",
+                    f"orphaned lyric line (no anchor): {line!r}",
+                    line_no=line_no,
+                    raw_line=raw_line,
                 )
                 return
             # 防御性检查: 按当前实现, last_tag 的所有赋值路径都指向已注册的
             # 时间点, 此分支不可达; 保留以防未来改动破坏该不变量 (B1).
             if self.last_tag not in self.line_pool:  # pragma: no cover
-                logger.warning(
-                    f"Line {line_no}: reference anchor {self.last_tag}ms not in "
-                    f"line pool, line treated as orphaned: "
-                    f"{line!r} (raw={raw_line!r})"
+                self._emit(
+                    "orphaned-line",
+                    f"reference anchor {self.last_tag}ms not in line pool, "
+                    f"line treated as orphaned: {line!r}",
+                    line_no=line_no,
+                    raw_line=raw_line,
                 )
                 return
             logger.debug(
                 f"Adding {line!r} as reference of {self.line_pool[self.last_tag]!r}"
             )
             self.line_pool[self.last_tag].reference_lines.append(line)
+            self._reference_lines_attached += 1
             return
 
         # 2d. 常规行: 可能有多个重复时间标签, 每个都生成一行
@@ -446,6 +551,7 @@ class LrcParser:
             self.line_pool,
             fill_implicit_line_end=self.options.fill_implicit_line_end,
             line_filter=line_filter,
+            on_event=self._record,
         )
 
     def _register_line_at_tags(
@@ -494,7 +600,7 @@ class LrcParser:
             if line is not None and line.end is None and line.start < line_end:
                 line.end = line_end
 
-    def _apply_line_end_marker(self, tag: int) -> None:
+    def _apply_line_end_marker(self, tag: int, *, line_no: int, raw_line: str) -> bool:
         """把"只有时间标签、没有正文"的行当作上一行歌词的结束标记 (SPL) .
 
         SPL: "时间戳后不接任何文本内容的行是纯粹的结束标记: 它不会产生一句新歌词,
@@ -503,6 +609,10 @@ class LrcParser:
         只在目标行确实还没有显式结束时间时写入 (同行内的行尾标签优先) ; 没有可收尾
         的目标 —— 文件首行、目标行开始时间不晚于该标记、目标行已有区间 —— 就忽略
         该标记, 而不是造一条空歌词行.
+
+        Returns:
+            是否真的给某一行补上了 ``end``; ``False`` 时报告里会多一条
+            ``end-marker-ignored``.
         """
         for target_tag in self.last_text_tags:
             line = self.line_pool.get(target_tag)
@@ -517,8 +627,15 @@ class LrcParser:
                 continue
             line.end = tag
             logger.debug(f"End marker: line at {line.start}ms now ends at {tag}ms")
-            return
-        logger.debug(f"End marker {tag}ms has no line to close; ignored")
+            return True
+        self._emit(
+            "end-marker-ignored",
+            f"End marker {tag}ms has no line to close; ignored",
+            line_no=line_no,
+            raw_line=raw_line,
+            level=logging.DEBUG,
+        )
+        return False
 
 
 def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
@@ -534,8 +651,33 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     Note:
         offset 需通过 :meth:`Lyrics.apply_delta` 单独应用,
         解析时不会自动偏移时间戳.
+
+    Note:
+        只关心结果时用它; 还要知道"丢了哪些行 / 忽略了哪些标记"就用
+        :func:`parse_with_report`.
     """
     return LrcParser(options).parse(lrc)
+
+
+def parse_with_report(
+    lrc: str, *, options: ParseOptions | None = None
+) -> tuple[Lyrics, ParseReport]:
+    """解析 LRC 文本, 同时返回结构化的解析报告.
+
+    与 :func:`parse_lrc` 的结果完全一致, 只是额外给出 :class:`~.report.ParseReport`
+    —— 把"哪些行被丢弃 / 哪些逐字标记被忽略 / 哪条行尾推断被丢弃"从日志变成可
+    编程检查的数据. 干净文件的报告是空的 (``bool(report)`` 为 ``False``).
+
+    Args:
+        lrc: LRC 源文本.
+        options: 解析选项.
+
+    Returns:
+        ``(lyrics, report)``.
+    """
+    parser = LrcParser(options)
+    lyrics = parser.parse(lrc)
+    return lyrics, parser.report
 
 
 def _body_has_text(line: str) -> bool:
@@ -582,6 +724,7 @@ def _finalize_lyrics(
     *,
     fill_implicit_line_end: bool,
     line_filter: re.Pattern[str] | None = None,
+    on_event: EventCallback | None = None,
 ) -> Lyrics:
     """把 ``line_pool`` 按时间排序、补全行首/行尾时间并装进 :class:`Lyrics`.
 
@@ -596,14 +739,24 @@ def _finalize_lyrics(
         会被丢弃并记 warning, 而不再产出 ``end <= start`` 的行 —— 那是
         :func:`~.validation.validate_lyrics` 眼里的 error, 也会让 ``to_srt()``
         去"修正"一个本不该存在的区间. 词元自身的 ``start`` / ``end`` 原样保留.
+
+    Args:
+        on_event: 丢弃被过滤的行 / 丢弃矛盾的行尾推断时的回调 (见
+            :data:`.report.ParseEventCode`). 这里拿不到源文件行号, 所以事件里
+            只有毫秒时间与文本.
     """
     # 先应用过滤, 再排序填充, 保证 fill_implicit_line_end 不依赖被丢弃的行
     if line_filter is not None:
-        line_pool = {
-            ts: line
-            for ts, line in line_pool.items()
-            if not line_filter.search(line.text)
-        }
+        kept: dict[int, LyricLine] = {}
+        for ts, line in line_pool.items():
+            if line_filter.search(line.text):
+                message = f"Line at {ts}ms dropped by line_filter: {line.text!r}"
+                logger.debug(message)
+                if on_event is not None:
+                    on_event("line-filtered", message)
+                continue
+            kept[ts] = line
+        line_pool = kept
 
     lyrics = Lyrics(metadata=metadata)
     sorted_items = sorted(line_pool.items(), key=lambda kv: kv[0])
@@ -616,11 +769,14 @@ def _finalize_lyrics(
         if line.content:
             inferred_end = line.content[-1].end
         if inferred_end is not None and inferred_end <= line_start:
-            logger.warning(
+            message = (
                 f"Line at {line_start}ms: inferred line end {inferred_end}ms is "
                 f"not after the line start (byword tags disagree with the line "
                 f"tag); discarding the inferred end"
             )
+            logger.warning(message)
+            if on_event is not None:
+                on_event("inferred-end-discarded", message)
             inferred_end = None
         # 推断不出 end 时保留 _apply_line_end_marker 写下的值, 不要清掉
         if inferred_end is not None:
