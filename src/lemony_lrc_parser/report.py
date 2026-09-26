@@ -21,6 +21,7 @@ from typing import Literal
 
 __all__ = [
     "DROPPED_LINE_CODES",
+    "STRICT_ERROR_CODES",
     "ParseEvent",
     "ParseEventCode",
     "ParseReport",
@@ -48,6 +49,26 @@ ParseEventCode = Literal[
 
 #: 表示"这一行没有进入解析结果"的代码, 供 :attr:`ParseReport.dropped_lines` 使用.
 DROPPED_LINE_CODES: frozenset[str] = frozenset({"orphaned-line", "line-filtered"})
+
+#: strict 模式 (:class:`~.models.ParseOptions` 的 ``strict=True``) 下会直接抛
+#: :class:`~.exceptions.InvalidLyricsError` 的代码.
+#:
+#: 判据是"解析器不得不丢掉或忽略文件里的某个声明": 孤儿行整行没了, 逐字标记 / 结束
+#: 标记 / 行尾推断被忽略. 两类刻意不在其中:
+#:
+#: * ``line-filtered``: 那是调用方自己要求丢的, 不是文件的问题.
+#: * metadata key 与 ``offset`` 的问题 (由 :meth:`~.models.Lyrics.validate` 报告):
+#:   它们不影响解析结果, 放进 strict 只会把"本来能正常解析的文件"判死.
+STRICT_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "orphaned-line",
+        "byword-before-line-start",
+        "byword-after-line-end",
+        "byword-unordered",
+        "end-marker-ignored",
+        "inferred-end-discarded",
+    }
+)
 
 
 @dataclass(frozen=True)

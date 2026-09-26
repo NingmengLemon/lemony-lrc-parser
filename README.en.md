@@ -285,6 +285,24 @@ Filtering is judged by the **main line** text only: reference lines (translation
 / transliteration) sharing the main line's timestamp are dropped together with
 the main line, even if their own text does not match.
 
+`strict=True` turns on strict mode: the parser no longer drops or ignores anything
+the file declares, and raises `InvalidLyricsError` on the spot (carrying `line_no`
+/ `raw_line`):
+
+```python
+from lemony_lrc_parser import Lyrics, ParseOptions
+
+# anchorless lines, out-of-range or unordered word tags, ignored end markers and
+# discarded end-time inferences all raise
+Lyrics.loads(lrc_text, options=ParseOptions(strict=True))
+```
+
+It defaults to `False` because real-world LRC is wild and lenient keeps it
+compatible. Two things deliberately never raise: lines dropped by `line_filter`
+(the caller asked for that), and metadata key / `offset` problems (they do not
+affect the parse result; `validate()` reports those). The exact codes are in
+`STRICT_ERROR_CODES`, see [Parse Report](#parse-report).
+
 #### Serialization Options
 
 Control serialization behavior via `SerializationOptions`:
@@ -548,6 +566,10 @@ lines, closing a line with an end marker) only bumps the two counters above, so
 a clean file yields an empty `report` (`bool(report)` is `False`). Logging is
 unchanged: the word-tag warnings keep their old format, the report just adds the
 line number.
+
+`STRICT_ERROR_CODES` is the subset that raises under strict mode (without
+`line-filtered`, since the caller asked for that); see `strict` under
+[Parsing Options](#parsing-options).
 
 ### Validation
 

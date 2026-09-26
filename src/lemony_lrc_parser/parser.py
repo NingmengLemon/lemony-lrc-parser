@@ -28,7 +28,7 @@ from .regex import (
     WORD_TIMETAG_REGEX,
     compile_regex,
 )
-from .report import ParseEvent, ParseReport
+from .report import STRICT_ERROR_CODES, ParseEvent, ParseReport
 
 logger = getLogger(__name__)
 
@@ -329,10 +329,19 @@ class LrcParser:
         line_no: int | None = None,
         raw_line: str | None = None,
     ) -> None:
-        """只记进报告, 不打日志 (给"日志已经打过了"的那些事件用)."""
+        """记进报告; 严格模式下命中 :data:`~.report.STRICT_ERROR_CODES` 就抛异常.
+
+        Note:
+            事件先入报告再抛, 所以 ``LrcParser`` 的使用方 ``except`` 之后仍能从
+            :attr:`report` 读到"到这里为止发生了什么" (包括刚触发的那条).
+        """
         self._events.append(
             ParseEvent(code=code, message=message, line_no=line_no, raw_line=raw_line)
         )
+        if self.options.strict and code in STRICT_ERROR_CODES:
+            raise InvalidLyricsError(
+                f"[{code}] {message}", line_no=line_no, raw_line=raw_line
+            )
 
     def _emit(
         self,

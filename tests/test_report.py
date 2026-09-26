@@ -1,23 +1,42 @@
-"""测试解析报告 (:mod:`lemony_lrc_parser.report`).
+"""测试解析报告与 strict 模式.
 
 报告只收"值得调用方知道"的事件 (丢弃 / 忽略 / 修正), 正常操作只计数, 所以干净文件
 的报告是空的 —— 这一条是整组用例的前提, 先钉住它, 免得以后有人把 debug 级日志也
 塞进来, 让 ``bool(report)`` 失去意义.
+
+strict 模式直接定义在这套事件代码上 (:data:`~lemony_lrc_parser.report.STRICT_ERROR_CODES`),
+所以放在同一个文件里, 改一处时不容易漏掉另一处.
 """
 
 from __future__ import annotations
 
+import pytest
+
 from lemony_lrc_parser import (
+    InvalidLyricsError,
     Lyrics,
+    LyricsParserError,
     ParseOptions,
     ParseReport,
     parse_line,
     parse_lrc,
     parse_with_report,
+    validate_lyrics,
 )
 from lemony_lrc_parser.parser import LrcParser
+from lemony_lrc_parser.report import STRICT_ERROR_CODES, ParseEventCode
 
 CLEAN = "[ti: T]\n[00:01.000]a\n[00:02.000]b\n"
+
+#: 每个 strict 错误代码对应的最小输入 (键是期望的事件代码).
+STRICT_TRIGGERS: dict[str, str] = {
+    "orphaned-line": "[00:01.000]a\n\norphan\n",
+    "byword-before-line-start": "[00:05.000]<00:01.000>a<00:06.000>b\n",
+    "byword-after-line-end": "[00:01.000]a<00:05.000>b[00:02.000]\n",
+    "byword-unordered": "[00:01.000]a<00:03.000>b<00:02.000>c\n",
+    "end-marker-ignored": "[00:00.000]\n[00:01.000]hello\n",
+    "inferred-end-discarded": "[00:01.000]text[00:01.000]\n",
+}
 
 
 def _codes(report: ParseReport) -> list[str]:
@@ -203,3 +222,85 @@ class TestMixedDocument:
         text = "[00:01.000]a\n\norphan\n[00:02.000]b\n"
         assert parse_with_report(text)[0] == parse_lrc(text)
         assert isinstance(parse_lrc(text), Lyrics)
+
+
+class TestStrictMode:
+    """``ParseOptions(strict=True)``: 不再丢 / 忽略文件里的声明, 当场抛异常."""
+
+    def test_default_is_lenient(self) -> None:
+        """默认宽松: 上面每个触发输入都能正常解析出结果."""
+        for code, text in STRICT_TRIGGERS.items():
+            lyrics, report = parse_with_report(text)
+            assert code in _codes(report), code
+            assert isinstance(lyrics, Lyrics)
+
+    def test_clean_file_passes(self) -> None:
+        assert len(parse_lrc(CLEAN, options=ParseOptions(strict=True))) == 2
+
+    @pytest.mark.parametrize(("code", "text"), sorted(STRICT_TRIGGERS.items()))
+    def test_each_code_raises(self, code: str, text: str) -> None:
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parse_lrc(text, options=ParseOptions(strict=True))
+        error = exc_info.value
+        assert f"[{code}]" in str(error)
+        # 可被 LyricsParserError 捕获 (异常层级不变)
+        assert isinstance(error, LyricsParserError)
+
+    def test_line_info_is_attached_when_available(self) -> None:
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parse_lrc(
+                STRICT_TRIGGERS["orphaned-line"], options=ParseOptions(strict=True)
+            )
+        assert exc_info.value.line_no == 3
+        assert exc_info.value.raw_line == "orphan"
+
+    def test_inferred_end_has_no_line_number(self) -> None:
+        """行尾推断发生在 finalize 阶段, 拿不到源文件行号 —— 已知代价."""
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parse_lrc(
+                STRICT_TRIGGERS["inferred-end-discarded"],
+                options=ParseOptions(strict=True),
+            )
+        assert exc_info.value.line_no is None
+        assert "1000ms" in str(exc_info.value)  # 毫秒信息仍在
+
+    def test_line_filter_never_raises(self) -> None:
+        """``line_filter`` 丢掉的行是调用方自己要求的, strict 不该管."""
+        options = ParseOptions(strict=True, line_filter="drop")
+        lyrics = parse_lrc("[00:01.000]keep\n[00:02.000]drop me\n", options=options)
+        assert [line.text for line in lyrics] == ["keep"]
+
+    def test_metadata_issues_are_left_to_validate(self) -> None:
+        """``offset`` 不可解析不影响解析结果, 归 ``validate()``, 不进 strict."""
+        text = "[offset: abc]\n[00:01.000]a\n"
+        lyrics = parse_lrc(text, options=ParseOptions(strict=True))
+        assert lyrics.metadata["offset"] == "abc"
+        assert [issue.code for issue in validate_lyrics(lyrics)] == ["offset-not-int"]
+
+    def test_report_survives_the_raise(self) -> None:
+        """事件先入报告再抛, 所以 catch 之后仍能读到发生了什么."""
+        parser = LrcParser(ParseOptions(strict=True))
+        with pytest.raises(InvalidLyricsError):
+            parser.parse(STRICT_TRIGGERS["orphaned-line"])
+        assert _codes(parser.report) == ["orphaned-line"]
+
+    def test_strict_stops_at_the_first_violation(self) -> None:
+        """严格模式是"当场拒绝", 不是"收完所有再汇总"."""
+        text = "[00:01.000]a\n\norphan one\n\norphan two\n"
+        parser = LrcParser(ParseOptions(strict=True))
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parser.parse(text)
+        assert exc_info.value.line_no == 3
+        assert _codes(parser.report) == ["orphaned-line"]  # 只到第一条
+
+    def test_manual_feeding_raises_too(self) -> None:
+        """逐步喂行时同样当场拒绝 (无锚点的行)."""
+        parser = LrcParser(ParseOptions(strict=True))
+        with pytest.raises(InvalidLyricsError):
+            parser.parse_raw_line(1, "orphan text")
+
+    def test_strict_code_set_is_a_subset_of_known_codes(self) -> None:
+        """strict 不能引用未登记的事件代码."""
+        known = set(ParseEventCode.__args__)
+        assert known >= STRICT_ERROR_CODES
+        assert "line-filtered" not in STRICT_ERROR_CODES

@@ -17,6 +17,11 @@ LRC 野生格式很多。过早把 parser 默认行为改严，会破坏兼容�
 - `strict=True` 明确 opt-in。
 - 宽松解析 + `validate()` 报告问题，是更稳的路线。
 
+落地（0.5.0）：三条都照做了 —— `ParseOptions(strict=True)` 是 opt-in，默认仍是
+宽松；严格模式只拒绝"解析器不得不丢掉或忽略某个声明"的情况
+（`report.py` 的 `STRICT_ERROR_CODES`），metadata key / `offset` 这类不影响解析
+结果的问题仍旧归 `validate()`，见 [roadmap.md](roadmap.md) 的 `F-STRICT`。
+
 ### 2. `Lyrics` 继承 `UserList`，用户可绕过不变量
 
 例如用户可直接插入乱序行，或把非预期对象放进列表。

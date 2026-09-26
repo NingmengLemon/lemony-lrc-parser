@@ -31,6 +31,18 @@
   内部的"逐字标记被忽略"事件 (回调收 `(code, message)`, 行号由调用方自己补).
   不传时行为与之前完全一致 (仍然只打日志), 因此这是纯增量.
 
+- `ParseOptions(strict=True)`: 严格模式 (F-STRICT). 解析器不再"丢掉 / 忽略掉"文件里
+  的任何声明, 而是当场抛 `InvalidLyricsError` (带 `line_no` / `raw_line`), 便于
+  "宁可失败也不要悄悄改数据"的场景. 触发集合是 `report.py` 的
+  `STRICT_ERROR_CODES`, 即 `orphaned-line` / `byword-before-line-start` /
+  `byword-after-line-end` / `byword-unordered` / `end-marker-ignored` /
+  `inferred-end-discarded`; 事件先入报告再抛, 所以接住异常后仍能从
+  `LrcParser.report` 读到"到这里为止发生了什么".
+
+  两类刻意不触发: `line-filtered` (那是调用方自己要求丢的), 以及 metadata key 与
+  `offset` 的问题 (它们不影响解析结果, 归 `validate()` 报告). 默认 `False` ——
+  真实世界的 LRC 很野, 默认宽松才兼容, 与 `risks.md#1` 的结论一致.
+
 ### Changed
 
 - **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`

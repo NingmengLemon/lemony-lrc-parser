@@ -23,7 +23,7 @@
 | ID | 主题 | 类型 | 价值 | 备注 |
 | --- | --- | --- | --- | --- |
 | NEW-PRESERVE-STYLE | 写回时保留原文件风格 | 保真性 | 中高 | CRLF / 尾数位数 / 空行风格；100% 语料写回后与源文件不同 |
-| F-STRICT | 解析严格模式 | 可控性 | 中高 | 最好建立在 `validate()` 与行号错误之上 |
+| F-STRICT | 解析严格模式 | 可控性 | 中高 | ✅ 0.5.0 以 `ParseOptions(strict=True)` 落地 |
 | F-RANGE | 时间范围查询 | API | 中 | 对播放器、剪辑、字幕片段提取有用 |
 | F-MUTATE | 安全变更方法 | API | 中 | 降低用户直接操作 list 破坏排序的概率 |
 | NEW-SEARCH | 全文搜索 | API | 中 | `find_text()` 已覆盖子串；正则 / 跨行 / 结果定位待做 |
@@ -73,6 +73,8 @@
 - `NEW-PARSE-REPORT` → `report.py` 的 `ParseReport` / `ParseEvent` 与
   `parse_with_report()`; `LrcParser.report` 累积, `parse_line` 通过 `on_event`
   上报自己内部的事件。用例在 `tests/test_report.py`。
+- `F-STRICT` → `ParseOptions(strict=True)`, 触发集合是 `STRICT_ERROR_CODES`;
+  同一批用例在 `tests/test_report.py`。
 
 ### NEW-PRESERVE-STYLE：写回时保留原文件风格
 
@@ -107,24 +109,28 @@ AMLL 的格式文档提到"部分实现允许 `#` 前缀的注释行"（见 Refe
 两者都不理想。若要做，需要与"孤儿行 / 参考行"策略一起定：建议把 `#` 行识别为
 注释并整行忽略（不进参考行、不发告警）。
 
-### F-STRICT：解析严格模式
+### ~~F-STRICT~~（已落地）
 
-建议在 `ParseOptions` 增加 `strict: bool = False`。
+0.5.0 起是 `ParseOptions(strict=True)`。触发集合定义在 `report.py` 的
+`STRICT_ERROR_CODES`，判据统一成一句"解析器不得不丢掉或忽略文件里的某个声明"：
 
-严格模式可将以下情况从 warning / 忽略升级为异常：
+- `orphaned-line`（整行丢了）
+- `byword-before-line-start` / `byword-after-line-end` / `byword-unordered`
+  （声明了却被忽略的逐字标记）
+- `end-marker-ignored`（声明了却无处可收尾的结束标记）
+- `inferred-end-discarded`（与行首矛盾的推断行尾）
 
-- 孤立无时间戳行。
-- 非单调逐字时间标签。
-- 行首重复时间标签与逐字标签组合造成歧义。
-- metadata key 不合法。
-- 重复且冲突的 metadata。
-- 不可解析的 `offset` metadata。
+与最初设想不同、刻意**不**触发的两类：
 
-设计建议：
+- `line-filtered`：那是调用方通过 `ParseOptions.line_filter` 自己要求丢的。
+- metadata key 不合法 / 重复冲突 / `offset` 不可解析：它们不影响解析结果，放进
+  strict 会把"本来能正常解析的文件"判死，仍旧归 `validate()` 报告
+  （`invalid-metadata-key` / `offset-not-int`）。
 
-- strict mode 不应改变数据模型，只改变错误处理策略。
-- strict mode 最好与结构化 `ValidationIssue` 共用错误代码。
-- README 中应明确默认宽松，以兼容真实世界的 LRC。
+落地方式沿用了当初的三条设计建议：不改数据模型只改错误策略；复用同一套事件 /
+错误代码（事件码与 `ValidationIssue.code` 同属 kebab-case 命名）；默认仍宽松，
+README 中英都写明。抛的是 `InvalidLyricsError`（带 `line_no` / `raw_line`），
+"收完所有再汇总"那件事交给 `ParseReport`。
 
 ### F-RANGE：时间范围查询
 

@@ -110,10 +110,18 @@ class ParseOptions:
             :meth:`__post_init__` 中被 :func:`re.compile` 编译, 之后用
             ``pattern.search`` 匹配行文本. 匹配到的行在解析时会被丢弃.
             ``None`` 表示不过滤. 若需精确子串匹配, 请使用 :func:`re.escape`.
+        strict: 严格模式. 若为 ``True``, 解析器不再"丢掉 / 忽略掉"文件里的任何声明,
+            而是当场抛 :class:`.exceptions.InvalidLyricsError` (带 ``line_no`` /
+            ``raw_line``). 触发的代码见 :data:`.report.STRICT_ERROR_CODES`;
+            ``line_filter`` 丢掉的行不算 (那是调用方自己要求的).
+            metadata key 与 ``offset`` 的问题也不走这里 —— 它们不影响解析结果,
+            归 :meth:`Lyrics.validate`. 默认 ``False``: 真实世界的 LRC 很野,
+            默认宽松才兼容.
     """
 
     fill_implicit_line_end: bool = False
     line_filter: str | re.Pattern[str] | None = None
+    strict: bool = False
 
     def __post_init__(self) -> None:
         """把字符串形式的 ``line_filter`` 统一编译为正则."""

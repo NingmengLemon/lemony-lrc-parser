@@ -277,6 +277,21 @@ lyrics = Lyrics.loads(
 过滤只按**主行**文本判定: 与主行同一时间戳的参考行 (翻译/音译) 会随主行一起被
 丢弃, 即使它自身的文本并不匹配.
 
+`strict=True` 打开严格模式: 解析器不再"丢掉 / 忽略掉"文件里的任何声明, 而是当场
+抛 `InvalidLyricsError` (带 `line_no` / `raw_line`):
+
+```python
+from lemony_lrc_parser import Lyrics, ParseOptions
+
+# 无锚点的行、越界或乱序的逐字标记、被忽略的结束标记、被丢弃的行尾推断, 都会抛
+Lyrics.loads(lrc_text, options=ParseOptions(strict=True))
+```
+
+默认是 `False`, 因为真实世界的 LRC 很野, 默认宽松才兼容. 两类刻意不抛:
+`line_filter` 丢掉的行 (那是调用方自己要求的), 以及 metadata key / `offset` 的
+问题 (它们不影响解析结果, 交给 `validate()` 报). 触发的具体代码见
+[解析报告](#解析报告) 里的 `STRICT_ERROR_CODES`.
+
 #### 序列化选项
 
 通过 `SerializationOptions` 控制序列化行为:
@@ -505,6 +520,9 @@ report.reference_lines_attached, report.end_markers_applied  # 正常操作只�
 报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾) 只进上面两个
 计数, 所以干净文件的 `report` 为空 (`bool(report)` 是 `False`). 日志行为不变:
 逐字标记那几条仍按原格式打印, 只是报告里会补上行号.
+
+`STRICT_ERROR_CODES` 是其中"严格模式下会直接抛异常"的子集 (少了 `line-filtered`,
+因为那是调用方自己要丢的), 见 [解析选项](#解析选项) 里的 `strict`.
 
 ### 校验
 
