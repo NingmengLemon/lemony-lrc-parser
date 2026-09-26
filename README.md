@@ -12,7 +12,7 @@
 
 - 解析标准 LRC 歌词文件
 - 支持 EnhancedLRC / SPL 的逐字歌词标签
-- 支持 metadata 标签
+- 支持 metadata 标签 (同名 key 可重复, 不丢重复项)
 - 支持折叠时间标签
 - 支持参考行
 - 支持歌词合并
@@ -222,6 +222,10 @@ line_dict = line.to_dict()
 token_dict = line.content[0].to_dict()
 ```
 
+`to_dict()` 里的 `metadata` 是**有损**的 dict 视角 (同名 key 只留最后一次出现的
+值); 需要无损导出时用 `lyrics.metadata.to_pairs()`, 见
+[同名 key 与三种读法](#同名-key-与三种读法).
+
 ### 拷贝
 
 所有数据模型都提供 `.copy()` 深拷贝方法, 返回独立的副本:
@@ -360,7 +364,7 @@ value 里的方括号必须**配对**:
 import lemony_lrc_parser as llp
 
 llp.loads("[al: Album [Deluxe]]\n[00:01.000]x\n").metadata
-# {'al': 'Album [Deluxe]'}   ← 原样保留 (取"配对的第一个 ]"作为边界)
+# Metadata({'al': 'Album [Deluxe]'})   ← 原样保留 (取"配对的第一个 ]"作为边界)
 ```
 
 不平衡的写法 (如 `[ti: 50% ]off]`、`[ti: a [b]`) 无法确定 value 边界, 整行按普通
@@ -369,6 +373,41 @@ llp.loads("[al: Album [Deluxe]]\n[00:01.000]x\n").metadata
 常见 key 的类型提示见 `MetadataKey` / `MetadataDict` / `COMMON_METADATA_KEYS` ——
 它们只是提示: 库不限制 key 的取值集合 (真实语料里常见 `ly`、`mu`、`total`、`tool`),
 只有 `validate()` 会按 `[A-Za-z][A-Za-z0-9]{0,15}` 检查 key 格式.
+
+#### 同名 key 与三种读法
+
+同名 key 重复出现是合法的 (`[ti: A]` 与 `[ti: B]` 都能留下), 所以
+`lyrics.metadata` 是 `Metadata` 而不是裸 `dict`: 它有序、可重复, 三种读法各有
+明确口径, 不靠参数开关切换.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+meta = lyrics.metadata
+
+# dict 视角 (有损): 同名取最后一次出现的值, 与旧版的裸 dict 行为一致
+meta["ti"]  # 'B'
+dict(meta)  # {'ti': 'B'}
+lyrics.to_dict()["metadata"]  # {'ti': 'B'}
+
+# 无损视角: 全部条目, 含重复
+meta.getlist("ti")  # ['A', 'B']
+meta.to_pairs()  # [('ti', 'A'), ('ti', 'B')]
+meta.items()  # 同上 (items() 有意覆盖成"全部条目")
+
+# 写入: add 追加, set / meta[k] = v 替换 (位置取首次出现处)
+meta.add("ti", "C")  # 变成 A, B, C
+meta.set("ti", "D")  # 合并成一条 D
+```
+
+`dumps()` 按无损视角写出, 所以重复 tag 也能往返. `len(meta)` 与 `meta.keys()`
+按 `Mapping` 协议只算**不同**的 key, 要数全部条目用 `len(meta.to_pairs())`.
+需要无损导出时用 `meta.to_pairs()`, 需要 JSON 友好时用 `meta.to_dict()`.
+
+`Metadata` 不是 `dict` 子类, 所以 `isinstance(meta, dict)` 是 `False`,
+`json.dumps(meta)` 要改成 `json.dumps(meta.to_dict())` (或直接
+`json.dumps(lyrics.to_dict())`).
 
 ### 偏移
 

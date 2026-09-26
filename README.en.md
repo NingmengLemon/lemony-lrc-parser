@@ -12,7 +12,7 @@ Lemon-flavored LRC Parser for Python.
 
 - Parse standard LRC lyric files
 - Word-level lyric tags of Enhanced LRC / SPL
-- Metadata tags
+- Metadata tags (duplicate keys are kept)
 - Folded time tags
 - Reference lines
 - Lyrics merging
@@ -225,6 +225,10 @@ line_dict = line.to_dict()
 token_dict = line.content[0].to_dict()
 ```
 
+The `metadata` inside `to_dict()` is the **lossy** dict view (a duplicated key keeps
+only its last value); for a lossless export use `lyrics.metadata.to_pairs()`, see
+[Duplicate keys and the three views](#duplicate-keys-and-the-three-views).
+
 ### Copy
 
 All data models provide a `.copy()` deep-copy method returning an independent
@@ -389,7 +393,7 @@ Brackets inside a value must be **balanced**:
 import lemony_lrc_parser as llp
 
 llp.loads("[al: Album [Deluxe]]\n[00:01.000]x\n").metadata
-# {'al': 'Album [Deluxe]'}   ← preserved as-is (boundary = the matching ])
+# Metadata({'al': 'Album [Deluxe]'})   ← preserved as-is (boundary = the matching ])
 ```
 
 Unbalanced forms (e.g. `[ti: 50% ]off]`, `[ti: a [b]`) have no determinable value
@@ -400,6 +404,43 @@ Type hints for common keys are in `MetadataKey` / `MetadataDict` /
 `COMMON_METADATA_KEYS` — these are hints only: the library does not restrict which
 keys exist (the real corpus commonly contains `ly`, `mu`, `total`, `tool`), and
 only `validate()` checks key format against `[A-Za-z][A-Za-z0-9]{0,15}`.
+
+#### Duplicate keys and the three views
+
+A key may legally appear more than once (`[ti: A]` and `[ti: B]` are both
+kept), so `lyrics.metadata` is a `Metadata` rather than a plain `dict`:
+ordered, repeatable, with three explicitly separated views instead of a flag
+that switches semantics.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+meta = lyrics.metadata
+
+# dict view (lossy): the last value for a duplicated key, matching the old plain dict
+meta["ti"]  # 'B'
+dict(meta)  # {'ti': 'B'}
+lyrics.to_dict()["metadata"]  # {'ti': 'B'}
+
+# lossless view: every entry, duplicates included
+meta.getlist("ti")  # ['A', 'B']
+meta.to_pairs()  # [('ti', 'A'), ('ti', 'B')]
+meta.items()  # same (items() deliberately yields all entries)
+
+# writing: add appends, set / meta[k] = v replaces (at the first position)
+meta.add("ti", "C")  # now A, B, C
+meta.set("ti", "D")  # collapses to a single D
+```
+
+`dumps()` writes the lossless view, so duplicated tags round-trip. `len(meta)` and
+`meta.keys()` count **distinct** keys per the `Mapping` protocol; use
+`len(meta.to_pairs())` to count entries. Use `meta.to_pairs()` for a lossless
+export and `meta.to_dict()` when JSON-friendliness matters more.
+
+`Metadata` is not a `dict` subclass, so `isinstance(meta, dict)` is `False` and
+`json.dumps(meta)` needs to become `json.dumps(meta.to_dict())` (or just
+`json.dumps(lyrics.to_dict())`).
 
 ### Offset
 

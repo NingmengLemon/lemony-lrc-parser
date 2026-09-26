@@ -249,17 +249,24 @@ src/lemony_lrc_parser/subtitle/
 - **若要改**：只能给 LRC 造新语法（例如空正文行统一改用尖括号标签），但那会与"方括号
   = 行标签"的既有共识冲突。
 
-#### 3. `metadata` 用 `dict[str, str]`
+#### 3. `metadata` 的容器形态（已按有序 multimap 落地）
 
 - **现象**：同名 key 出现两次时，前面的值被静默覆盖；顺序虽然靠 dict 保住了，但
   重复项丢了。
 - **为什么绕**：容器形态有取舍 —— dict 好用但丢重复；`list[tuple[str, str]]` 保真
   但不好用。成熟先例（HTTP 头）走的是第三条路：**有序 multimap + dict 式读取**。
-- **当前选择**：暂不改（破坏性变更），常见 key 先给类型提示
-  （`MetadataKey` / `MetadataDict` / `COMMON_METADATA_KEYS`）。
-- **若要改**：见 `F-META-MULTI`（[roadmap.md](roadmap.md)）与
-  [research.md 的容器调研](research.md#重复-key-与类-headers容器设计)，
-  计划随 0.5.0 一起做。
+- **当前选择**（0.5.0）：换成 `Metadata`（`metadata.py`），三套读法分开：
+  `meta["ti"]` / `dict(meta)` / `to_dict()` 是**有损**的 dict 视角（同名取**最后**
+  一次出现，与 0.4.x 一致，升级不会改变既有代码读到的值）；`items()` /
+  `to_pairs()` / `getlist()` 是**无损**视角；`add()` 追加、`set()` 替换。
+- **取舍**：`items()` 有意覆盖 `Mapping.items()`，返回全部条目而不是每个 key 一条
+  （先例同上）。代价是 `len(meta)` / `keys()` 按协议只算不同的 key，与
+  `len(meta.to_pairs())` 不等；这类"两个口径"的地方都写进了类文档与 README。
+  另一个代价在类型检查器：ty 对 `Mapping | Iterable[tuple[...]]` 这种联合做
+  isinstance 收窄会算错，所以 `Metadata.extend` 用重载 + `object` 实现签名绕开。
+- **依据**：[research.md 的容器调研](research.md#重复-key-与类-headers容器设计)、
+  `tests/test_metadata.py`、以及 `tests/test_roundtrip_matrix.py` 里新增的重复 key
+  语料（`Metadata.__eq__` 比的是全部条目，所以丢重复会当场失败）。
 
 #### 4. 方括号不平衡的 metadata value（`[ti: 50% ]off]`）
 

@@ -35,7 +35,7 @@
 
 | ID | 主题 | 类型 | 价值 | 备注 |
 | --- | --- | --- | --- | --- |
-| F-META-MULTI | metadata 改成有序 multimap | API | 中高 | 破坏性变更，计划随 0.5.0；先做调研见 research.md |
+| F-META-MULTI | metadata 改成有序 multimap | API | 中高 | ✅ 0.5.0 以 `Metadata` 落地（破坏性） |
 | F-DURATION | `LyricLine.duration` 属性 | API | 低中 | 简单但要定义 `end is None` 的语义 |
 | F-CONTAINS | `Lyrics.__contains__` 增强 | API | — | ✅ 0.4.0 以 `contains_text()` / `find_text()` 落地（不扩大 `in`） |
 | F-COMBINE-ALL | 批量合并 | API | 低 | 语义清晰但链式合并已可覆盖 |
@@ -54,7 +54,7 @@
 ### 已落地 (设计稿已迁出)
 
 下面这些条目已经实现, 设计讨论与回归细节见
-[CHANGELOG.md](../CHANGELOG.md) 里 0.4.0 一节; 这里不再保留设计稿, 以免
+[CHANGELOG.md](../CHANGELOG.md) 的对应版本小节; 这里不再保留设计稿, 以免
 出现"文档描述与代码不同步"的第二事实来源:
 
 - `F-VALIDATE` → `validation.py` (`validate_lyrics` / `Lyrics.validate`)。
@@ -67,6 +67,9 @@
   剩下的 6 处有意偏离记在 `risks.md#11`。
 - `F-CONTAINS` → `contains_text()` / `find_text()` 显式 API + `in` 的
   `DeprecationWarning` (结论: 不扩大 `in` 的语义)。
+- `F-META-MULTI` → `metadata.py` 的 `Metadata` (有序、同名可重复); 取舍写在
+  [design.md](design.md#3-metadata-的容器形态已按有序-multimap-落地),
+  用例在 `tests/test_metadata.py`。
 
 ### NEW-PRESERVE-STYLE：写回时保留原文件风格
 
@@ -212,32 +215,15 @@ def search(
 已经足够，产出的 dict 交给调用方自行 `json.dumps(..., ensure_ascii=False)`；
 再包一层只会把"JSON schema 是否稳定"变成库的兼容负担（见
 [risks.md](risks.md#6-json-schema-一旦公开可能形成兼容负担)）。
-`F-META-MULTI` 落地时，`to_dict()` 仍保持"有损但方便"的出口。
+`F-META-MULTI` 已落地，`to_dict()` 仍保持"有损但方便"的出口（无损导出是
+`lyrics.metadata.to_pairs()`）。
 
-### F-META-MULTI：metadata 改成有序 multimap（破坏性，目标 0.5.0）
+### ~~F-META-MULTI~~（已落地）
 
-- **动机**：`dict[str, str]` 会静默丢掉同名 key 的先前值（`[ti: A]` + `[ti: B]` →
-  只剩 `B`），且无法保留注释/重复项。
-- **调研**（见 [research.md](research.md#重复-key-与类-headers容器设计)）：
-  HTTP 头这套"同名可重复"的成熟容器**都不是裸 list**，而是
-  "有序 + dict 式读取 + 全量枚举"：werkzeug `Headers`（`getlist()` / `add()` /
-  `set()`，迭代产出全部 `(key, value)`）、`httpx.Headers`（`get_list()` /
-  `multi_items()`）、`multidict.CIMultiDict`（`getall()`）。
-- **建议做法**：
-
-  ```python
-  class Metadata(Mapping[str, str]):  # 保持 dict 式读取
-      def getlist(self, key: str) -> list[str]: ...
-      def add(self, key: str, value: str) -> None: ...  # 追加 (保留重复)
-      def set(self, key: str, value: str) -> None: ...  # 替换 (去重)
-      def items(self) -> list[tuple[str, str]]: ...  # 全部, 含重复
-  ```
-
-  同时：`to_dict()`（有损，后者覆盖）保持不变，新增 `to_pairs()` 做无损导出；
-  `from_dict()` 继续接受 dict / `MetadataDict`。
-- **迁移**：0.5.0 里 `Lyrics.metadata` 换成 `Metadata`，但保持
-  `== dict`、`dict(lyrics.metadata)`、`meta["ti"]`、`meta.get()`、`.update()` 等
-  既有写法可用，并在 0.4.x 的 changelog 里提前公告。
+0.5.0 起 `Lyrics.metadata` 是 `metadata.py` 里的 `Metadata`（有序、同名可重复）。
+设计取舍与代价见
+[design.md 的待决策第 3 条](design.md#3-metadata-的容器形态已按有序-multimap-落地)，
+用例在 `tests/test_metadata.py`，语料闸门在 `tests/test_roundtrip_matrix.py`。
 
 ### F-REPR：自定义紧凑 repr
 
@@ -455,4 +441,6 @@ lyrics.to_path(path, encoding="utf-8")
 
 - **[MF-COMMENT] 元数据注释 `[#...]`**
 
-  与当前 `dict[str, str]` metadata 模型冲突，且现实使用率低。除非出现明确用户需求，否则不建议支持。
+  解析端不把 `#` 开头的 key 当 metadata（`METATAG_KEY_REGEX` 要求字母开头），现实
+  使用率也低。容器侧自 0.5.0 起已能承载任意 key（`Metadata` 不限制 key），所以
+  现在唯一的门槛是解析规则；除非出现明确用户需求，否则不建议放宽。

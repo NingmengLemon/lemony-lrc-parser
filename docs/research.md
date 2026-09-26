@@ -110,7 +110,7 @@
 ## 重复 key 与"类 headers"容器设计
 
 LRC 里 `[ti: a]` 出现两次是合法的（真实文件里少见但存在，例如同一文件里既写
-`[ti: 标题]` 又写 `[ti: 标题 (Live)]`）。当前 `dict[str, str]` 会**静默丢掉前面的
+`[ti: 标题]` 又写 `[ti: 标题 (Live)]`）。裸 `dict[str, str]` 会**静默丢掉前面的
 值**，`list[tuple[str, str]]` 则能保真但丢掉 dict 的易用性。做决定前先看 HTTP 头
 这类"同名可重复"的成熟容器是怎么设计的：
 
@@ -125,7 +125,7 @@ LRC 里 `[ti: a]` 出现两次是合法的（真实文件里少见但存在，�
 结论（三个相邻方案的取法）：
 
 1. **推荐**：`metadata` 从 `dict[str, str]` 换成**有序 multimap**（`Metadata`），
-   保留 dict 式读取（`meta["ti"]` 取第一个/最后一个）+ 新增 `getlist()` /
+   保留 dict 式读取（`meta["ti"]` 取最后一个）+ 新增 `getlist()` /
    `items()`（返回**全部** `(key, value)`，这是 dict 做不到的）+ `add` / `set`。
    这既满足"保真"，又不牺牲易用性，且与 werkzeug/httpx 的既有认知一致。
 2. `list[tuple[str, str]]` 作为**序列化形态**是合理的（无损、JSON 友好），
@@ -133,7 +133,10 @@ LRC 里 `[ti: a]` 出现两次是合法的（真实文件里少见但存在，�
    直觉操作，用户得自己写查找。
 3. `dict` 保持为"有损但方便"的出口（`to_dict()`），另给 `to_pairs()` 做无损导出。
 
-因为这是破坏性变更，落在 0.5.0：见 [roadmap.md](roadmap.md) 的 `F-META-MULTI`。
+落地情况（0.5.0）：按上面的形态实现为 `metadata.py` 的 `Metadata`，`meta["ti"]`
+取的是**最后**一次出现的值（与旧裸 `dict` 行为一致，避免升级后读到不一样的值）。
+三套读法的口径与代价（`items()` 覆盖 `Mapping.items()`、`len()` 只算不同 key）
+记在 [design.md 的待决策第 3 条](design.md#3-metadata-的容器形态已按有序-multimap-落地)。
 
 ## offset 标签的正负语义
 

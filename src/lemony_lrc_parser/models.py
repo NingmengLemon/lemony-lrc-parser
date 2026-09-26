@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
-    Literal,
     SupportsIndex,
     TextIO,
     TypedDict,
@@ -32,6 +31,7 @@ from typing_extensions import Self, override
 
 from ._utils import DC_SLOTS
 from .exceptions import ProgrammingError, TimestampUnderflowError
+from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
 
 if TYPE_CHECKING:
     from .validation import ValidationIssue, ValidationOptions
@@ -52,52 +52,11 @@ __all__ = [
     "LyricTokenDict",
     "LyricLineDict",
     "LyricsDict",
+    "Metadata",
     "MetadataDict",
     "MetadataKey",
     "COMMON_METADATA_KEYS",
 ]
-
-
-#: LRC 里最常见的 ID 标签 key (标准集见 LRC 文档: ``ar`` / ``al`` / ``ti`` /
-#: ``au`` / ``length`` / ``by`` / ``re`` / ``ve`` / ``offset``).
-#:
-#: 仅作为**类型提示**与文档用途: ``Lyrics.metadata`` 运行时就是普通
-#: ``dict[str, str]``, 库不会校验、也不会拒绝其它 key (真实语料里常见
-#: ``ly`` / ``mu`` / ``total`` / ``tool`` 这类非标准 key).
-MetadataKey = Literal["ar", "al", "ti", "au", "length", "by", "re", "ve", "offset"]
-
-#: :data:`MetadataKey` 的运行时形态, 便于遍历 / 做模板.
-COMMON_METADATA_KEYS: tuple[MetadataKey, ...] = (
-    "ar",
-    "al",
-    "ti",
-    "au",
-    "length",
-    "by",
-    "re",
-    "ve",
-    "offset",
-)
-
-
-class MetadataDict(TypedDict, total=False):
-    """常见 ID 标签的类型提示 (``total=False``, 允许只出现其中几个).
-
-    Note:
-        这是给调用方**可选**使用的类型别名 (例如写自己的函数签名时用
-        ``def f(meta: MetadataDict)``), 库内部仍把 ``metadata`` 当普通
-        ``dict[str, str]``, 不做任何强制校验或补全.
-    """
-
-    ar: str
-    al: str
-    ti: str
-    au: str
-    length: str
-    by: str
-    re: str
-    ve: str
-    offset: str
 
 
 def _warn_ambiguous_contains(owner: str, method: str) -> None:
@@ -449,21 +408,54 @@ class Lyrics(UserList[LyricLine]):
         :class:`DeprecationWarning`.
 
     Attributes:
-        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) . 运行时是普通
-            ``dict[str, str]``; 常见 key 的类型提示见 :data:`MetadataKey` /
-            :class:`MetadataDict` (库不校验、也不限制 key) .
+        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) , 类型是
+            :class:`~.metadata.Metadata` —— 有序、**同名可重复**的映射, 而不是
+            裸 ``dict`` (``[ti: A]`` 与 ``[ti: B]`` 都会留下) . 常见 key 的类型
+            提示见 :data:`MetadataKey` / :class:`MetadataDict` (库不校验、也不
+            限制 key) .
     """
 
-    __slots__ = ("metadata",)
+    __slots__ = ("_metadata",)
 
     def __init__(
         self,
         lines: Iterable[LyricLine] | None = None,
         *,
-        metadata: dict[str, str] | None = None,
+        metadata: Mapping[str, str]
+        | Metadata
+        | Iterable[tuple[str, str]]
+        | None = None,
     ) -> None:
         super().__init__((i.copy() for i in lines) if lines is not None else None)
-        self.metadata: dict[str, str] = metadata.copy() if metadata is not None else {}
+        self.metadata = metadata if metadata is not None else Metadata()
+
+    @property
+    def metadata(self) -> Metadata:
+        """元数据 (见类文档的 Attributes)."""
+        return self._metadata
+
+    @metadata.setter
+    def metadata(
+        self,
+        value: Mapping[str, str] | Metadata | Iterable[tuple[str, str]],
+    ) -> None:
+        """赋值时统一转成 :class:`Metadata`.
+
+        保留 ``lyrics.metadata = {"ti": "x"}`` 这种既有写法 (0.4.x 里
+        ``metadata`` 就是普通属性, 直接赋 ``dict`` 很自然), 同时在类型不对时
+        立刻报错 —— 否则要等到 ``dumps()`` 才炸, 很难定位.
+
+        Raises:
+            ProgrammingError: ``value`` 既不是映射, 也不是 ``(key, value)`` 序列.
+        """
+        if isinstance(value, (str, bytes)) or not isinstance(
+            value, (Mapping, Iterable)
+        ):
+            raise ProgrammingError(
+                "Lyrics.metadata must be a Mapping or an iterable of (key, value) "
+                f"pairs, got {type(value).__name__}"
+            )
+        self._metadata: Metadata = Metadata(value)
 
     @overload
     def __getitem__(self, index: SupportsIndex) -> LyricLine: ...
@@ -599,10 +591,14 @@ class Lyrics(UserList[LyricLine]):
                 f"got {len(raw_items)} item(s) of type {kinds}"
             )
 
-        # metadata 以 self 为准, other 作为补充
+        # metadata 以 self 为准, other 作为补充. 按 key 判存在与否 (而不是
+        # 逐条 setdefault): self 里没有的 key 要把 other 的**全部**同名取值
+        # 都搬过来, 否则 other 里的重复项会在合并这一步被悄悄折叠.
         if isinstance(other, Lyrics):
-            for k, v in other.metadata.items():
-                self.metadata.setdefault(k, v)
+            for k in other.metadata:
+                if k not in self.metadata:
+                    for v in other.metadata.getlist(k):
+                        self.metadata.add(k, v)
 
         # self 中同一 start 可能存在多行 (手工构造 / from_srt 等来源),
         # 全部保留, 不再用 dict 按 start 覆盖 (B2); other 的行按 start
@@ -831,15 +827,22 @@ class Lyrics(UserList[LyricLine]):
         return issues
 
     def to_dict(self) -> LyricsDict:
+        """导出为普通 dict (metadata 走**有损**的 dict 视角).
+
+        Note:
+            ``metadata`` 里的同名重复项在 ``LyricsDict`` 里表达不了, 只保留最后
+            一次出现的值 (与 0.4.x 的裸 ``dict`` 行为一致). 要无损导出请用
+            ``lyrics.metadata.to_pairs()``.
+        """
         return LyricsDict(
-            metadata=self.metadata.copy(),
+            metadata=self.metadata.to_dict(),
             lines=[line.to_dict() for line in self],
         )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Lyrics:
         metadata = data.get("metadata")
-        metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+        metadata = Metadata(metadata) if isinstance(metadata, Mapping) else Metadata()
         return cls(
             lines=[
                 LyricLine.from_dict(line_data) for line_data in data.get("lines", [])

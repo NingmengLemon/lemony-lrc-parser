@@ -13,6 +13,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`
+  (有序、同名可重复的映射), 于是 `[ti: A]` 与 `[ti: B]` 这类重复 tag 不再被静默
+  丢掉 —— 改前只有最后一个能活下来, 而 LRC 里同名 key 重复出现是合法的 (真实
+  文件里少见但存在, 例如同一份文件既写 `[ti: 标题]` 又写 `[ti: 标题 (Live)]`).
+  容器形态取自 werkzeug `Headers` / `httpx.Headers` 那类"同名可重复"容器的
+  第三条路 (有序 + dict 式读取 + 全量枚举), 调研见 `docs/research.md`.
+
+  三套读法各有明确口径, 不靠参数开关切换:
+
+  - **有损的 dict 视角**: `meta["ti"]` / `meta.get()` / `dict(meta)` /
+    `to_dict()` / `keys()` / `len()` —— 同名 key 取**最后**一次出现的值, 与
+    0.4.x 的裸 `dict` 一致, 所以既有代码读到的值不变.
+  - **无损视角**: `items()` / `to_pairs()` / `getlist()` —— 按出现顺序给出全部
+    条目, 含重复. `dumps()` 走的就是这条, 于是重复 tag 也能往返.
+  - **写入**: `add()` 追加 (保真), `set()` / `meta[k] = v` 替换 (去重, 位置取
+    首次出现处).
+
+  兼容性: `== dict`、`dict(meta)`、`meta["ti"]`、`meta.get()`、`.update()`、
+  `meta["ti"] = v` 以及 `lyrics.metadata = {...}` 都继续可用 (赋 `dict` 会被
+  自动转成 `Metadata`, 类型不对则当场 `ProgrammingError`, 而不是等到 `dumps()`
+  才炸). 两处需要留意: `len(meta)` 与 `keys()` 按 `Mapping` 协议只算**不同**
+  key, 要数全部条目用 `len(meta.to_pairs())`; `items()` 有意覆盖成"全部条目"
+  语义 (先例同上), 需要 dict 语义时用 `dict(meta)`.
+
+  破坏性的一面: `Metadata` **不是** `dict` 子类, 因此 `isinstance(meta, dict)`
+  变成 `False`, `json.dumps(lyrics.metadata)` 会抛 `TypeError` —— 两者都是当场
+  报错而不是静默出错, 但确实要改: 用 `json.dumps(lyrics.metadata.to_dict())`,
+  或者直接 `json.dumps(lyrics.to_dict())` (后者本来就更完整).
+
+- `Metadata` / `MetadataKey` / `MetadataDict` / `COMMON_METADATA_KEYS` 迁到新的
+  `metadata.py`; 顶层 `lemony_lrc_parser` 与 `lemony_lrc_parser.models` 都照旧
+  导出, 既有 import 路径不受影响. 无损导出用 `lyrics.metadata.to_pairs()`
+  (`Lyrics.to_dict()` 保持"有损但方便"的定位不变).
+
 ### Removed
 
 - **破坏性**: 移除 `lemonyrics` console script, CLI 改为只用

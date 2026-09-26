@@ -15,6 +15,7 @@ from logging import getLogger
 
 from ._utils import match_to_ms
 from .exceptions import InvalidLyricsError, LyricsParserError
+from .metadata import Metadata
 from .models import BasicLyricLine, LyricLine, Lyrics, LyricToken, ParseOptions
 from .regex import (
     GENERIC_TIMETAG_REGEX,
@@ -233,7 +234,7 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
     # 文本). 若不去除, BOM 会使行首锚定正则失配, 导致首行被当作无锚点
     # 孤儿行而静默丢弃. BOM 本身不含换行, 去除不影响行号计数.
     lrc = lrc.removeprefix("\ufeff")
-    metadata: dict[str, str] = {}
+    metadata: Metadata = Metadata()
     line_pool: dict[int, LyricLine] = {}
     last_tag: int | None = None
     #: 最近一行**有正文**的歌词所占的时间点. 与 ``last_tag`` 不同, 它不被空行
@@ -260,7 +261,9 @@ def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:
         if (
             not line_tag_check.match(line_str) and not word_tag_check.match(line_str)
         ) and (meta := _extract_metadata(line_str)):
-            metadata.update(meta)
+            # extend 而不是 update: 同名 key 要全部留下 ([ti: A] 与 [ti: B] 是
+            # 合法的重复写法), 用 dict 语义会在这一步静默丢掉先出现的值.
+            metadata.extend(meta)
             logger.debug(f"Metadata line {line_no}: {line_str!r}")
             continue
 
@@ -523,7 +526,7 @@ def _apply_line_end_marker(
 
 
 def _finalize_lyrics(
-    metadata: dict[str, str],
+    metadata: Metadata,
     line_pool: dict[int, LyricLine],
     *,
     fill_implicit_line_end: bool,
@@ -596,7 +599,7 @@ def _split_leading_line_timetags(raw_line: str) -> tuple[list[int], str]:
     return times, raw_line
 
 
-def _extract_metadata(line: str) -> dict[str, str]:
+def _extract_metadata(line: str) -> list[tuple[str, str]]:
     """从一行字符串中提取 metadata 标签 ``[key: value]``.
 
     仅当**整行**都由 metatag (及其间空白) 构成时才视为 metadata 行并提取;
@@ -609,11 +612,16 @@ def _extract_metadata(line: str) -> dict[str, str]:
     ``Album [Deluxe]``: 这是 LRC 社区里真实存在的写法 (参见 rmpc#519), 而
     "取第一个 ``]`` 就收尾"的简单实现 (如 ffmpeg) 会把它截断成
     ``Album [Deluxe``.
+
+    Returns:
+        ``(key, value)`` 序列 (同一行里重复的 key 也原样保留), 不是 metadata
+        行时返回 ``[]``. 之所以不返回 ``dict``: 那会在这一层就把同行重复的
+        key 折叠掉, 后面的 :meth:`Metadata.extend` 也就无从保留.
     """
     tags = _parse_metatag_line(line)
     if tags is None:
-        return {}
-    return dict(tags)
+        return []
+    return tags
 
 
 def _parse_metatag_line(line: str) -> list[tuple[str, str]] | None:
