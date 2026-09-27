@@ -36,7 +36,7 @@
 | ID | 主题 | 类型 | 价值 | 备注 |
 | --- | --- | --- | --- | --- |
 | F-META-MULTI | metadata 改成有序 multimap | API | 中高 | ✅ 0.5.0 以 `Metadata` 落地（破坏性） |
-| F-DURATION | `LyricLine.duration` 属性 | API | 低中 | 简单但要定义 `end is None` 的语义 |
+| F-DURATION | `LyricLine.duration` 属性 | API | 低中 | ✅ 0.5.0 落地（`end is None` 的语义写进 docstring） |
 | F-CONTAINS | `Lyrics.__contains__` 增强 | API | — | ✅ 0.4.0 以 `contains_text()` / `find_text()` 落地（不扩大 `in`） |
 | F-COMBINE-ALL | 批量合并 | API | 低 | 语义清晰但链式合并已可覆盖 |
 | NEW-STATS | `Lyrics.stats` | 信息辅助 | 低中 | 可基于 `validate()` / 格式检测共同实现 |
@@ -244,17 +244,12 @@ Lyrics(lines=42, metadata={"ti": "...", "ar": "..."})
 
 注意：repr 应用于调试，不应追求可 `eval()`。
 
-### F-DURATION：`LyricLine.duration` 属性
+### ~~F-DURATION~~（已落地）
 
-建议实现：
-
-```python
-@property
-def duration(self) -> int | None:
-    return None if self.end is None else self.end - self.start
-```
-
-由于 `start` 已经不允许为 `None`，无需再检查。
+0.5.0 起 `LyricLine.duration` 是属性: `None if end is None else end - start`。
+`end is None` 的语义照 risks.md#3 的要求写进了 docstring —— LRC 的行尾时间本来
+就是可选的, 所以 `None` 是常态, 需要"持续到下一行开始"就用
+`ParseOptions(fill_implicit_line_end=True)`, 或交给字幕导出推断。
 
 ### ~~F-CONTAINS~~ (已落地)
 

@@ -101,6 +101,9 @@ first_three = lyrics[0:3]
 # 序列化
 lrc_output = lyrics.dumps()
 
+# 行时长 (毫秒); end 未知时为 None
+print(lyrics[0].duration)
+
 # __str__ 等价于 dumps()
 print(lyrics)
 ```

@@ -93,6 +93,26 @@ class TestLyricLineText:
         line = LyricLine(start=1000)
         assert line.text == ""
 
+    def test_duration_from_explicit_end(self) -> None:
+        assert LyricLine(start=1000, end=3000).duration == 2000
+
+    def test_duration_is_none_without_end(self) -> None:
+        """LRC 的行尾时间可选, 所以 None 是常态."""
+        assert LyricLine(start=1000).duration is None
+
+    def test_duration_of_parsed_line(self) -> None:
+        lyrics = Lyrics.loads("[00:01.000]a[00:03.000]\n[00:05.000]b\n")
+        assert [line.duration for line in lyrics] == [2000, None]
+
+    def test_duration_follows_offset(self) -> None:
+        """整体偏移把两端一起挪, 时长不变."""
+        lyrics = Lyrics.loads("[00:01.000]a[00:03.000]\n")
+        assert (lyrics >> 500)[0].duration == lyrics[0].duration == 2000
+
+    def test_duration_of_zero_length_line(self) -> None:
+        """手工构造的零长度区间给出 0 (解析器不会产出这种行)."""
+        assert LyricLine(start=1000, end=1000).duration == 0
+
     def test_contains_text_is_the_explicit_api(self) -> None:
         """文本查找走 contains_text(); `in` 的旧语义保留但会告警."""
         content = BasicLyricLine(

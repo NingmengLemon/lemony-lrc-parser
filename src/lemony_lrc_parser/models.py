@@ -329,6 +329,18 @@ class LyricLine:
     def text(self) -> str:
         return self.content.text
 
+    @property
+    def duration(self) -> int | None:
+        """本行时长 (毫秒); ``end`` 未知时为 ``None``.
+
+        Note:
+            LRC 的行尾时间是可选的, 所以 ``None`` 是常态而不是异常. 需要"持续到
+            下一行开始"的语义时用 :class:`ParseOptions` 的
+            ``fill_implicit_line_end``, 或导出字幕时交给
+            :class:`SubtitleOptions` 推断 (见 :mod:`.subtitle`).
+        """
+        return None if self.end is None else self.end - self.start
+
     def __len__(self) -> int:
         return len(self.content)
 

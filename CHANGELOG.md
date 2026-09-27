@@ -43,6 +43,11 @@
   `offset` 的问题 (它们不影响解析结果, 归 `validate()` 报告). 默认 `False` ——
   真实世界的 LRC 很野, 默认宽松才兼容, 与 `risks.md#1` 的结论一致.
 
+- `LyricLine.duration` 属性 (F-DURATION): 行时长, `None if end is None else
+  end - start`. LRC 的行尾时间本来就可选, 所以 `None` 是常态而非异常; 需要
+  "持续到下一行开始"的语义请用 `ParseOptions(fill_implicit_line_end=True)` 或
+  字幕导出 (见 `risks.md#3`).
+
 ### Changed
 
 - **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`

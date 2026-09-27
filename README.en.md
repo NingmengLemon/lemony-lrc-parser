@@ -104,6 +104,9 @@ first_three = lyrics[0:3]
 # Serialize
 lrc_output = lyrics.dumps()
 
+# line duration in ms; None when the end time is unknown
+print(lyrics[0].duration)
+
 # __str__ is equivalent to dumps()
 print(lyrics)
 ```
