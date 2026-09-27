@@ -720,6 +720,49 @@ class Lyrics(UserList[LyricLine]):
     def copy(self) -> Lyrics:
         return Lyrics(self, metadata=self.metadata)
 
+    def add_line(self, line: LyricLine, *, sort: bool = True) -> None:
+        """追加一行歌词, 默认顺手保持按 :attr:`~LyricLine.start` 有序.
+
+        :class:`Lyrics` 继承 ``UserList``, 直接 ``append`` / ``insert`` 不会排序也
+        不会校验 (见类文档), 这个方法给出"按时间顺序维护"的安全路径.
+
+        Args:
+            line: 要追加的行.
+            sort: 为 ``True`` (默认) 时追加完立刻 :meth:`sort_inplace`. 批量构建时
+                可以传 ``False`` 攒完再一次排序, 免得每加一行都排一遍.
+
+        Raises:
+            TypeError: ``line`` 不是 :class:`LyricLine`.
+
+        Note:
+            与 ``append`` 一样存**引用**而不是拷贝: 之后再改动 ``line`` 会直接影响
+            本对象. 要隔离请先 ``line.copy()``.
+        """
+        if not isinstance(line, LyricLine):
+            raise TypeError(f"add_line expects a LyricLine, got {type(line).__name__}")
+        self.data.append(line)
+        if sort:
+            self.sort_inplace()
+
+    def sort_inplace(self) -> None:
+        """按 :attr:`~LyricLine.start` **原地稳定**排序.
+
+        稳定性有意义: 同一时间戳的多行 (对唱、重复副歌) 保持原有相对顺序, 与解析器
+        折叠重复时间戳时的口径一致.
+
+        Note:
+            ``list.sort`` 要求元素可比较, 而 :class:`LyricLine` 是 dataclass 且没开
+            ``order``, 所以 ``lyrics.sort()`` 会抛 ``TypeError``; 按时间排序请用本
+            方法或 :meth:`sorted`.
+        """
+        self.data.sort(key=lambda line: line.start)
+
+    def sorted(self) -> Lyrics:
+        """返回按 :attr:`~LyricLine.start` 排好序的**副本**, 原对象不动."""
+        new = self.copy()
+        new.sort_inplace()
+        return new
+
     @classmethod
     def load(cls, fp: TextIO, *, options: ParseOptions | None = None) -> Lyrics:
         """从文件加载 LRC 内容.

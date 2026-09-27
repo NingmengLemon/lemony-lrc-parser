@@ -254,6 +254,25 @@ clone.metadata["ti"] = "New Title"
 print(lyrics.metadata.get("ti"))  # None
 ```
 
+### 安全变更
+
+`Lyrics` 继承 `UserList`, 直接 `append` / `insert` / 下标赋值不会排序, 也不会校验;
+而 `lyrics.sort()` 又用不了 (`LyricLine` 不可比较). 需要按时间顺序维护时用这三个:
+
+```python
+from lemony_lrc_parser import Lyrics, LyricLine
+
+lyrics = Lyrics()
+
+lyrics.add_line(line)  # 追加并保持按 start 有序 (与 append 一样存引用)
+lyrics.add_line(line, sort=False)  # 批量构建时先攒着, 最后统一排一次
+lyrics.sort_inplace()  # 原地按 start 稳定排序
+ordered = lyrics.sorted()  # 返回排好序的副本, 原对象不动
+```
+
+`sort_inplace()` 是**稳定**排序: 同一时间戳的多行 (对唱、重复副歌) 保持原有相对
+顺序.
+
 ### 选项
 
 #### 解析选项

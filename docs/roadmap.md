@@ -25,7 +25,7 @@
 | NEW-PRESERVE-STYLE | 写回时保留原文件风格 | 保真性 | 中高 | CRLF / 尾数位数 / 空行风格；100% 语料写回后与源文件不同 |
 | F-STRICT | 解析严格模式 | 可控性 | 中高 | ✅ 0.5.0 以 `ParseOptions(strict=True)` 落地 |
 | F-RANGE | 时间范围查询 | API | 中 | 对播放器、剪辑、字幕片段提取有用 |
-| F-MUTATE | 安全变更方法 | API | 中 | 降低用户直接操作 list 破坏排序的概率 |
+| F-MUTATE | 安全变更方法 | API | 中 | ✅ 0.5.0 以 `add_line` / `sorted` / `sort_inplace` 落地 |
 | NEW-SEARCH | 全文搜索 | API | 中 | `find_text()` 已覆盖子串；正则 / 跨行 / 结果定位待做 |
 | MF-FUZZY | 合并歌词时模糊匹配 | 实用增强 | 中 | 翻译歌词时间轴常有轻微偏差 |
 | F-REPR | 自定义紧凑 repr | DX | 中 | ✅ 0.5.0 落地（`LyricToken` / `LyricLine` / `Lyrics`） |
@@ -157,11 +157,9 @@ def lines_in_range(
 - `line.end is None` 时如何判断 overlap 需要定义，可用下一行开始时间推断，也可只按 `start` 处理。
 - 如果列表始终有序，未来可考虑二分优化；当前规模下直接遍历足够。
 
-### F-MUTATE：安全变更方法
+### ~~F-MUTATE~~（已落地）
 
-`Lyrics` 继承自 `UserList`，用户可以直接 `append` / `insert` / `__setitem__`，这会绕过排序与验证。
-
-建议新增轻量方法：
+0.5.0 起提供三个方法，签名与当初设想一致：
 
 ```python
 def add_line(self, line: LyricLine, *, sort: bool = True) -> None: ...
@@ -169,7 +167,16 @@ def sorted(self) -> Lyrics: ...
 def sort_inplace(self) -> None: ...
 ```
 
-不建议强行禁止 list 操作，否则会破坏 `UserList` 的直觉。文档中说明：需要保持时间顺序时优先使用安全方法。
+几点落地细节：
+
+- `sort_inplace()` 用 `key=lambda line: line.start`，因此是**稳定**排序：同一时间戳
+  的多行（对唱、重复副歌）保持原有相对顺序，与解析器折叠重复时间戳的口径一致。
+- `sort` 默认 `True`，但 docstring 里点明批量构建时可以传 `False` 再统一排一次，
+  免得每加一行都排一遍。
+- `add_line` 与 `append` 一样**存引用**（类文档里就是这么写的），并顺手做了类型
+  校验（非 `LyricLine` 抛 `TypeError`）；内容层面的校验仍旧归 `validate()`。
+- 按当初的判断没有禁止 list 操作；README 里说明了 `lyrics.sort()` 用不了的原因
+  （`LyricLine` 没开 dataclass 的 `order`），需要排序时走这三个方法。
 
 ### MF-FUZZY：合并歌词时模糊匹配
 

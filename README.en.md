@@ -261,6 +261,26 @@ clone.metadata["ti"] = "New Title"
 print(lyrics.metadata.get("ti"))  # None
 ```
 
+### Safe Mutation
+
+`Lyrics` subclasses `UserList`, so a plain `append` / `insert` / item assignment
+neither sorts nor validates, and `lyrics.sort()` does not work (`LyricLine` is not
+orderable). Use these three when the time order matters:
+
+```python
+from lemony_lrc_parser import Lyrics, LyricLine
+
+lyrics = Lyrics()
+
+lyrics.add_line(line)  # append, keeping the list ordered by start (stores a reference)
+lyrics.add_line(line, sort=False)  # bulk building: accumulate, sort once at the end
+lyrics.sort_inplace()  # stable in-place sort by start
+ordered = lyrics.sorted()  # a sorted copy, the original is untouched
+```
+
+`sort_inplace()` is a **stable** sort: lines sharing a timestamp (duets, repeated
+choruses) keep their relative order.
+
 ### Options
 
 #### Parsing Options

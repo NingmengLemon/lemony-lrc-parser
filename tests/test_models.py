@@ -240,6 +240,107 @@ class TestLyricsAdd:
         assert [line.start for line in main] == [1000, 9000]
 
 
+class TestSafeMutation:
+    """``add_line`` / ``sort_inplace`` / ``sorted``: 保持时间顺序的安全路径.
+
+    ``Lyrics`` 是 ``UserList``, 直接 ``append`` 不会排序; 而 ``lyrics.sort()`` 又因为
+    ``LyricLine`` 不可比较而抛 TypeError —— 这组方法填的就是这个空.
+    """
+
+    def test_add_line_keeps_order(self) -> None:
+        lyrics = Lyrics(metadata={"ti": "T"})
+        for start in (5000, 1000, 3000):
+            lyrics.add_line(_line(start, str(start)))
+
+        assert [line.start for line in lyrics] == [1000, 3000, 5000]
+        assert lyrics.metadata["ti"] == "T"
+
+    def test_add_line_without_sort_appends(self) -> None:
+        lyrics = Lyrics()
+        lyrics.add_line(_line(5000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+
+        assert [line.start for line in lyrics] == [5000, 1000]
+
+    def test_add_line_stores_a_reference(self) -> None:
+        """与 ``append`` 一致存引用, 不是拷贝 (类文档里写明的语义)."""
+        line = _line(1000, "a")
+        lyrics = Lyrics()
+        lyrics.add_line(line)
+
+        line.start = 2000
+
+        assert lyrics[0].start == 2000
+
+    @pytest.mark.parametrize("bad", ["text", 42, None, ["not a line"]])
+    def test_add_line_rejects_non_lines(self, bad: object) -> None:
+        with pytest.raises(TypeError, match="expects a LyricLine"):
+            Lyrics().add_line(bad)  # ty: ignore[invalid-argument-type]
+
+    def test_plain_list_sort_raises(self) -> None:
+        """文档里承诺的那个坑: ``UserList.sort`` 对 LyricLine 不可用."""
+        lyrics = Lyrics()
+        lyrics.add_line(_line(2000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+
+        with pytest.raises(TypeError):
+            lyrics.sort()  # ty: ignore[invalid-argument-type]
+
+    def test_sort_inplace_is_stable(self) -> None:
+        """同一时间戳的多行保持原有相对顺序 (对唱 / 重复副歌)."""
+        lyrics = Lyrics()
+        lyrics.add_line(_line(1000, "first"), sort=False)
+        lyrics.add_line(_line(1000, "second"), sort=False)
+        lyrics.add_line(_line(500, "earlier"), sort=False)
+
+        lyrics.sort_inplace()
+
+        assert [line.text for line in lyrics] == ["earlier", "first", "second"]
+
+    def test_sort_inplace_keeps_the_same_objects(self) -> None:
+        """原地排序不换对象, 只是换位置."""
+        first, second = _line(2000, "b"), _line(1000, "a")
+        lyrics = Lyrics()
+        lyrics.add_line(first, sort=False)
+        lyrics.add_line(second, sort=False)
+
+        lyrics.sort_inplace()
+
+        assert lyrics[0] is second
+        assert lyrics[1] is first
+
+    def test_sort_inplace_fixes_unsorted(self) -> None:
+        lyrics = Lyrics()
+        lyrics.add_line(_line(2000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+        assert [issue.code for issue in lyrics.validate()] == ["unsorted"]
+
+        lyrics.sort_inplace()
+
+        assert [issue.code for issue in lyrics.validate()] == []
+
+    def test_sorted_returns_an_independent_copy(self) -> None:
+        lyrics = Lyrics(metadata={"ti": "T"})
+        lyrics.add_line(_line(2000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+
+        ordered = lyrics.sorted()
+
+        assert ordered is not lyrics
+        assert [line.start for line in ordered] == [1000, 2000]
+        assert [line.start for line in lyrics] == [2000, 1000]  # 原对象没动
+        assert ordered.metadata["ti"] == "T"
+        # 副本里的行也是拷贝 (与 copy() 一致)
+        assert ordered[0] is not lyrics[1]
+
+    def test_sorted_of_sorted_is_equal(self) -> None:
+        lyrics = Lyrics()
+        lyrics.add_line(_line(1000, "a"))
+        lyrics.add_line(_line(2000, "b"))
+
+        assert lyrics.sorted() == lyrics
+
+
 class TestLyricsStr:
     """测试 Lyrics 的 __str__ 方法."""
 

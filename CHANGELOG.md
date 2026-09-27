@@ -60,6 +60,12 @@
 
   与 "`str()` 等价于 `dumps()`" 的分工不变: repr 只服务调试, 不追求可 `eval()`.
 
+- 安全变更方法 (F-MUTATE): `Lyrics.add_line(line, *, sort=True)` 追加并保持按
+  `start` 有序, `sort_inplace()` 原地**稳定**排序 (同一时间戳的多行保持相对顺序),
+  `sorted()` 返回排好序的副本. 填的是这个空: `Lyrics` 是 `UserList`, 直接 `append`
+  不排序; 而 `lyrics.sort()` 因为 `LyricLine` 不可比较而抛 `TypeError`.
+  `add_line` 与 `append` 一样存引用, 并顺手校验类型.
+
 ### Changed
 
 - **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`
