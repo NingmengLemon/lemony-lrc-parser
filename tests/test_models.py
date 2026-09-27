@@ -254,6 +254,68 @@ class TestLyricsStr:
         assert "Hello" in str_result
 
 
+class TestCompactRepr:
+    """``repr`` 是给调试看的紧凑形式, 与 ``str`` (= dumps) 分工明确."""
+
+    def test_token_repr(self) -> None:
+        assert repr(LyricToken("hello", start=1000, end=1500)) == (
+            "LyricToken('hello', start=1000, end=1500)"
+        )
+
+    def test_token_repr_with_unknown_times(self) -> None:
+        assert repr(LyricToken("hello")) == "LyricToken('hello', start=None, end=None)"
+
+    def test_line_repr_hides_tokens(self) -> None:
+        """逐字行的词元不铺开 —— 这正是这个 repr 存在的理由."""
+        line = Lyrics.loads("[00:00.000]<00:00.249>风<00:00.467>透[00:02.740]\n")[0]
+        assert len(line.content) == 2
+
+        text = repr(line)
+
+        assert text == "LyricLine(start=0, end=2740, text='风透')"
+        assert "LyricToken" not in text
+
+    def test_line_repr_mentions_reference_lines_only_when_present(self) -> None:
+        plain = Lyrics.loads("[00:01.000]a\n")[0]
+        assert repr(plain) == "LyricLine(start=1000, end=None, text='a')"
+
+        with_ref = Lyrics.loads("[00:01.000]a\n翻译\n[00:02.000]b\n")[0]
+        assert repr(with_ref) == "LyricLine(start=1000, end=None, text='a', refs=1)"
+
+    def test_lyrics_repr_hides_lines(self) -> None:
+        lyrics = Lyrics.loads("[ti: A]\n[00:01.000]a\n[00:02.000]b\n")
+
+        text = repr(lyrics)
+
+        assert text == "Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))"
+        assert "LyricLine" not in text
+        assert "\n" not in text
+
+    def test_lyrics_repr_keeps_duplicate_metadata(self) -> None:
+        """metadata 用 Metadata 自己的 repr, 重复项不会被折叠掉."""
+        lyrics = Lyrics.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+        assert repr(lyrics) == (
+            "Lyrics(lines=1, metadata=Metadata([('ti', 'A'), ('ti', 'B')]))"
+        )
+
+    def test_empty_lyrics_repr(self) -> None:
+        assert repr(Lyrics()) == "Lyrics(lines=0, metadata=Metadata({}))"
+
+    def test_str_still_dumps(self) -> None:
+        """紧凑的是 repr; str() 仍然等价于 dumps()."""
+        lyrics = Lyrics.loads("[ti: A]\n[00:01.000]a\n")
+        assert str(lyrics) == lyrics.dumps()
+        assert repr(lyrics) != str(lyrics)
+
+    def test_repr_of_a_real_document_stays_short(self) -> None:
+        """逐字 + 翻译的文档, repr 不该把终端刷满."""
+        lyrics = Lyrics.loads(
+            "[00:01.000]<00:01.100>a<00:01.200>b<00:01.300>c[00:02.000]\n翻译一\n翻译二\n"
+        )
+        assert len(repr(lyrics)) < 80
+        assert len(repr(lyrics[0])) < 80
+
+
 class TestLyricLineStartValidation:
     """测试 LyricLine.start 的运行时校验."""
 

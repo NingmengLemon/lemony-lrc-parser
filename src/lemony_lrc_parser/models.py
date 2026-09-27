@@ -228,6 +228,15 @@ class LyricToken:
     def copy(self) -> LyricToken:
         return LyricToken(content=self.content, start=self.start, end=self.end)
 
+    def __repr__(self) -> str:
+        """紧凑 repr: 正文按位置给, 省掉逐字行里重复出现的 ``content=``.
+
+        Note:
+            这是给调试看的, 不追求可 ``eval()`` (与 :class:`LyricLine` /
+            :class:`Lyrics` 的口径一致).
+        """
+        return f"LyricToken({self.content!r}, start={self.start!r}, end={self.end!r})"
+
     def to_dict(self) -> LyricTokenDict:
         return LyricTokenDict(content=self.content, start=self.start, end=self.end)
 
@@ -343,6 +352,19 @@ class LyricLine:
 
     def __len__(self) -> int:
         return len(self.content)
+
+    def __repr__(self) -> str:
+        """紧凑 repr: 正文 + 时间范围, 不铺开逐字词元与参考行.
+
+        Note:
+            调试用, 不追求可 ``eval()``. 要逐字词元请看 ``line.content``, 要参考行
+            请看 ``line.reference_lines`` —— 铺开它们会让逐字行与带翻译的行变得极长
+            (这是这个 repr 存在的理由).
+        """
+        refs = f", refs={len(self.reference_lines)}" if self.reference_lines else ""
+        return (
+            f"LyricLine(start={self.start}, end={self.end}, text={self.text!r}{refs})"
+        )
 
     def __iter__(self) -> Iterator[LyricToken]:
         return iter(self.content)
@@ -840,6 +862,16 @@ class Lyrics(UserList[LyricLine]):
 
     def __str__(self) -> str:
         return self.dumps()
+
+    def __repr__(self) -> str:
+        """紧凑 repr: 行数 + metadata, 不铺开全部行.
+
+        Note:
+            调试用, 不追求可 ``eval()``. 铺开行会让一份几百行的歌词把终端刷满, 所以
+            这里只给规模与 metadata (后者用 :class:`~.metadata.Metadata` 自己的
+            repr, 同名重复项不会被折叠掉).
+        """
+        return f"Lyrics(lines={len(self)}, metadata={self.metadata!r})"
 
     def validate(
         self,

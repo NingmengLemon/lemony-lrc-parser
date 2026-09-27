@@ -113,6 +113,9 @@ print(lyrics)
 只比行 (列表没有 metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部
 条目, 因此同名 key 的重复项与标签顺序都算数.
 
+`repr()` 是给调试看的紧凑形式 (`Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))`,
+不铺开行与词元), `str()` 仍等价于 `dumps()`.
+
 ### 逐字歌词
 
 解析逐字 (Enhanced LRC / SPL) 歌词:

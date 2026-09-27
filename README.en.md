@@ -118,6 +118,10 @@ against a plain list only the lines count (a list has no metadata). Metadata
 equality follows `Metadata`: every entry counts, so duplicated keys and tag
 order both matter.
 
+`repr()` is the compact form meant for debugging
+(`Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))`, no lines or tokens expanded);
+`str()` is still equivalent to `dumps()`.
+
 ### Word-level Lyrics
 
 Parsing word-level (Enhanced LRC / SPL) lyrics:

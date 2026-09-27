@@ -48,6 +48,18 @@
   "持续到下一行开始"的语义请用 `ParseOptions(fill_implicit_line_end=True)` 或
   字幕导出 (见 `risks.md#3`).
 
+- 紧凑调试 repr (F-REPR): `LyricToken` / `LyricLine` / `Lyrics` 的 repr 收成一行,
+  不再铺开逐字词元、参考行与整份行列表 —— 逐字行与带翻译的行此前一条 repr 就能刷满
+  终端.
+
+  ```text
+  LyricToken('hello', start=1000, end=1500)
+  LyricLine(start=1000, end=3000, text='hello', refs=1)     # refs 只在有参考行时出现
+  Lyrics(lines=42, metadata=Metadata({'ti': 'A'}))          # 重复项不被折叠
+  ```
+
+  与 "`str()` 等价于 `dumps()`" 的分工不变: repr 只服务调试, 不追求可 `eval()`.
+
 ### Changed
 
 - **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`

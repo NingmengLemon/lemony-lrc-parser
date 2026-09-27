@@ -28,7 +28,7 @@
 | F-MUTATE | 安全变更方法 | API | 中 | 降低用户直接操作 list 破坏排序的概率 |
 | NEW-SEARCH | 全文搜索 | API | 中 | `find_text()` 已覆盖子串；正则 / 跨行 / 结果定位待做 |
 | MF-FUZZY | 合并歌词时模糊匹配 | 实用增强 | 中 | 翻译歌词时间轴常有轻微偏差 |
-| F-REPR | 自定义紧凑 repr | DX | 中 | 调试体验改善明显 |
+| F-REPR | 自定义紧凑 repr | DX | 中 | ✅ 0.5.0 落地（`LyricToken` / `LyricLine` / `Lyrics`） |
 | NEW-PARSE-REPORT | 解析报告对象 | 可诊断性 | 中 | ✅ 0.5.0 以 `parse_with_report()` / `report.py` 落地 |
 
 ### P2 / 低优先级：有需求再做
@@ -232,17 +232,25 @@ def search(
 [design.md 的待决策第 3 条](design.md#3-metadata-的容器形态已按有序-multimap-落地)，
 用例在 `tests/test_metadata.py`，语料闸门在 `tests/test_roundtrip_matrix.py`。
 
-### F-REPR：自定义紧凑 repr
+### ~~F-REPR~~（已落地）
 
-当前默认 repr 对嵌套歌词较冗长。建议：
+0.5.0 起三个模型的 repr 都收成一行，形状与当初设想基本一致：
 
-```python
-LyricToken("hello", start=1000, end=1500)
-LyricLine(start=1000, end=3000, text="hello...", refs=1)
-Lyrics(lines=42, metadata={"ti": "...", "ar": "..."})
+```text
+LyricToken('hello', start=1000, end=1500)
+LyricLine(start=1000, end=3000, text='hello', refs=1)
+Lyrics(lines=42, metadata=Metadata({'ti': 'A'}))
 ```
 
-注意：repr 应用于调试，不应追求可 `eval()`。
+三点与设想的出入：
+
+- `LyricToken` 的正文按位置给（省掉逐字行里重复出现的 `content=`），时间仍带字段名。
+- `refs=` 只在真有参考行时出现，免得普通行后面挂一个 `refs=0`。
+- `Lyrics` 的 metadata 直接用 `Metadata` 自己的 repr，于是同名重复项不会被折叠掉
+  （写成裸 dict 会看不出来）。
+
+照当初的提醒，这些 repr 只服务调试，不追求可 `eval()`；`str()` 仍然等价于
+`dumps()`，两者分工在 README 的「面向对象接口」里写明。
 
 ### ~~F-DURATION~~（已落地）
 
