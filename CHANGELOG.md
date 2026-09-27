@@ -66,6 +66,15 @@
   不排序; 而 `lyrics.sort()` 因为 `LyricLine` 不可比较而抛 `TypeError`.
   `add_line` 与 `append` 一样存引用, 并顺手校验类型.
 
+- 逐行正则搜索 (NEW-SEARCH): `Lyrics.find_regex(pattern, *,
+  include_reference_lines=True)` 与 `contains_regex(...)`, `str` 会被 `re.compile`
+  (与 `ParseOptions.line_filter` 同一取向), 默认也搜参考行. 忽略大小写交给
+  `re.compile(..., re.IGNORECASE)`.
+
+  Note: 没有再加 `search(text, *, case_sensitive=...)` —— `find_text()` 已经覆盖
+  子串查找, 再包一层只是近乎重复的入口. 匹配是**逐行**的, `pattern` 里的 `\n`
+  永远匹配不到 (跨行搜索与结果定位仍未做, 见 `roadmap.md`).
+
 ### Changed
 
 - **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`

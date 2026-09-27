@@ -22,7 +22,7 @@
 - 深拷贝方法 (`.copy()`)
 - 可配置解析与序列化选项
 - 数据一致性验证 API (`validate_lyrics` / `Lyrics.validate()`)
-- 文本查找 (`contains_text()` / `find_text()`)
+- 文本查找 (`contains_text()` / `find_text()` / `find_regex()`)
 - 往返保真度不变量测试 (`解析结果必过校验` / `dumps 一轮收敛` / `行结构稳定`)
 - CLI 命令行工具 (`python -m lemony_lrc_parser`)
 - 解析错误附带行号与原始行 (`InvalidLyricsError.line_no` / `.raw_line`)
@@ -146,7 +146,7 @@ for word in line.content:
 # (行尾的 [00:02.740] 会被当作该行的结束时间, 并反写到最后一个词元的 end)
 ```
 
-### 内容搜索 (contains_text / find_text)
+### 内容搜索 (contains_text / find_text / find_regex)
 
 按文本查找请使用显式方法: `in` 在四个模型上的历史语义各不相同
 (`LyricToken` / `BasicLyricLine` 是子串, `LyricLine` 是词元相等, `Lyrics` 是行相等),
@@ -164,7 +164,19 @@ line.contains_text("雨")  # 只搜主行
 line.contains_text("积雨云", include_reference_lines=True)  # 连参考行一起搜
 ```
 
-子串判定区分大小写; 需要忽略大小写时请自行 `casefold()` 后再比较.
+子串判定区分大小写. 需要正则或忽略大小写时用 `find_regex` / `contains_regex`
+(默认也搜参考行):
+
+```python
+import re
+
+lyrics.find_regex(re.compile("love", re.IGNORECASE))  # 忽略大小写
+lyrics.find_regex(r"^\[.+\]$")  # 正则; str 会被 re.compile
+lyrics.contains_regex("love")  # 布尔版
+```
+
+正则匹配是**逐行**做的: pattern 里的 `\n` 永远匹配不到 (LRC 的换行是行边界). 返回的是
+行对象本身, 需要行号时自己 `enumerate(lyrics)`.
 
 ### 参考行 (Translation / Transliteration)
 

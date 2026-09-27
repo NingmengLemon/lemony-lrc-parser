@@ -549,6 +549,59 @@ class Lyrics(UserList[LyricLine]):
             if line.contains_text(needle, include_reference_lines=True)
         ]
 
+    def find_regex(
+        self,
+        pattern: str | re.Pattern[str],
+        *,
+        include_reference_lines: bool = True,
+    ) -> list[LyricLine]:
+        """返回所有"主行或参考行匹配 ``pattern``"的行.
+
+        需要正则、忽略大小写、或两者都要时用这个; 纯子串查找用
+        :meth:`find_text` 更直白.
+
+        Args:
+            pattern: 正则表达式. ``str`` 会被 :func:`re.compile` 编译 (与
+                :attr:`ParseOptions.line_filter` 同一取向: 统一按正则理解),
+                已编译的 ``re.Pattern`` 原样使用. 想要字面子串请用
+                :func:`re.escape` 包一层.
+            include_reference_lines: 是否连参考行 (翻译/音译) 一起搜. 默认
+                ``True``, 与 :meth:`find_text` 的口径一致.
+
+        Returns:
+            命中的行 (行对象本身, 不是文本), 按现有顺序; 未命中时为 ``[]``.
+
+        Note:
+            匹配是**逐行**做的, 不会跨行: ``pattern`` 里的 ``\\n`` 永远匹配不到
+            (LRC 的换行是行边界, 不是行内字符). 需要行号时用
+            ``enumerate(lyrics)`` 配合, 返回的列表不额外带位置信息.
+
+        Note:
+            忽略大小写不是单独的参数, 传 ``re.compile(..., re.IGNORECASE)`` 即可 ——
+            这样也避免了"同一个方法参数越加越多".
+        """
+        compiled = re.compile(pattern)
+        return [
+            line
+            for line in self
+            if compiled.search(line.text)
+            or (
+                include_reference_lines
+                and any(compiled.search(ref.text) for ref in line.reference_lines)
+            )
+        ]
+
+    def contains_regex(
+        self,
+        pattern: str | re.Pattern[str],
+        *,
+        include_reference_lines: bool = True,
+    ) -> bool:
+        """是否有任意一行匹配 ``pattern``; 参数语义见 :meth:`find_regex`."""
+        return bool(
+            self.find_regex(pattern, include_reference_lines=include_reference_lines)
+        )
+
     def __contains__(self, item: object) -> bool:
         """成员判定: 按**行相等**判定 (与 ``UserList`` 的历史行为一致).
 

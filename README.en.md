@@ -22,7 +22,7 @@ Lemon-flavored LRC Parser for Python.
 - Deep-copy method (`.copy()`)
 - Configurable parse and serialization options
 - Data consistency validation API (`validate_lyrics` / `Lyrics.validate()`)
-- Text lookup (`contains_text()` / `find_text()`)
+- Text lookup (`contains_text()` / `find_text()` / `find_regex()`)
 - Round-trip fidelity invariant tests (`parser output always validates` /
   `dumps converges in one round` / `line structure is stable`)
 - CLI tool (`python -m lemony_lrc_parser`)
@@ -148,7 +148,7 @@ for word in line.content:
 #  onto the last token's end)
 ```
 
-### Search (contains_text / find_text)
+### Search (contains_text / find_text / find_regex)
 
 Use the explicit methods for text lookup. `in` has different historical
 semantics across the four models (`LyricToken` / `BasicLyricLine` are substring,
@@ -167,8 +167,20 @@ line.contains_text("love")  # search the main line only
 line.contains_text("爱", include_reference_lines=True)  # search reference lines too
 ```
 
-Substring matching is case-sensitive; `casefold()` your inputs first if you need
-case-insensitive comparison.
+Substring matching is case-sensitive. For regex or case-insensitive search use
+`find_regex` / `contains_regex` (they search reference lines by default too):
+
+```python
+import re
+
+lyrics.find_regex(re.compile("love", re.IGNORECASE))  # case-insensitive
+lyrics.find_regex(r"^\[.+\]$")  # regex; a str is re.compile'd for you
+lyrics.contains_regex("love")  # boolean form
+```
+
+Regex matching is **line-scoped**: a `\n` in the pattern can never match (in LRC
+a newline is a line boundary). The lines themselves are returned; use
+`enumerate(lyrics)` when you need the index.
 
 ### Reference Lines (Translation / Transliteration)
 

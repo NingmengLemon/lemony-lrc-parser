@@ -26,7 +26,7 @@
 | F-STRICT | 解析严格模式 | 可控性 | 中高 | ✅ 0.5.0 以 `ParseOptions(strict=True)` 落地 |
 | F-RANGE | 时间范围查询 | API | 中 | 对播放器、剪辑、字幕片段提取有用 |
 | F-MUTATE | 安全变更方法 | API | 中 | ✅ 0.5.0 以 `add_line` / `sorted` / `sort_inplace` 落地 |
-| NEW-SEARCH | 全文搜索 | API | 中 | `find_text()` 已覆盖子串；正则 / 跨行 / 结果定位待做 |
+| NEW-SEARCH | 全文搜索 | API | 中 | ✅ 0.5.0 以 `find_regex` / `contains_regex` 落地；跨行 / 结果定位待做 |
 | MF-FUZZY | 合并歌词时模糊匹配 | 实用增强 | 中 | 翻译歌词时间轴常有轻微偏差 |
 | F-REPR | 自定义紧凑 repr | DX | 中 | ✅ 0.5.0 落地（`LyricToken` / `LyricLine` / `Lyrics`） |
 | NEW-PARSE-REPORT | 解析报告对象 | 可诊断性 | 中 | ✅ 0.5.0 以 `parse_with_report()` / `report.py` 落地 |
@@ -207,21 +207,23 @@ def combine(
 
 建议先做独立方法或选项，不改变现有 `+` 运算符默认行为。
 
-### NEW-SEARCH：全文搜索
+### NEW-SEARCH：全文搜索（正则已落地，跨行 / 结果定位待做）
 
-建议新增：
+0.5.0 落地的是**正则**那一半：`Lyrics.find_regex(pattern, *,
+include_reference_lines=True)` 与 `contains_regex(...)`，`str` 会被 `re.compile`
+（与 `ParseOptions.line_filter` 同一取向）。
 
-```python
-def search(
-    self,
-    text: str,
-    *,
-    include_reference_lines: bool = True,
-    case_sensitive: bool = True,
-) -> list[LyricLine]: ...
-```
+与最初设想不同的一点：没有再加一个 `search(text, *, case_sensitive=...)` 方法。
+当初那条备注自己就写了"`find_text()` 已覆盖子串"，再包一层只会多一个近乎重复的
+入口；忽略大小写也交给 `re.compile(..., re.IGNORECASE)`，于是"不要让一个方法参数
+过多"这条也顺带满足了。
 
-实现简单，用户价值明确。若后续支持正则，可再加 `search_regex()`，不要让一个方法参数过多。
+仍未做的两件（有需求再说）：
+
+- **跨行搜索**：现在按行匹配，`pattern` 里的 `\n` 永远匹配不到 —— LRC 的换行是行
+  边界而不是行内字符，跨行得先定义"跨几行、命中算哪一行"。
+- **结果定位**：返回的是行对象（与 `find_text` 一致），需要行号请自行
+  `enumerate(lyrics)`。要内建位置信息就与 `MY-SOURCE-MAP` 撞在同一块地基上，等它。
 
 ### ~~F-DICT-JSON~~（不计划）
 

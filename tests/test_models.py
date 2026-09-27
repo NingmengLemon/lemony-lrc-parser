@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 
 import pytest
@@ -581,6 +582,77 @@ class TestTextSearch:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             assert 1 not in token
+
+
+class TestRegexSearch:
+    """``find_regex`` / ``contains_regex``: 逐行正则查找."""
+
+    def _lyrics(self) -> Lyrics:
+        return Lyrics.loads(
+            "[00:01.000]Hello World\n[00:02.000]你好\n翻译 Love\n[00:03.000]no match\n"
+        )
+
+    def test_string_pattern_is_compiled(self) -> None:
+        assert [line.text for line in self._lyrics().find_regex("o W")] == [
+            "Hello World"
+        ]
+
+    def test_compiled_pattern(self) -> None:
+        lyrics = self._lyrics()
+        assert [line.text for line in lyrics.find_regex(re.compile(r"^Hello"))] == [
+            "Hello World"
+        ]
+
+    def test_reference_lines_included_by_default(self) -> None:
+        assert [line.text for line in self._lyrics().find_regex("Love")] == ["你好"]
+
+    def test_reference_lines_can_be_excluded(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("Love", include_reference_lines=False) == []
+
+    def test_case_insensitive_via_flags(self) -> None:
+        """忽略大小写不是单独的参数, 传 flags 即可 (免得参数越加越多)."""
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("hello") == []
+        assert [line.text for line in lyrics.find_regex(re.compile("hello", re.I))] == [
+            "Hello World"
+        ]
+
+    def test_escape_makes_it_literal(self) -> None:
+        lyrics = self._lyrics()
+        assert [line.text for line in lyrics.find_regex(re.escape("o W"))] == [
+            "Hello World"
+        ]
+        # 未转义时 '.' 是元字符, 匹配不到字面量
+        assert lyrics.find_regex(re.escape("o.W")) == []
+
+    def test_metacharacters_work(self) -> None:
+        assert [line.text for line in self._lyrics().find_regex(r"你.")] == ["你好"]
+
+    def test_no_match(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("zzz") == []
+        assert not lyrics.contains_regex("zzz")
+
+    def test_matching_is_line_scoped(self) -> None:
+        """逐行匹配, 不跨行: pattern 里的 \\n 永远匹配不到."""
+        lyrics = Lyrics.loads("[00:01.000]ab\n[00:02.000]cd\n")
+        assert lyrics.find_regex("b") != []
+        assert lyrics.find_regex(r"b\n") == []
+        assert lyrics.find_regex(r"ab[\s\S]*cd") == []
+
+    def test_returns_the_line_objects_themselves(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("Hello")[0] is lyrics[0]
+
+    def test_contains_regex_mirrors_find_regex(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.contains_regex("World")
+        assert lyrics.contains_regex("Love")  # 参考行
+        assert not lyrics.contains_regex("Love", include_reference_lines=False)
+
+    def test_empty_lyrics(self) -> None:
+        assert Lyrics().find_regex("anything") == []
 
 
 class TestMetadataTypingHints:
