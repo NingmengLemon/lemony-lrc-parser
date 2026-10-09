@@ -7,11 +7,23 @@
 > 历史版本条目按 `Added` / `Changed` / `Fixed` / `Removed` / `Docs` / `Tooling`
 > 分类. 版本号与 git tag 一一对应 (`v0.4.0`), 由 CI 在版本号滚动时自动打 tag 并
 > 创建 GitHub Release (预发布版本 `-aN` / `-bN` / `-rcN` 会标记为 prerelease).
-> 功能规划见 [`docs/roadmap.md`](docs/roadmap.md), 设计与取舍见
-> [`docs/design.md`](docs/design.md), 调研与语料数据见
-> [`docs/research.md`](docs/research.md).
+> 功能规划见 [`docs/roadmap.md`](docs/roadmap.md), 其余开发文档的索引见
+> [`docs/README.md`](docs/README.md).
 
 ## [Unreleased]
+
+## [0.5.0b1] — 2026-10-09
+
+0.5.0 的第一个预发布. 有三处破坏性改动, 升级前请看下面的「从 0.4.x 迁移」.
+
+### 从 0.4.x 迁移
+
+- `lyrics.metadata` 不再是 `dict`: `isinstance(meta, dict)` 为 `False`,
+  `json.dumps(lyrics.metadata)` 会抛 `TypeError`, 改用
+  `json.dumps(lyrics.metadata.to_dict())` 或 `json.dumps(lyrics.to_dict())`.
+  `meta["ti"]` / `.get()` / `dict(meta)` / `== dict` / 赋值 `dict` 照旧可用.
+- `Lyrics == Lyrics` 现在也比较 metadata, 只有 metadata 不同的两份歌词不再相等.
+- `lemonyrics` 命令没有了, 改用 `python -m lemony_lrc_parser`.
 
 ### Added
 
@@ -31,7 +43,7 @@
   内部的"逐字标记被忽略"事件 (回调收 `(code, message)`, 行号由调用方自己补).
   不传时行为与之前完全一致 (仍然只打日志), 因此这是纯增量.
 
-- `ParseOptions(strict=True)`: 严格模式 (F-STRICT). 解析器不再"丢掉 / 忽略掉"文件里
+- `ParseOptions(strict=True)`: 严格模式. 解析器不再"丢掉 / 忽略掉"文件里
   的任何声明, 而是当场抛 `InvalidLyricsError` (带 `line_no` / `raw_line`), 便于
   "宁可失败也不要悄悄改数据"的场景. 触发集合是 `report.py` 的
   `STRICT_ERROR_CODES`, 即 `orphaned-line` / `byword-before-line-start` /
@@ -41,14 +53,14 @@
 
   两类刻意不触发: `line-filtered` (那是调用方自己要求丢的), 以及 metadata key 与
   `offset` 的问题 (它们不影响解析结果, 归 `validate()` 报告). 默认 `False` ——
-  真实世界的 LRC 很野, 默认宽松才兼容, 与 `risks.md#1` 的结论一致.
+  真实世界的 LRC 很野, 默认宽松才兼容.
 
-- `LyricLine.duration` 属性 (F-DURATION): 行时长, `None if end is None else
+- `LyricLine.duration` 属性: 行时长, `None if end is None else
   end - start`. LRC 的行尾时间本来就可选, 所以 `None` 是常态而非异常; 需要
   "持续到下一行开始"的语义请用 `ParseOptions(fill_implicit_line_end=True)` 或
-  字幕导出 (见 `risks.md#3`).
+  字幕导出.
 
-- 紧凑调试 repr (F-REPR): `LyricToken` / `LyricLine` / `Lyrics` 的 repr 收成一行,
+- 紧凑调试 repr: `LyricToken` / `LyricLine` / `Lyrics` 的 repr 收成一行,
   不再铺开逐字词元、参考行与整份行列表 —— 逐字行与带翻译的行此前一条 repr 就能刷满
   终端.
 
@@ -60,20 +72,20 @@
 
   与 "`str()` 等价于 `dumps()`" 的分工不变: repr 只服务调试, 不追求可 `eval()`.
 
-- 安全变更方法 (F-MUTATE): `Lyrics.add_line(line, *, sort=True)` 追加并保持按
+- 安全变更方法: `Lyrics.add_line(line, *, sort=True)` 追加并保持按
   `start` 有序, `sort_inplace()` 原地**稳定**排序 (同一时间戳的多行保持相对顺序),
   `sorted()` 返回排好序的副本. 填的是这个空: `Lyrics` 是 `UserList`, 直接 `append`
   不排序; 而 `lyrics.sort()` 因为 `LyricLine` 不可比较而抛 `TypeError`.
   `add_line` 与 `append` 一样存引用, 并顺手校验类型.
 
-- 逐行正则搜索 (NEW-SEARCH): `Lyrics.find_regex(pattern, *,
+- 逐行正则搜索: `Lyrics.find_regex(pattern, *,
   include_reference_lines=True)` 与 `contains_regex(...)`, `str` 会被 `re.compile`
   (与 `ParseOptions.line_filter` 同一取向), 默认也搜参考行. 忽略大小写交给
   `re.compile(..., re.IGNORECASE)`.
 
   Note: 没有再加 `search(text, *, case_sensitive=...)` —— `find_text()` 已经覆盖
   子串查找, 再包一层只是近乎重复的入口. 匹配是**逐行**的, `pattern` 里的 `\n`
-  永远匹配不到 (跨行搜索与结果定位仍未做, 见 `roadmap.md`).
+  永远匹配不到 (跨行搜索与结果定位见 `docs/roadmap.md` 的 QUERY-2 / QUERY-3).
 
 ### Changed
 
@@ -82,7 +94,7 @@
   丢掉 —— 改前只有最后一个能活下来, 而 LRC 里同名 key 重复出现是合法的 (真实
   文件里少见但存在, 例如同一份文件既写 `[ti: 标题]` 又写 `[ti: 标题 (Live)]`).
   容器形态取自 werkzeug `Headers` / `httpx.Headers` 那类"同名可重复"容器的
-  第三条路 (有序 + dict 式读取 + 全量枚举), 调研见 `docs/research.md`.
+  第三条路 (有序 + dict 式读取 + 全量枚举), 调研见 `docs/research/metadata.md`.
 
   三套读法各有明确口径, 不靠参数开关切换:
 
@@ -119,7 +131,7 @@
   metadata 沿用 `Metadata` 的口径比全部条目, 所以同名 key 的重复项与标签顺序
   都算数 (`[ti: A]` + `[ar: B]` 不等于 `[ar: B]` + `[ti: A]`).
 
-- 内部重构 (A1): `parse_lrc` 的解析状态收进新的 `LrcParser` 实例 —— metadata /
+- 内部重构: `parse_lrc` 的解析状态收进新的 `LrcParser` 实例 —— metadata /
   行池 / 参考行锚点 / 结束标记的收尾目标不再摊在局部变量里, 三个会改行池的 helper
   (注册行、写显式行尾、结束标记收尾) 变成方法, 不再靠参数传递. `parse_lrc` 退化成
   薄包装, 对外行为不变 (把新旧逐行处理体去掉 `self.` / 参数前缀 / 折行后逐字符比对,
@@ -153,6 +165,13 @@
   Changelog 的重复小节标题); 顺带修掉它报出的排版问题 (标题 / 列表前后空行、
   代码块语言、过长的正文行).
 
+- **开发文档重组**: `docs/` 改成按问题分层的结构 —— `docs/README.md` 是索引,
+  `roadmap.md` 只列未完成条目, `design/` 放架构 / 语义取舍 / 不计划项,
+  `research/` 按主题拆开调研与语料数据. 原来的 `design.md` / `risks.md` /
+  `research.md` / `feature-ideas.md` 删除, 内容并入新结构. 条目代号统一改成
+  `主题-序号` (如 `WRITE-1`), 只给未完成项编号; 已落地功能在代码与测试里的
+  旧代号引用改成描述性文字.
+
 ### Tooling
 
 - **dev 依赖瘦身: 去掉 mypy 与 ipykernel**. 类型检查统一交给 ty (它已经能覆盖本库
@@ -175,6 +194,10 @@
 - CI 里 `lowest` 作业的注释补上实测数据: tox 4.30.3 在 py<3.11 上要求
   `typing-extensions>=4.14.1`, 所以 3.9 那一档的"最低依赖"解析到的是 4.14.1 而不是
   本库声明的 4.4.0 —— 精确下限由 `lowest-typing-extensions` 作业钉版本验证.
+- **CI 加入 Python 3.15** (目前是 rc 版), 包括 `typing-extensions==4.14.0`
+  下限那一档.
+- **发布流程接上 PyPI**: 版本号滚动时, Release 作业在打 tag 之后用 Trusted
+  Publishing (OIDC) 上传 sdist / wheel, 仓库里不存 token.
 
 ## [0.4.1] — 2026-09-23
 
@@ -182,7 +205,7 @@
 最近修订 2026-09-19）逐条对照之后的一轮语义修正。SPL 是目前唯一把 LRC 家族多年
 踩到的兼容性问题写成条文的文档；对照结果与 6 处有意偏离见
 [README「关于 SPL」](README.md#关于-spl) 与
-[`docs/research.md`](docs/research.md#spl-对照2026-09-19-修订版)，逐条用例在
+[`docs/research/spl.md`](docs/research/spl.md)，逐条用例在
 `tests/test_spl_conformance.py`。
 
 > 语料回归：**全量 6622 份 .lrc**（58.6 万非空行）。空正文行 28836 条，其中 420 处
@@ -266,7 +289,7 @@
   统计、逐条差异对照表, 以及"毫秒 4-6 位"这条标准自身歧义的两种读法.
 - `docs/design.md` 的"待决策"第 1、2 条 (空正文行语义、没有正文的参考行) 按 SPL
   收敛; `docs/risks.md` 第 4 条更新为现有的递增判据, 新增第 11 条 (与 SPL 的差异
-  可能被当成 bug 报告); `docs/roadmap.md` 记入 `NEW-SPL-CONFORM`.
+  可能被当成 bug 报告).
 
 ## [0.4.0] — 2026-09-21
 
@@ -281,24 +304,24 @@
 > 行首重复标签 0 次. 另外, 因行首标签与词元矛盾需要归位的行 **0** 行、
 > 完全为空的参考行 **0** 条、value 含方括号的 metadata **0** 条 ——
 > 这三处修复对这份语料是纯防御性/纯新增能力, 不改变任何真实文件的解析结果.
-> 明细见 [`docs/research.md`](docs/research.md) 的"真实语料基线".
+> 明细见 [`docs/research/corpus.md`](docs/research/corpus.md).
 
 ### Fixed
 
-- **行首标签与首个词元矛盾时按首个词元归位, 不再丢弃整行** (A2).
+- **行首标签与首个词元矛盾时按首个词元归位, 不再丢弃整行**.
   `[00:30.000]<00:10.000>hi` 这样的行此前整行被丢弃, 紧随其后的翻译/音译行也
   因失去锚点一起消失; 现在行落在 `10000ms` (首个词元时间), 只丢标签本身.
   多个标签归位到同一时间点时只注册一次, 不会自我复制成参考行.
   (0.4.1 起改为按 SPL 忽略越界标记, 见上.)
 
-- **解析器不再产出 `end <= start` 的行** (第一轮审查 A1).
+- **解析器不再产出 `end <= start` 的行**.
   行尾时间由最后一个词元"推断"而来; 若推断结果不晚于行首 (行尾标签与行首标签
   相同, 如 `[00:01.000]text[00:01.000]`), 现在丢弃该推断 (置回 `None`) 并记
   warning. 此前这类行会被 `validate()` 判为 error, 于是
   `lemonyrics validate --strict` 会拒绝解析器自己写出的文件.
   词元自身的 `start` / `end` 原样保留, 不丢数据.
 
-- **metadata 的整行判定不再被正则回溯绕过** (A3).
+- **metadata 的整行判定不再被正则回溯绕过**.
   `[ti: song]extra[ar: x]` 曾被整体当成 metadata (守卫里的 `.*?` 把 `extra` 吸进
   value), 而提取阶段 (`finditer`) 又给出另一组结果, 于是中间的正文被静默吞掉.
   判定与提取现在共用同一个扫描器, 不可能再给出不同答案.
@@ -373,8 +396,7 @@
   与"与 LRC `[offset:...]` 的符号差异"两节 (后者说明 `apply_delta(-offset)` 的
   原因, 并指向调研).
 - 文档按"问题类型"重组: `docs/feature-ideas.md` 变成索引,
-  正文拆成 [`roadmap.md`](docs/roadmap.md) / [`design.md`](docs/design.md) /
-  [`risks.md`](docs/risks.md) / [`research.md`](docs/research.md);
+  正文拆成 `roadmap.md` / `design.md` / `risks.md` / `research.md`;
   历史版本迁到本文件; 去掉手写目录 (交给编辑器导航).
 - 新增调研: metadata 的 `]` 处理与转义可行性、同名 key 与 HTTP 头容器设计的对照、
   `offset` 正负语义 (含一次真实实现的符号修正案)、时间标签的宽松形式.
@@ -490,7 +512,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...HEAD
+[0.5.0b1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0b1
 [0.4.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b3...v0.4.0
 [0.4.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b2...0.4.0b3
