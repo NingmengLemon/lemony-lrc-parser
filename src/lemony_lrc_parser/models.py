@@ -719,7 +719,7 @@ class Lyrics(UserList[LyricLine]):
                         self.metadata.add(k, v)
 
         # self 中同一 start 可能存在多行 (手工构造 / from_srt 等来源),
-        # 全部保留, 不再用 dict 按 start 覆盖 (B2); other 的行按 start
+        # 全部保留, 不能用 dict 按 start 覆盖 (会丢行); other 的行按 start
         # 匹配时挂到该时间点**首次出现**的主行上, 与 parser 对重复
         # 时间戳的折叠语义一致.
         anchors: dict[int, LyricLine] = {}

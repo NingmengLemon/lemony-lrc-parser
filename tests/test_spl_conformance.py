@@ -308,7 +308,7 @@ class TestDocumentedDeviations:
     """把"标准没说 / 说了但真实数据另有共识"的地方钉成规格."""
 
     def test_whitespace_only_body_is_content(self) -> None:
-        """标签之后只剩空白算正文 (A5a), 不算"没有文本内容".
+        """标签之后只剩空白算正文, 不算"没有文本内容".
 
         标准只写了"不接任何文本内容", 没有定义空白; 本库选择把它当内容, 否则
         ``dumps`` 写出的 ``[00:01.000]  `` 无法往返.

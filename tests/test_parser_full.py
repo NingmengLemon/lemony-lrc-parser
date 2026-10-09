@@ -48,7 +48,7 @@ class TestParseLrcMetadata:
         assert lyrics.metadata.get("ar") == "Artist"
 
     def test_mid_text_metatag_does_not_swallow_line(self) -> None:
-        """正文中间的 [key: value] 不应把整行吞成 metadata (B3)."""
+        """正文中间的 [key: value] 不应把整行吞成 metadata."""
         lrc = "[00:01.000]main\nReturn [to: sender] now\n"
         lyrics = parse_lrc(lrc)
         assert "to" not in lyrics.metadata
@@ -520,7 +520,7 @@ class TestParseLrcEmptyLines:
         ]
 
     def test_whitespace_only_body_is_still_content(self) -> None:
-        """标签之后只剩空白仍算正文 (A5a), 不是结束标记."""
+        """标签之后只剩空白仍算正文, 不是结束标记."""
         lyrics = parse_lrc("[00:01.000]a\n[00:05.000]  \n")
         assert [(line.start, line.text) for line in lyrics] == [
             (1000, "a"),
@@ -568,7 +568,7 @@ class TestParseLineEdgeCases:
 
 
 class TestParseLrcWordTagOnlyLine:
-    """测试 B1: 仅含逐字标签 (尖括号) 的行应被解析为歌词行而非参考行."""
+    """仅含逐字标签 (尖括号) 的行应被解析为歌词行而非参考行."""
 
     def test_word_tag_only_line_as_lyric(self) -> None:
         """行首为尖括号逐字标签时, 以第一个词元 start 作为 line.start."""
@@ -887,7 +887,7 @@ class TestParseLrcErrorLineInfo:
 
 
 class TestLrcParserObject:
-    """``LrcParser``: 解析状态挂在实例上, 支持整份解析与逐步喂行 (A1)."""
+    """``LrcParser``: 解析状态挂在实例上, 支持整份解析与逐步喂行."""
 
     SAMPLE = "[ti: T]\n[00:01.000]a\n[00:02.000]b\n"
 

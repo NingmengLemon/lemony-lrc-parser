@@ -165,8 +165,8 @@ def _warn_non_roundtrippable_metadata(key: str, value: str) -> None:
 
     这里只提示、不阻止写出 —— 数据保留在输出文本里总好过静默丢弃.
 
-    解析端是否放宽 metadata key 字符集 (如允许非 ASCII key) 见 feature
-    ideas 中的 F-META-KEY, 属于独立决策, 此告警不预设其结论.
+    解析端是否放宽 metadata key 字符集 (如允许非 ASCII key) 见
+    ``docs/roadmap.md`` 的 META-3, 属于独立决策, 此告警不预设其结论.
     """
     if compile_regex(rf"^{METATAG_KEY_REGEX}$").match(key) is None:
         logger.warning(

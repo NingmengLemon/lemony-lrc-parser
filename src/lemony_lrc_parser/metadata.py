@@ -5,7 +5,7 @@ LRC 的 ID 标签 (``[ti: 标题]`` 这类) 是**同名可重复**的: ``[ti: A]
 ``[ti: 标题]`` 与 ``[ti: 标题 (Live)]``)。用裸 ``dict`` 承载会静默丢掉先出现的值,
 这与本库"不静默丢数据"的取向冲突, 因此改用 :class:`Metadata`。
 
-容器形态的取舍调研见 ``docs/research.md`` 的"重复 key 与类 headers 容器设计":
+容器形态的取舍调研见 ``docs/research/metadata.md`` 的"重复 key 与类 headers 容器":
 HTTP 头这类"同名可重复"的成熟容器 (werkzeug ``Headers`` / ``httpx.Headers`` /
 ``multidict.CIMultiDict``) 走的都是"有序 + dict 式读取 + 全量枚举"这第三条路,
 既不像裸 ``dict`` 那样丢重复, 也不像 ``list[tuple[str, str]]`` 那样丢掉

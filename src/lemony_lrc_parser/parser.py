@@ -191,7 +191,7 @@ def _drop_unusable_times(
 ) -> tuple[list[str], list[int]]:
     """丢弃越界或非严格递增的时间标签, 并把它们前后的文本合并.
 
-    三类情况区别对待 (真实语料统计见 CHANGELOG 与 docs/research.md: 某 6536 份
+    三类情况区别对待 (真实语料统计见 docs/research/corpus.md: 某 6536 份
     .lrc 语料里 "相等" 出现 1917 次, "递减" 0 次, 越界 0 次):
 
     * 早于 ``line_start`` 或晚于 ``line_end``: SPL 明文规定逐字标记必须落在行
@@ -512,7 +512,7 @@ class LrcParser:
                 )
                 return
             # 防御性检查: 按当前实现, last_tag 的所有赋值路径都指向已注册的
-            # 时间点, 此分支不可达; 保留以防未来改动破坏该不变量 (B1).
+            # 时间点, 此分支不可达; 保留以防未来改动破坏该不变量.
             if self.last_tag not in self.line_pool:  # pragma: no cover
                 self._emit(
                     "orphaned-line",
@@ -532,13 +532,13 @@ class LrcParser:
         # 2d. 常规行: 可能有多个重复时间标签, 每个都生成一行
         if not line:
             # parse_line 只在正文为空白时返回 None, 如 "[00:01.000]  ". 按"正文
-            # 空白是有效文本"的既定取向 (A5a), 这种空白算作内容; 否则 dumps()
+            # 空白是有效文本"的既定取向, 这种空白算作内容; 否则 dumps()
             # 写出的 "[00:01.000]  " 无法往返.
             line = BasicLyricLine([LyricToken(content=line_str)])
         registered_tags = self._register_line_at_tags(line, time_tags)
         self._apply_explicit_line_end(registered_tags, line_end)
         # 只有真实落入 line_pool 的时间点才能作为参考行锚点, 否则后续无标签行
-        # 会在 line_pool 上 KeyError (B1).
+        # 会在 line_pool 上 KeyError.
         self.last_tag = registered_tags[0]
         self.last_text_tags = list(registered_tags)
 
@@ -693,8 +693,8 @@ def _body_has_text(line: str) -> bool:
     """去掉所有时间标签后, ``line`` 是否还剩内容 (空白也算内容) .
 
     这是"这一行到底有没有正文"的判据, 也是 SPL 纯结束标记的分界线:
-    ``""`` 与 ``"<00:01.000>"`` 都没有正文, 而 ``"  "`` 有 (A5a: 正文空白是
-    有效文本) .
+    ``""`` 与 ``"<00:01.000>"`` 都没有正文, 而 ``"  "`` 有 (正文空白是有效
+    文本) .
     """
     return bool(compile_regex(GENERIC_TIMETAG_REGEX).sub("", line))
 
@@ -819,7 +819,7 @@ def _extract_metadata(line: str) -> list[tuple[str, str]]:
     """从一行字符串中提取 metadata 标签 ``[key: value]``.
 
     仅当**整行**都由 metatag (及其间空白) 构成时才视为 metadata 行并提取;
-    正文中间出现 ``[key: value]`` 的普通文本行不会被吞并 (B3) —— 否则
+    正文中间出现 ``[key: value]`` 的普通文本行不会被吞并 —— 否则
     ``finditer`` 非锚定匹配会把 "Return [to: sender] now" 这类行整行当成
     metadata, 导致正文静默丢失. 这类行现在按普通歌词/参考行处理.
 

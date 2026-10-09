@@ -80,7 +80,7 @@ def validate_lyrics(lyrics: Lyrics) -> list[ValidationIssue]:
     * 是否存在重复 ``start``.
     * 是否存在 ``end is not None and end <= start``.
     * 逐字 token 的 ``start`` / ``end`` 是否单调递增.
-    * 逐字 token 是否落在所属行的 ``[line.start, line.end]`` 范围内 (B7).
+    * 逐字 token 是否落在所属行的 ``[line.start, line.end]`` 范围内.
     * reference line 内部 token 的时间是否合理 (复用主行校验逻辑).
     * metadata key 是否符合当前 parser 支持的格式.
     * ``metadata.offset`` 是否可解析为整数.
@@ -199,8 +199,8 @@ def _check_line_tokens(
 
     对主行:
     - token 的 start/end 必须单调递增.
-    - token 的 start >= line_start (B7).
-    - token 的 end <= line_end (当 line_end 存在时) (B7).
+    - token 的 start >= line_start.
+    - token 的 end <= line_end (当 line_end 存在时).
     - token 自身 end > start (当两者都存在时).
 
     对参考行: 只检查 token 自身的单调性和内部一致性.
@@ -246,7 +246,7 @@ def _check_line_tokens(
         elif token.start is not None:
             prev_end = token.start
 
-        # ---- 对主行检查越界 (B7) ----
+        # ---- 对主行检查越界 ----
         if is_reference:
             continue
 

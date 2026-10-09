@@ -430,7 +430,7 @@ class TestLyricLineStartValidation:
 
 
 class TestLyricsCombineDuplicateStarts:
-    """测试 B2: self 含重复 start 时合并不得丢行."""
+    """self 含重复 start 时合并不得丢行."""
 
     def test_add_preserves_duplicate_start_lines(self) -> None:
         """+ 运算符保留 self 中同 start 的多行, other 挂到首行.
