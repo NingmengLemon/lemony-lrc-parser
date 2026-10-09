@@ -378,7 +378,7 @@ error 的行.
 [SPL (Salt Player Lyrics)](https://moriafly.com/standards/spl.html) 是目前唯一把
 "LRC 家族多年踩到的兼容性问题"写成条文的文档, 本库把它当作 LRC 语义的参照物.
 逐条对照的用例在 [`tests/test_spl_conformance.py`](tests/test_spl_conformance.py),
-语料统计与调研过程在 [`docs/research.md`](docs/research.md).
+语料统计与调研过程在 [`docs/research/spl.md`](docs/research/spl.md).
 
 解析端完全按 SPL 的地方:
 
@@ -505,7 +505,7 @@ shifted = lyrics << 500  # 提前 500ms
 LRC 没有一个标准的符号语义, 但:
 
 - LRC 的 `[offset: +N]` 按社区文档与*主流*实现是"歌词整体**提前** N 毫秒",
-  即时间戳 `-= N` ([调研](docs/research.md));
+  即时间戳 `-= N` ([调研](docs/research/offset.md));
 - 本库的 `apply_delta(+ms)` 是"时间戳 `+= ms`", 即歌词**延后**.
 
 所以从 metadata 应用 offset 的正确写法是取负号:
@@ -665,11 +665,9 @@ srt_text = lyrics.to_srt(options=options)
 ## 参考资料
 
 - [CHANGELOG](CHANGELOG.md) —— 版本变更历史.
-- 开发笔记 ([索引](docs/feature-ideas.md)):
-  [路线图](docs/roadmap.md) ·
-  [设计与取舍](docs/design.md) ·
-  [风险与不计划](docs/risks.md) ·
-  [调研与语料数据](docs/research.md)
+- [开发文档](docs/README.md): [路线图](docs/roadmap.md) ·
+  [语义取舍](docs/design/semantics.md) ·
+  [调研与语料数据](docs/research/)
 - [LRC Wikipedia](https://en.wikipedia.org/wiki/LRC_%28file_format%29)
 - [SPL Specification](https://moriafly.com/standards/spl.html)
 

@@ -400,7 +400,7 @@ over the years, so this library uses it as the reference for LRC semantics. The
 per-clause conformance cases live in
 [`tests/test_spl_conformance.py`](tests/test_spl_conformance.py), and the corpus
 statistics and research process are in
-[`docs/research.md`](docs/research.md).
+[`docs/research/spl.md`](docs/research/spl.md).
 
 Where the parser follows SPL exactly:
 
@@ -550,7 +550,7 @@ LRC has no standardized sign semantics, but:
 
 - LRC's `[offset: +N]`, per community docs and mainstream implementations, means
   "shift the lyrics **earlier** by N ms", i.e. timestamp `-= N`
-  ([research](docs/research.md));
+  ([research](docs/research/offset.md));
 - this library's `apply_delta(+ms)` is "timestamp `+= ms`", i.e. lyrics **later**.
 
 So the correct way to apply an offset from metadata is to negate it:
@@ -719,11 +719,9 @@ Conversion notes:
 ## References
 
 - [CHANGELOG](CHANGELOG.md) — version history.
-- Development notes ([index](docs/feature-ideas.md)):
-  [roadmap](docs/roadmap.md) ·
-  [design & trade-offs](docs/design.md) ·
-  [risks & not-planned](docs/risks.md) ·
-  [research & corpus data](docs/research.md)
+- [Development docs](docs/README.md) (Chinese): [roadmap](docs/roadmap.md) ·
+  [semantics](docs/design/semantics.md) ·
+  [research & corpus data](docs/research/)
 - [LRC Wikipedia](https://en.wikipedia.org/wiki/LRC_%28file_format%29)
 - [SPL Specification](https://moriafly.com/standards/spl.html)
 
