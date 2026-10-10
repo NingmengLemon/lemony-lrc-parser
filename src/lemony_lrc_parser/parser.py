@@ -299,6 +299,7 @@ class LrcParser:
         self._events: list[ParseEvent] = []
         self._reference_lines_attached = 0
         self._end_markers_applied = 0
+        self._end_markers_redundant = 0
         self._line_ending: DetectedLineEnding | None = None
 
     @property
@@ -308,6 +309,7 @@ class LrcParser:
             events=tuple(self._events),
             reference_lines_attached=self._reference_lines_attached,
             end_markers_applied=self._end_markers_applied,
+            end_markers_redundant=self._end_markers_redundant,
             line_ending=self._line_ending,
         )
 
@@ -440,8 +442,7 @@ class LrcParser:
         #     Note: 整行不含方括号标签 (即用尖括号写出的空行) 不走这里, 见 2b.
         if time_tags and not _body_has_text(line_str):
             for tag in time_tags:
-                if self._apply_line_end_marker(tag, line_no=line_no, raw_line=raw_line):
-                    self._end_markers_applied += 1
+                self._apply_line_end_marker(tag, line_no=line_no, raw_line=raw_line)
             return
 
         # 2b. 若行首存在多个连续方括号时间标签, 且剩余正文还含有时间标签,
@@ -640,42 +641,54 @@ class LrcParser:
             if line is not None and line.end is None and line.start < line_end:
                 line.end = line_end
 
-    def _apply_line_end_marker(self, tag: int, *, line_no: int, raw_line: str) -> bool:
+    def _apply_line_end_marker(self, tag: int, *, line_no: int, raw_line: str) -> None:
         """把"只有时间标签、没有正文"的行当作上一行歌词的结束标记 (SPL) .
 
         SPL: "时间戳后不接任何文本内容的行是纯粹的结束标记: 它不会产生一句新歌词,
         也不参与翻译识别". 于是这里把时间写到最近一行有正文的歌词的 ``end`` 上.
 
-        只在目标行确实还没有显式结束时间时写入 (同行内的行尾标签优先) ; 没有可收尾
-        的目标 —— 文件首行、目标行开始时间不晚于该标记、目标行已有区间 —— 就忽略
-        该标记, 而不是造一条空歌词行.
+        三种结果, 分别记在报告的不同地方:
 
-        Returns:
-            是否真的给某一行补上了 ``end``; ``False`` 时报告里会多一条
-            ``end-marker-ignored``.
+        * 目标行还没有结束时间: 写入, 计入 ``end_markers_applied``.
+        * 目标行已经在这个时刻结束 (行尾标签或前一个结束标记写过同一个时间):
+          标记是冗余的, 只计入 ``end_markers_redundant``. 真实文件里很常见, 例如同一个
+          结束标记连写好几遍.
+        * 其余 —— 前面没有歌词行、标记不晚于目标行开头、目标行已在别的时刻结束 ——
+          标记被忽略, 记一条 ``end-marker-ignored``. 不产生空歌词行.
         """
-        for target_tag in self.last_text_tags:
-            line = self.line_pool.get(target_tag)
-            if line is None or line.start >= tag:
-                continue
+        targets = [
+            line
+            for target_tag in self.last_text_tags
+            if (line := self.line_pool.get(target_tag)) is not None and line.start < tag
+        ]
+        for line in targets:
             token_end = line.content[-1].end if line.content else None
-            if line.end is not None or token_end is not None:
+            end = line.end if line.end is not None else token_end
+            if end is None:
+                line.end = tag
+                self._end_markers_applied += 1
+                logger.debug(f"End marker: line at {line.start}ms now ends at {tag}ms")
+                return
+            if end == tag:
+                self._end_markers_redundant += 1
                 logger.debug(
-                    f"End marker {tag}ms ignored: the line at {line.start}ms already "
-                    f"has an explicit end"
+                    f"End marker {tag}ms is redundant: the line at {line.start}ms "
+                    f"already ends there"
                 )
-                continue
-            line.end = tag
-            logger.debug(f"End marker: line at {line.start}ms now ends at {tag}ms")
-            return True
+                return
+        if not self.last_text_tags:
+            reason = "there is no lyric line before it"
+        elif not targets:
+            reason = "it is not after the start of the previous lyric line"
+        else:
+            reason = "the previous lyric line already ends at another time"
         self._emit(
             "end-marker-ignored",
-            f"End marker {tag}ms has no line to close; ignored",
+            f"End marker {tag}ms ignored: {reason}",
             line_no=line_no,
             raw_line=raw_line,
             level=logging.DEBUG,
         )
-        return False
 
 
 def parse_lrc(lrc: str, *, options: ParseOptions | None = None) -> Lyrics:

@@ -45,7 +45,10 @@ __all__ = [
 #: * ``byword-before-line-start`` / ``byword-after-line-end``: 越界的逐字标记,
 #:   标记被忽略, 两侧文本合并.
 #: * ``byword-unordered``: 乱序 (递减) 的逐字标记, 同样被忽略.
-#: * ``end-marker-ignored``: 纯结束标记找不到可收尾的上一行.
+#: * ``end-marker-ignored``: 纯结束标记 (只有时间戳的行) 没有可收尾的上一行:
+#:   前面没有歌词行、不晚于上一行的开头, 或上一行已在别的时刻结束. 只丢掉一个时间
+#:   点, 正文与逐字时间不受影响. 与上一行结尾重合的冗余标记不算, 只计数
+#:   (:attr:`ParseReport.end_markers_redundant`).
 #: * ``inferred-end-discarded``: 由逐字标签推断出的行尾与行首矛盾, 推断被丢弃.
 ParseEventCode = Literal[
     "orphaned-line",
@@ -63,10 +66,13 @@ DROPPED_LINE_CODES: frozenset[str] = frozenset({"orphaned-line", "line-filtered"
 #: strict 模式 (:class:`~.models.ParseOptions` 的 ``strict=True``) 下会直接抛
 #: :class:`~.exceptions.InvalidLyricsError` 的代码.
 #:
-#: 判据是"解析器不得不丢掉或忽略文件里的某个声明": 孤儿行整行没了, 逐字标记 / 结束
-#: 标记 / 行尾推断被忽略. 两类刻意不在其中:
+#: 判据是"解析器不得不丢掉文件里的正文或逐字时间": 孤儿行整行没了, 逐字标记被
+#: 忽略, 由逐字标记推断出的行尾自相矛盾. 三类刻意不在其中:
 #:
 #: * ``line-filtered``: 那是调用方自己要求丢的, 不是文件的问题.
+#: * ``end-marker-ignored``: 结束标记不带正文, 丢掉的只是一个时间点. 真实曲库里约
+#:   一成的文件有这种标记 (多是开头的占位时间戳与结尾的重复标记), 放进 strict
+#:   会让 strict 对真实文件不可用.
 #: * metadata key 与 ``offset`` 的问题 (由 :meth:`~.models.Lyrics.validate` 报告):
 #:   它们不影响解析结果, 放进 strict 只会把"本来能正常解析的文件"判死.
 STRICT_ERROR_CODES: frozenset[str] = frozenset(
@@ -75,7 +81,6 @@ STRICT_ERROR_CODES: frozenset[str] = frozenset(
         "byword-before-line-start",
         "byword-after-line-end",
         "byword-unordered",
-        "end-marker-ignored",
         "inferred-end-discarded",
     }
 )
@@ -111,6 +116,7 @@ class ParseReport:
         events: 值得注意的事件, 按发生顺序.
         reference_lines_attached: 被挂成参考行的行数 (正常操作, 只计数).
         end_markers_applied: 成功收尾的纯结束标记个数 (正常操作, 只计数).
+        end_markers_redundant: 与上一行结尾重合的纯结束标记个数 (正常操作, 只计数).
         line_ending: 源文本的行尾, 见 :func:`~.style.detect_line_ending`. 只在整份
             解析 (:meth:`~.parser.LrcParser.parse`) 时探测, 逐行喂入时为 ``None``.
             它描述源文本, 不算事件, 也不影响 ``bool(report)``; 写出时要沿用, 显式
@@ -120,6 +126,7 @@ class ParseReport:
     events: tuple[ParseEvent, ...] = ()
     reference_lines_attached: int = 0
     end_markers_applied: int = 0
+    end_markers_redundant: int = 0
     line_ending: DetectedLineEnding | None = None
 
     def __len__(self) -> int:

@@ -35,7 +35,6 @@ STRICT_TRIGGERS: dict[str, str] = {
     "byword-before-line-start": "[00:05.000]<00:01.000>a<00:06.000>b\n",
     "byword-after-line-end": "[00:01.000]a<00:05.000>b[00:02.000]\n",
     "byword-unordered": "[00:01.000]a<00:03.000>b<00:02.000>c\n",
-    "end-marker-ignored": "[00:00.000]\n[00:01.000]hello\n",
     "inferred-end-discarded": "[00:01.000]text[00:01.000]\n",
 }
 
@@ -165,6 +164,34 @@ class TestStructuralEvents:
         assert report.of_code("end-marker-ignored")[0].line_no == 3
         assert report.end_markers_applied == 1
 
+    @pytest.mark.parametrize(
+        ("text", "reason"),
+        [
+            ("[00:00.300]\n[00:01.000]a\n", "no lyric line before it"),
+            ("[00:05.000]a\n[00:05.000]\n", "not after the start"),
+            ("[00:01.000]a[00:02.000]\n[00:03.000]\n", "already ends at another time"),
+        ],
+    )
+    def test_ignored_marker_says_why(self, text: str, reason: str) -> None:
+        _, report = parse_with_report(text)
+        (event,) = report
+        assert event.code == "end-marker-ignored"
+        assert reason in event.message
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[00:01.000]a[00:02.000]\n[00:02.000]\n",  # 与同行行尾重合
+            "[00:01.000]a\n[00:02.000]\n[00:02.000]\n",  # 同一个标记连写两遍
+            "[00:01.000]a<00:02.000>\n[00:02.000]\n",  # 与末词元的 end 重合
+        ],
+    )
+    def test_redundant_marker_is_counted_not_reported(self, text: str) -> None:
+        lyrics, report = parse_with_report(text)
+        assert not report
+        assert report.end_markers_redundant == 1
+        assert lyrics[0].end == 2000
+
     def test_inferred_end_discarded(self) -> None:
         _, report = parse_with_report("[00:01.000]text[00:01.000]\n")
         assert _codes(report) == ["inferred-end-discarded"]
@@ -187,6 +214,7 @@ class TestStructuralEvents:
 
         assert parser.report.reference_lines_attached == 0
         assert parser.report.end_markers_applied == 0
+        assert parser.report.end_markers_redundant == 0
         assert not parser.report
 
     def test_report_is_available_after_manual_feeding(self) -> None:
@@ -270,6 +298,15 @@ class TestStrictMode:
             )
         assert exc_info.value.line_no is None
         assert "1000ms" in str(exc_info.value)  # 毫秒信息仍在
+
+    def test_end_markers_never_raise(self) -> None:
+        """被忽略的结束标记只丢一个时间点, 不丢正文, strict 不该管."""
+        text = "[00:00.300]\n[00:01.000]a[00:02.000]\n[00:03.000]\n[00:03.000]\n"
+        lyrics = parse_lrc(text, options=ParseOptions(strict=True))
+        assert [(line.start, line.end, line.text) for line in lyrics] == [
+            (1000, 2000, "a")
+        ]
+        assert "end-marker-ignored" not in STRICT_ERROR_CODES
 
     def test_line_filter_never_raises(self) -> None:
         """``line_filter`` 丢掉的行是调用方自己要求的, strict 不该管."""
