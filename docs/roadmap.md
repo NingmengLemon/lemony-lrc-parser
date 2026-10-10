@@ -31,7 +31,6 @@
 | ANALYZE-2 | 格式特征检测 `LyricsFeatures` |
 | ANALYZE-3 | 两份歌词的差异比较，附 CLI 子命令 |
 | EDIT-1 | 显式规范化 `normalize()` |
-| WRITE-2 | 方括号逐字模式下, 首词元延迟时可选改用尖括号写出 |
 | PARSE-2 | 可选保留源位置 |
 | PARSE-3 | `#` 开头的注释行 |
 | PARSE-4 | 带小时的时间标签 `[hh:mm:ss.fff]` |
@@ -116,19 +115,6 @@ CRLF 变 LF，2 位尾数被补成 3 位，行间空行按 `line_separator` 重�
   可以直接转成 `SerializationOptions`。
 - 尾数位数按行或按词元探测，同一文件里 2 位与 3 位混用很常见。
 - 显式参数始终可以覆盖探测结果。
-
-### WRITE-2：方括号模式下的首词元写法
-
-`use_bracket_for_byword_tag=True` 时，首词元晚于行首会写成 `[行首][首字]正文`，与
-重复行简写同形。后面没有别的时间标签时读回两行（warning），有的时候读回一行、行首
-多一个零文本词元（debug），见 [semantics.md](design/semantics.md#往返保真度)。
-
-消除歧义的办法是只把首词元的标签改用尖括号：`[行首]<首字>正文[...]`，与"空正文行
-改用尖括号写出"同一取向。代价是一行里混用两种括号，而选这个选项的人往往就是为了
-只认方括号的播放器（karakara 为 foobar2000 选的）。所以只能做成新选项，例如
-`first_token_tag: Literal["bracket", "angle"]`，默认不变。
-
-来源：karakara 2026-10-10 的升级反馈。先确认目标播放器能否接受混用再做。
 
 ### MERGE-1：模糊合并
 

@@ -137,9 +137,10 @@ class SerializationOptions:
     Attributes:
         with_metadata: 是否输出 metadata 段.
         use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``. 在 foobar2000 等老式播放器上可能会有用.
-            **该选项不保证往返**: 若某行首个词元的开始时间与行首时间不同,
-            写出的 ``[start][word]`` 会被重新解析成两个行首标签, 整行拆成两行
-            (写出时会产生 warning).
+            **该选项不保证往返**: 若某行首个词元的开始时间与行首时间不同, 写出的
+            ``[start][word]正文`` 与重复行简写同形. 后面还有逐字或行尾标签时读回
+            一行, 行首多一个零文本词元 (记 debug); 否则读回两行、正文重复 (记
+            warning). 选了这个模式就是接受了这个上限, 写法不会替你改成尖括号.
         line_tag_decimal_length: 行标签毫秒位数 (默认 3), 使用更小的值会损失精度.
         word_tag_decimal_length: 逐字标签毫秒位数 (默认 3), 使用更小的值会损失精度.
         line_separator: 行间分隔字符串 (默认 ``"\\n"`` 表示行间插入空行).
