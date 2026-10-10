@@ -9,6 +9,7 @@
 | `parser.py` | LRC 文本 → `Lyrics`。公共入口 `parse_line` / `parse_lrc` / `parse_with_report`，内部是 `LrcParser` |
 | `report.py` | 解析报告 `ParseReport` / `ParseEvent` 与 strict 的触发集合 `STRICT_ERROR_CODES`；序列化报告 `DumpReport` / `DumpEvent` 与 `LOSSY_DUMP_CODES` |
 | `serializer.py` | `Lyrics` → LRC 文本。公共入口 `dump_lrc` / `dump_with_report`，内部是 `_Writer` |
+| `style.py` | 源文本书写风格的探测（目前是行尾 `detect_line_ending`），只探测不应用 |
 | `validation.py` | 对结果数据做一致性检查，产出 `ValidationIssue` |
 | `subtitle.py` | SRT / WebVTT 双向转换 |
 | `offset.py` | 整体时间偏移 |

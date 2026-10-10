@@ -25,6 +25,24 @@
   `bracket-first-tag-adds-token` 外的全部. 每个事件同时照旧打日志, 所以把库的日志
   静音的消费方 (例如 karakara) 也能拿到同样的信息.
 
+- **行尾风格** (WRITE-1 的一部分): `SerializationOptions(line_ending="lf" | "crlf")`,
+  默认 `"lf"`, 默认输出不变. 写出的行尾只由它决定, 与平台无关. 另有
+  `detect_line_ending(text)` 与 `ParseReport.line_ending`, 取值 `"lf"` / `"crlf"` /
+  `"mixed"` / `None` (没有换行). 解析只探测、不沿用, 要保留源文件的行尾得显式传回
+  `line_ending`. 两点注意 (README「行尾」一节有完整示例):
+  - 用默认文本模式读文件时 `\r\n` 已经被 Python 转成 `\n`, 探测只会得到 `"lf"`;
+    读的时候传 `newline=""`.
+  - `"crlf"` 配默认文本模式写文件, 在 Windows 上会写成 `\r\r\n`; 写的时候也传
+    `newline=""`.
+
+  不提供"跟随操作系统": 文本模式写文件本来就在做这件事, 库再做一遍就是上面的
+  `\r\r\n`. 依据: 本地曲库 6633 份 `.lrc` 全部是 CRLF, 此前写回一律变成 LF.
+
+- **CLI**: `offset` 新增 `--line-ending {keep,lf,crlf}`, 默认 `keep` 沿用输入文件的
+  行尾 (混用或没有换行时用 LF). 为此 CLI 读写文件与 stdout 都不再做换行转换.
+  在 Windows 上这改变了两处输出: `offset` 处理 LF 文件时此前会经文本模式写成
+  CRLF, 现在保持 LF; `to-srt` / `to-webvtt` 此前写 CRLF, 现在写 LF.
+
 ### Fixed
 
 - **落在行时间范围之外的逐字标记在写出时被静默省略**. 省略本身是对的 (解析端按 SPL

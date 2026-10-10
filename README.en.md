@@ -357,9 +357,40 @@ output = lyrics.dumps(
         line_tag_decimal_length=3,  # line tag millisecond digits (default 3)
         word_tag_decimal_length=3,  # word tag millisecond digits (default 3)
         line_separator="\n",  # inter-line separator (default "\n"; set to "" to omit blank lines)
+        line_ending="lf",  # "lf" (default) or "crlf", independent of the platform
     ),
 )
 ```
+
+#### Line Endings
+
+The line endings of `dumps()` depend only on `line_ending`, so the same lyrics give
+the same string on every OS. Parsing neither records nor carries over the source's
+line endings; to keep them, detect and pass them back explicitly:
+
+```python
+from pathlib import Path
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+path = Path("song.lrc")
+with path.open(encoding="utf-8-sig", newline="") as fp:  # newline="": no translation
+    lyrics, report = llp.parse_with_report(fp.read())
+
+ending = report.line_ending  # "lf" / "crlf" / "mixed" / None (no newline at all)
+options = SerializationOptions(line_ending="crlf" if ending == "crlf" else "lf")
+with path.open("w", encoding="utf-8", newline="") as fp:
+    fp.write(lyrics.dumps(options=options))
+```
+
+You can also detect without parsing: `llp.detect_line_ending(text)`. Two caveats:
+
+- Python's default text-mode reading (`open(path)`, `Path.read_text()`) turns
+  `\r\n` into `\n`, so detection always says `"lf"`. Pass `newline=""` when reading.
+- With `"crlf"`, write with `newline=""` too (or in binary mode). Text mode on
+  Windows turns every `\n` into `\r\n` again, giving `\r\r\n`. Conversely, the
+  default `"lf"` with default text mode already writes CRLF on Windows.
 
 #### Length of Decimal Part
 
@@ -738,11 +769,16 @@ python -m lemony_lrc_parser validate --fail-on-error song.lrc    # exit code 1 w
 # global time offset (milliseconds)
 python -m lemony_lrc_parser offset --delta 500 song.lrc           # output to stdout
 python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # output to a file
+python -m lemony_lrc_parser offset --delta 500 --line-ending crlf song.lrc  # pick line endings
 
 # convert to subtitle formats
 python -m lemony_lrc_parser to-srt song.lrc
 python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
+
+The CLI reads and writes without newline translation. `offset` keeps the input's
+line endings by default (`--line-ending keep`), falling back to LF when the input
+mixes them or has none; `lf` / `crlf` force one.
 
 `validate` first prints the events from the parse report (located by source line
 number, e.g. `line 3`), then the consistency issues (located by index into the

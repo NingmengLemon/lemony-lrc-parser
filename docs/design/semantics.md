@@ -132,7 +132,21 @@ debug。判据与解析器 2b 分支相同，由 `tests/test_properties.py` 用�
 表达的跳过并记 debug（没有正文的参考行）。字幕互转丢弃逐字标记与 metadata，
 是格式差异，不算有损。
 
-写回不保留原文件风格（行尾、尾数位数、空行），见 roadmap WRITE-1。
+## 行尾
+
+- 解析不关心行尾：LF、CRLF、单独的 CR 都按行切开，结果相同。
+- 写出的行尾只由 `SerializationOptions.line_ending` 决定（`"lf"` 默认，或
+  `"crlf"`），与平台无关，所以同一份歌词在任何系统上 `dumps()` 都是同一个字符串。
+  不提供"跟随操作系统"：Python 的文本模式写文件已经在做这件事，库再做一遍会在
+  Windows 上写出 `\r\r\n`。
+- 解析只探测、不沿用。源文本的行尾在 `ParseReport.line_ending` 与
+  `detect_line_ending()` 上，取值 `"lf"` / `"crlf"` / `"mixed"` / `None`（没有换行）。
+  它不挂在 `Lyrics` 上：行尾是源文本的属性，挂在数据对象上就得为 `copy`、`combine`、
+  `==`、`to_dict` 各定一套规则，手工构造的对象也没有合理的值。
+- 探测只有在读入时没做换行转换才有意义，即 `newline=""` 或二进制读入。CLI 读写都
+  这样做，`offset --line-ending keep` 因此能沿用原文件的行尾。
+
+写回的其它风格（尾数位数、空行、末尾换行）还不保留，见 roadmap WRITE-1。
 
 ## 字典与 JSON
 

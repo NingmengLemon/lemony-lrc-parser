@@ -105,14 +105,14 @@ def combine_lyrics_with_report(
 ### WRITE-1：保留原文件风格
 
 真实语料里 100% 的文件写回后与原文件字节不同（[数据](research/corpus.md)）：
-CRLF 变 LF，2 位尾数被补成 3 位，行间空行按 `line_separator` 重排。
-解析没有问题，问题在"改写别人曲库"这个场景。
+2 位尾数被补成 3 位，行间空行按 `line_separator` 重排，末尾换行统一补上。
+解析没有问题，问题在"改写别人曲库"这个场景。行尾已经可以保留（探测后显式传
+`line_ending`，见 [semantics.md](design/semantics.md#往返保真度)），剩下这几项。
 
-做法：
+做法沿用行尾的模式：只探测、不沿用，探测结果由调用方显式传回。
 
-- `SerializationOptions` 增加 `line_ending`（`"lf"` / `"crlf"`）。
-- 提供 `detect_style(text) -> DocumentStyle`，探测行尾、尾数位数、空行风格，
-  可以直接转成 `SerializationOptions`。
+- 提供 `detect_style(text) -> DocumentStyle`，在 `detect_line_ending` 之外再探测
+  尾数位数、空行风格、末尾有无换行，可以直接转成 `SerializationOptions`。
 - 尾数位数按行或按词元探测，同一文件里 2 位与 3 位混用很常见。
 - 显式参数始终可以覆盖探测结果。
 
@@ -276,8 +276,8 @@ Lyrics.from_path(path, encoding="utf-8-sig")
 lyrics.to_path(path, encoding="utf-8")
 ```
 
-现有 I/O 接收 `TextIO`。路径接口会牵扯 encoding、newline、覆盖策略，
-最好与 WRITE-1 的行尾处理一起设计。
+现有 I/O 接收 `TextIO`。路径接口会牵扯 encoding、newline、覆盖策略。newline 的
+答案已经有了：读写都用 `newline=""`，行尾交给 `line_ending`（与 CLI 一致）。
 
 ### EXPORT-1：ASS 导出
 

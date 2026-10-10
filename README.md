@@ -343,9 +343,39 @@ output = lyrics.dumps(
         line_tag_decimal_length=3,  # 行标签毫秒位数 (默认 3)
         word_tag_decimal_length=3,  # 逐字标签毫秒位数 (默认 3)
         line_separator="\n",  # 行间分隔字符串 (默认 "\n", 设为 "" 可省去空行)
+        line_ending="lf",  # 行尾: "lf" (默认) 或 "crlf", 与平台无关
     ),
 )
 ```
+
+#### 行尾
+
+`dumps()` 的行尾只由 `line_ending` 决定, 同一份歌词在任何系统上都得到同一个字符串.
+解析时不记录、也不沿用源文件的行尾; 要保留, 先探测再显式传回去:
+
+```python
+from pathlib import Path
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+path = Path("song.lrc")
+with path.open(encoding="utf-8-sig", newline="") as fp:  # newline="": 不转换行尾
+    lyrics, report = llp.parse_with_report(fp.read())
+
+ending = report.line_ending  # "lf" / "crlf" / "mixed" / None (没有换行)
+options = SerializationOptions(line_ending="crlf" if ending == "crlf" else "lf")
+with path.open("w", encoding="utf-8", newline="") as fp:
+    fp.write(lyrics.dumps(options=options))
+```
+
+不解析也能探测: `llp.detect_line_ending(text)`. 两点要注意:
+
+- Python 默认的文本模式读文件 (`open(path)`, `Path.read_text()`) 会把 `\r\n` 转成
+  `\n`, 探测到的永远是 `"lf"`. 读的时候要传 `newline=""`.
+- 选 `"crlf"` 时写文件同样要 `newline=""` (或二进制模式). 文本模式在 Windows 上会把
+  每个 `\n` 再转成 `\r\n`, 结果是 `\r\r\n`. 反过来, 默认的 `"lf"` 配默认的文本模式,
+  在 Windows 上写出的就是 CRLF.
 
 #### 小数位长
 
@@ -678,11 +708,15 @@ python -m lemony_lrc_parser validate --fail-on-error song.lrc    # 有 error 时
 # 整体时间偏移 (毫秒)
 python -m lemony_lrc_parser offset --delta 500 song.lrc           # 输出到 stdout
 python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # 输出到文件
+python -m lemony_lrc_parser offset --delta 500 --line-ending crlf song.lrc  # 指定行尾
 
 # 转换为字幕格式
 python -m lemony_lrc_parser to-srt song.lrc
 python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
+
+CLI 读写都不做换行转换. `offset` 默认 (`--line-ending keep`) 沿用输入文件的行尾,
+输入混用两种行尾或没有换行时用 LF; 也可以显式指定 `lf` / `crlf`.
 
 `validate` 先输出解析报告里的事件 (位置是源文件行号, 如 `line 3`), 再输出一致性校验
 的问题 (位置是解析后的行下标, 如 `lyrics[2]`). 属于 `STRICT_ERROR_CODES` 的解析事件

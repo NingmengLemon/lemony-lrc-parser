@@ -21,7 +21,10 @@
 - 相等 1917、递减 0：相等标签只记 debug，递减才告警。
 - 首词元晚于行首 296 行：`use_bracket_for_byword_tag=True` 在真实数据上确实会让
   这些行读回两行，不是理论问题。
-- 写回 100% 不同（CRLF 变 LF、2 位尾数补成 3 位、行间空行）：roadmap WRITE-1。
+- 写回 100% 不同（CRLF 变 LF、2 位尾数补成 3 位、行间空行）：行尾可以通过
+  `line_ending` 显式保留，其余见 roadmap WRITE-1。
+- 行尾：6633 份全部是 CRLF，没有 LF 或混用；其中 5 份末尾没有换行。（2026-10，
+  同一曲库的较新快照。）
 - 非标准 key（`ly` / `mu` / `total` / `tool`）：metadata 只做类型提示，不校验
   key 是否"标准"。
 
