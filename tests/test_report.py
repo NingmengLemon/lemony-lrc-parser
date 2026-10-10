@@ -16,6 +16,7 @@ from lemony_lrc_parser import (
     InvalidLyricsError,
     Lyrics,
     LyricsParserError,
+    ParseEvent,
     ParseOptions,
     ParseReport,
     parse_line,
@@ -131,14 +132,20 @@ class TestBywordEvents:
         assert _codes(report) == []
 
     def test_parse_line_callback_is_public(self) -> None:
-        """``parse_line(on_event=...)`` 直接可用, 默认仍然是只打日志."""
-        seen: list[tuple[str, str]] = []
+        """``parse_line(on_event=...)`` 直接可用, 默认仍然是只打日志.
+
+        回调收的是 ``ParseEvent``; ``parse_line`` 不知道行号, 两个位置字段为空.
+        """
+        seen: list[ParseEvent] = []
         parse_line(
             "[00:05.000]<00:01.000>a",
             line_start=5000,
-            on_event=lambda code, message: seen.append((code, message)),
+            on_event=seen.append,
         )
-        assert [code for code, _ in seen] == ["byword-before-line-start"]
+        assert [event.code for event in seen] == ["byword-before-line-start"]
+        assert all(isinstance(event, ParseEvent) for event in seen)
+        assert seen[0].line_no is None
+        assert seen[0].raw_line is None
         # 不传回调时不报错, 行为照旧
         assert parse_line("[00:05.000]<00:01.000>a", line_start=5000) is not None
 

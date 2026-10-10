@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from collections.abc import Callable
@@ -32,11 +33,13 @@ from .report import STRICT_ERROR_CODES, ParseEvent, ParseReport
 
 logger = getLogger(__name__)
 
-#: 事件回调的签名: ``(code, message) -> None``.
+#: 事件回调的签名: 收一个 :class:`~.report.ParseEvent`.
 #:
 #: :func:`parse_line` 与 :func:`_finalize_lyrics` 用它在内部事件发生时就地通知
-#: 调用方; 行号 / 原始行由调用方自己补 (只有它知道).
-EventCallback = Callable[[str, str], None]
+#: 调用方. 它们不知道源文件行号, 所以事件的 ``line_no`` / ``raw_line`` 是
+#: ``None``, 需要时由调用方用 :func:`dataclasses.replace` 补上. 传对象而不是
+#: 拆开的字段, 以后给事件加字段不会破坏回调签名.
+EventCallback = Callable[[ParseEvent], None]
 
 __all__ = [
     "parse_line",
@@ -64,7 +67,8 @@ def parse_line(
             ``None`` 表示未知, 不做下界过滤.
         line_end: 本行的结束时间 (毫秒) . 晚于它的时间标签同样被忽略.
             ``None`` 表示未知, 不做上界过滤.
-        on_event: 忽略逐字标记时的回调, 收到 ``(code, message)``; 见
+        on_event: 忽略逐字标记时的回调, 收到一个 :class:`~.report.ParseEvent`
+            (``line_no`` / ``raw_line`` 为 ``None``); 代码见
             :data:`.report.ParseEventCode`. 默认 ``None`` 表示只打日志.
 
     Note:
@@ -212,7 +216,7 @@ def _drop_unusable_times(
         """打日志并通知回调 (相等合并那类正常写法不走这里)."""
         logger.warning(message)
         if on_event is not None:
-            on_event(code, message)
+            on_event(ParseEvent(code=code, message=message))
 
     idx = 0
     while idx < len(times):
@@ -335,12 +339,18 @@ class LrcParser:
             事件先入报告再抛, 所以 ``LrcParser`` 的使用方 ``except`` 之后仍能从
             :attr:`report` 读到"到这里为止发生了什么" (包括刚触发的那条).
         """
-        self._events.append(
+        self._record_event(
             ParseEvent(code=code, message=message, line_no=line_no, raw_line=raw_line)
         )
-        if self.options.strict and code in STRICT_ERROR_CODES:
+
+    def _record_event(self, event: ParseEvent) -> None:
+        """:meth:`_record` 的对象版本, 也直接充当 :data:`EventCallback`."""
+        self._events.append(event)
+        if self.options.strict and event.code in STRICT_ERROR_CODES:
             raise InvalidLyricsError(
-                f"[{code}] {message}", line_no=line_no, raw_line=raw_line
+                f"[{event.code}] {event.message}",
+                line_no=event.line_no,
+                raw_line=event.raw_line,
             )
 
     def _emit(
@@ -369,8 +379,10 @@ class LrcParser:
         一遍就会重复; 报告里补上行号才是新增的价值.
         """
 
-        def _callback(code: str, message: str) -> None:
-            self._record(code, message, line_no=line_no, raw_line=raw_line)
+        def _callback(event: ParseEvent) -> None:
+            self._record_event(
+                dataclasses.replace(event, line_no=line_no, raw_line=raw_line)
+            )
 
         return _callback
 
@@ -560,7 +572,7 @@ class LrcParser:
             self.line_pool,
             fill_implicit_line_end=self.options.fill_implicit_line_end,
             line_filter=line_filter,
-            on_event=self._record,
+            on_event=self._record_event,
         )
 
     def _register_line_at_tags(
@@ -762,7 +774,7 @@ def _finalize_lyrics(
                 message = f"Line at {ts}ms dropped by line_filter: {line.text!r}"
                 logger.debug(message)
                 if on_event is not None:
-                    on_event("line-filtered", message)
+                    on_event(ParseEvent(code="line-filtered", message=message))
                 continue
             kept[ts] = line
         line_pool = kept
@@ -785,7 +797,7 @@ def _finalize_lyrics(
             )
             logger.warning(message)
             if on_event is not None:
-                on_event("inferred-end-discarded", message)
+                on_event(ParseEvent(code="inferred-end-discarded", message=message))
             inferred_end = None
         # 推断不出 end 时保留 _apply_line_end_marker 写下的值, 不要清掉
         if inferred_end is not None:
