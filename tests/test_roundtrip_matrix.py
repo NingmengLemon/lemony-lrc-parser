@@ -401,7 +401,7 @@ class TestInferredEndIsNeverDegenerate:
     def test_cli_validate_accepts_what_the_parser_produces(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """解析器写出的文件, CLI ``validate --strict`` 不应因 error 而失败.
+        """解析器写出的文件, CLI ``validate --fail-on-error`` 不应因 error 而失败.
 
         越界逐字标签按 SPL 忽略之后, 解析器不再产出自相矛盾的词元时间, 因此这里
         既要求没有 ``[ERROR]``, 也要求没有 ``token-before-line-start`` 之类的
@@ -412,7 +412,7 @@ class TestInferredEndIsNeverDegenerate:
             Lyrics.loads("[00:10.000]a<00:05.000>b<00:06.000>").dumps(),
             encoding="utf-8",
         )
-        rc = main(["validate", "--strict", str(path)])
+        rc = main(["validate", "--fail-on-error", str(path)])
         captured = capsys.readouterr()
         assert rc == 0, captured.err
         assert "[ERROR]" not in captured.err
