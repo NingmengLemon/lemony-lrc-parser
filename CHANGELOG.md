@@ -12,6 +12,11 @@
 
 ## [Unreleased]
 
+## [0.5.0b3] — 2026-10-11
+
+写出一侧补齐: 序列化报告、行尾风格, 以及按真实后果分级的方括号首词元告警. 相对
+0.5.0b2 没有不兼容的接口改动; 默认输出不变.
+
 ### Added
 
 - `dump_with_report(lyrics, *, options=None) -> (str, DumpReport)`: 写出那一侧的
@@ -624,7 +629,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...HEAD
+[0.5.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...v0.5.0b3
 [0.5.0b2]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...v0.5.0b2
 [0.5.0b1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0b1
 [0.4.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.0...v0.4.1
