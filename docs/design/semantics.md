@@ -125,8 +125,10 @@ LRC 没有官方规范，下面每一条都是在"保真 / 易用 / 与其它实
 2. `dumps` 最多一轮收敛：`dumps(loads(d))` 第二轮起不变。
 3. 格式良好的语料 dump → load 后行结构不变。
 
-已知有损的写法：选项自身的代价照常写出并告警
-（`use_bracket_for_byword_tag=True` 且首词元晚于行首会读回两行）；无法用 LRC
+已知有损的写法：选项自身的代价照常写出，按真实后果记录
+（`use_bracket_for_byword_tag=True` 且首词元晚于行首时，后面没有别的标签会读回
+两行，记 warning；后面还有逐字或行尾标签时读回一行、多一个零文本词元，只记
+debug。判据与解析器 2b 分支相同，由 `tests/test_properties.py` 用真实重新解析核对）；无法用 LRC
 表达的跳过并记 debug（没有正文的参考行）。字幕互转丢弃逐字标记与 metadata，
 是格式差异，不算有损。
 

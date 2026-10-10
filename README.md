@@ -362,8 +362,13 @@ output = lyrics.dumps(
 
 | 情形 | 写出的文本 | 重新解析的结果 |
 | --- | --- | --- |
-| `use_bracket_for_byword_tag=True` 且首词元晚于行首 | `[00:01.000][00:01.500]hello` | 两行, 文本重复 |
+| `use_bracket_for_byword_tag=True` 且首词元晚于行首, 后面没有别的标签 | `[00:01.000][00:01.500]hello` | 两行, 文本重复 (warning) |
+| 同上, 但后面还有逐字标签或行尾标签 | `[00:01.000][00:01.500]hello[00:03.000]` | 一行, 行首多一个零文本词元 `''@1000..1500` (debug) |
 | 无正文的参考行 (逐字时间也一起丢) | 不写出, 只有 debug 日志 | 该参考行消失 |
+
+方括号写法下 `[行首][首字]正文` 与重复行简写同形, 解析端靠"正文里还有没有别的时间
+标签、整行是否非递减"区分两者, 所以只有第一种真的会拆行. 第二种正文与时间都不丢,
+只是首个词元前面多出一段空白.
 
 `dumps` 的输出是"最多一轮之后的不动点": `d2 = dumps(loads(d1))` 与
 `d3 = dumps(loads(d2))` 必定相等. 当前实现下 (含 2 万份随机语料与 6622 份真实
@@ -562,6 +567,38 @@ report.reference_lines_attached, report.end_markers_applied  # 正常操作只�
 
 `STRICT_ERROR_CODES` 是其中"严格模式下会直接抛异常"的子集 (少了 `line-filtered`,
 因为那是调用方自己要丢的), 见 [解析选项](#解析选项) 里的 `strict`.
+
+#### 从看日志改成读报告
+
+库的日志是逐行的内部动作, 批量处理时太吵, 消费方常常整个静音; 但静音之后"这份输入
+丢了什么"也一起看不见了. 报告把同样的信息变成数据, 可以只在需要时汇总:
+
+```python
+import logging
+from collections import Counter
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser.report import STRICT_ERROR_CODES
+
+# 之前: 要么忍受刷屏, 要么静音后什么都看不到
+logging.getLogger("lemony_lrc_parser").setLevel(logging.ERROR)
+
+# 之后: 日志照样静音, 问题按需从报告里取
+lyrics, report = llp.parse_with_report(
+    "[00:01.000]a<00:00.500>b\n\norphan\n[00:02.000]c\n"
+)
+
+Counter(event.code for event in report)
+# Counter({'byword-before-line-start': 1, 'orphaned-line': 1})
+
+for event in report:
+    if event.code in STRICT_ERROR_CODES:  # 文件里有声明被丢掉或忽略
+        print(f"line {event.line_no}: [{event.code}] {event.raw_line!r}")
+# line 1: [byword-before-line-start] '[00:01.000]a<00:00.500>b'
+# line 3: [orphaned-line] 'orphan'
+```
+
+报告里的 `line_no` 是源文件行号, `raw_line` 是原文, 可以直接写进产物旁边的审计文件.
 
 ### 校验
 

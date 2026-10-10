@@ -380,8 +380,15 @@ skipped with a debug log.
 
 | Case | Text written | Result of re-parsing |
 | --- | --- | --- |
-| `use_bracket_for_byword_tag=True` and the first token is later than the line start | `[00:01.000][00:01.500]hello` | two lines, duplicated text |
+| `use_bracket_for_byword_tag=True`, the first token is later than the line start, and no other tag follows | `[00:01.000][00:01.500]hello` | two lines, duplicated text (warning) |
+| Same, but a later word tag or a line-end tag follows | `[00:01.000][00:01.500]hello[00:03.000]` | one line with an extra empty leading token `''@1000..1500` (debug) |
 | Reference line without text (its word timing is dropped too) | not written, debug log only | the reference line disappears |
+
+With square brackets, `[line start][first word]text` looks exactly like the
+repeated-line shorthand. The parser tells them apart by whether the text carries
+any other time tag and whether all tags are non-decreasing, so only the first case
+actually splits. In the second case text and timing survive; the first token just
+gets an empty gap in front of it.
 
 `dumps` output is a fixed point "after at most one round": `d2 = dumps(loads(d1))`
 and `d3 = dumps(loads(d2))` are guaranteed equal. Under the current
@@ -613,6 +620,41 @@ line number.
 `STRICT_ERROR_CODES` is the subset that raises under strict mode (without
 `line-filtered`, since the caller asked for that); see `strict` under
 [Parsing Options](#parsing-options).
+
+#### From reading logs to reading the report
+
+The library's logs narrate per-line internals and get noisy in batch jobs, so
+consumers often silence them entirely; but then "what did this input lose" goes
+dark too. The report carries the same information as data you can summarize when
+you need it:
+
+```python
+import logging
+from collections import Counter
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser.report import STRICT_ERROR_CODES
+
+# before: either put up with the noise, or silence it and see nothing
+logging.getLogger("lemony_lrc_parser").setLevel(logging.ERROR)
+
+# after: logs stay silent, problems come from the report on demand
+lyrics, report = llp.parse_with_report(
+    "[00:01.000]a<00:00.500>b\n\norphan\n[00:02.000]c\n"
+)
+
+Counter(event.code for event in report)
+# Counter({'byword-before-line-start': 1, 'orphaned-line': 1})
+
+for event in report:
+    if event.code in STRICT_ERROR_CODES:  # a declaration in the file was dropped
+        print(f"line {event.line_no}: [{event.code}] {event.raw_line!r}")
+# line 1: [byword-before-line-start] '[00:01.000]a<00:00.500>b'
+# line 3: [orphaned-line] 'orphan'
+```
+
+`line_no` is the source line number and `raw_line` the original text, so they can
+go straight into an audit file next to your output.
 
 ### Validation
 
