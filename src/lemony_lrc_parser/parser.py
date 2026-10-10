@@ -30,6 +30,7 @@ from .regex import (
     compile_regex,
 )
 from .report import STRICT_ERROR_CODES, ParseEvent, ParseReport
+from .style import DetectedLineEnding, detect_line_ending
 
 logger = getLogger(__name__)
 
@@ -298,6 +299,7 @@ class LrcParser:
         self._events: list[ParseEvent] = []
         self._reference_lines_attached = 0
         self._end_markers_applied = 0
+        self._line_ending: DetectedLineEnding | None = None
 
     @property
     def report(self) -> ParseReport:
@@ -306,6 +308,7 @@ class LrcParser:
             events=tuple(self._events),
             reference_lines_attached=self._reference_lines_attached,
             end_markers_applied=self._end_markers_applied,
+            line_ending=self._line_ending,
         )
 
     def parse(self, lrc: str) -> Lyrics:
@@ -315,6 +318,7 @@ class LrcParser:
             lrc: LRC 源文本.
         """
         self.reset()
+        self._line_ending = detect_line_ending(lrc)
         # 去除开头可能存在的 BOM (例如调用方直接 loads() 未按 utf-8-sig 解码的
         # 文本). 若不去除, BOM 会使行首锚定正则失配, 导致首行被当作无锚点
         # 孤儿行而静默丢弃. BOM 本身不含换行, 去除不影响行号计数.

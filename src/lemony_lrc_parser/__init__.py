@@ -62,6 +62,7 @@ from .report import (
     ParseReport,
 )
 from .serializer import dump_with_report
+from .style import DetectedLineEnding, LineEnding, detect_line_ending
 from .subtitle import dump_srt, dump_webvtt, parse_srt, parse_webvtt
 from .timetag import format_timetag, parse_timetag
 from .validation import (
@@ -109,6 +110,9 @@ __all__ = [
     "parse_lrc",
     "parse_with_report",
     "dump_with_report",
+    "detect_line_ending",
+    "LineEnding",
+    "DetectedLineEnding",
     "format_timetag",
     "parse_timetag",
     "dump_srt",

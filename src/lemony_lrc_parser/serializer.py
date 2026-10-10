@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from io import StringIO
 from logging import getLogger
@@ -27,6 +28,9 @@ __all__ = [
 
 #: 事件出口: 收 ``(code, message, level)``, 位置字段由 :class:`_Writer` 补.
 _Emit = Callable[[str, str, int], None]
+
+#: 前面不是 ``\r`` 的 ``\n``.
+_BARE_LF = re.compile(r"(?<!\r)\n")
 
 
 def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> str:
@@ -151,7 +155,11 @@ class _Writer:
             self._reference_index = None
 
         self._line_index = None
-        return buffer.getvalue()
+        text = buffer.getvalue()
+        if options.line_ending == "crlf":
+            # 只换单独的 \n: line_separator 里若已经写了 \r\n, 不能再加一个 \r.
+            text = _BARE_LF.sub("\r\n", text)
+        return text
 
     def _write_line_tag(self, ms: int, *, use_angle: bool = False) -> None:
         """写一个行首/行尾时间标签."""

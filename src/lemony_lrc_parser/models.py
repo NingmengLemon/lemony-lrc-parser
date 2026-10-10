@@ -32,6 +32,7 @@ from typing_extensions import Self, override
 from ._utils import DC_SLOTS
 from .exceptions import ProgrammingError, TimestampUnderflowError
 from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
+from .style import LineEnding
 
 if TYPE_CHECKING:
     from .validation import ValidationIssue, ValidationOptions
@@ -144,7 +145,17 @@ class SerializationOptions:
         line_tag_decimal_length: 行标签毫秒位数 (默认 3), 使用更小的值会损失精度.
         word_tag_decimal_length: 逐字标签毫秒位数 (默认 3), 使用更小的值会损失精度.
         line_separator: 行间分隔字符串 (默认 ``"\\n"`` 表示行间插入空行).
-            设为 ``""`` 可省去空行.
+            设为 ``""`` 可省去空行. 其中的换行同样按 ``line_ending`` 写出.
+        line_ending: 行尾, ``"lf"`` (默认) 或 ``"crlf"``. 与平台无关: 同一份歌词在
+            任何系统上 ``dumps()`` 都得到同一个字符串. 要沿用源文件的风格, 用
+            :func:`~.style.detect_line_ending` 或 ``ParseReport.line_ending`` 探测后
+            显式传进来.
+
+            Note:
+                选 ``"crlf"`` 时, 写文件要用 ``newline=""`` 或二进制模式. Python 的
+                文本模式在 Windows 上会把每个 ``\\n`` 再转成 ``\\r\\n``, 结果是
+                ``\\r\\r\\n``. 反过来说, 默认的 ``"lf"`` 配文本模式写文件, 在
+                Windows 上得到的就是 CRLF.
     """
 
     with_metadata: bool = True
@@ -152,10 +163,16 @@ class SerializationOptions:
     line_tag_decimal_length: int = 3
     word_tag_decimal_length: int = 3
     line_separator: str = "\n"
+    line_ending: LineEnding = "lf"
 
     def __post_init__(self) -> None:
         """校验参数合法性."""
         from .timetag import MAX_TAIL_DIGITS, MIN_TAIL_DIGITS
+
+        if self.line_ending not in ("lf", "crlf"):
+            raise ProgrammingError(
+                f"line_ending must be 'lf' or 'crlf', got {self.line_ending!r}"
+            )
 
         for f in ("line_tag_decimal_length", "word_tag_decimal_length"):
             val = getattr(self, f)
@@ -823,7 +840,9 @@ class Lyrics(UserList[LyricLine]):
         """从文件加载 LRC 内容.
 
         Args:
-            fp: LRC 文件指针.
+            fp: LRC 文件指针. 行尾是 LF 还是 CRLF 不影响解析结果; 要探测原文件的
+                行尾, 打开时传 ``newline=""`` 并改用 :func:`~.parser.parse_with_report`
+                (见 ``ParseReport.line_ending``).
             options: 解析选项.
         """
         return cls.loads(fp.read(), options=options)
@@ -832,7 +851,8 @@ class Lyrics(UserList[LyricLine]):
         """将当前对象写入文件.
 
         Args:
-            fp: LRC 文件指针.
+            fp: LRC 文件指针. ``options.line_ending="crlf"`` 时请以 ``newline=""``
+                打开, 否则 Windows 上会写成 ``\\r\\r\\n``.
             options: 序列化选项.
         """
         fp.write(self.dumps(options=options))

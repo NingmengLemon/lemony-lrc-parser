@@ -23,6 +23,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from .style import DetectedLineEnding
+
 __all__ = [
     "DROPPED_LINE_CODES",
     "LOSSY_DUMP_CODES",
@@ -109,11 +111,16 @@ class ParseReport:
         events: 值得注意的事件, 按发生顺序.
         reference_lines_attached: 被挂成参考行的行数 (正常操作, 只计数).
         end_markers_applied: 成功收尾的纯结束标记个数 (正常操作, 只计数).
+        line_ending: 源文本的行尾, 见 :func:`~.style.detect_line_ending`. 只在整份
+            解析 (:meth:`~.parser.LrcParser.parse`) 时探测, 逐行喂入时为 ``None``.
+            它描述源文本, 不算事件, 也不影响 ``bool(report)``; 写出时要沿用, 显式
+            传给 ``SerializationOptions(line_ending=...)``.
     """
 
     events: tuple[ParseEvent, ...] = ()
     reference_lines_attached: int = 0
     end_markers_applied: int = 0
+    line_ending: DetectedLineEnding | None = None
 
     def __len__(self) -> int:
         """事件条数 (不是行数; 计数见两个属性)."""
