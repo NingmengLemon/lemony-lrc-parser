@@ -22,6 +22,7 @@ from .exceptions import LyricsParserError
 from .models import Lyrics, SerializationOptions
 from .parser import parse_with_report
 from .report import STRICT_ERROR_CODES, ParseReport
+from .style import LineEnding, detect_line_ending
 from .validation import ValidationOptions
 
 #: 库的根 logger; ``validate`` 期间在它上面挂 NullHandler, 见 :func:`_quiet_library_logs`.
@@ -80,6 +81,12 @@ def _resolve_args(args: list[str] | None = None) -> argparse.Namespace:
     p_off.add_argument(
         "-o", "--output", default=None, help="输出文件路径 (默认 stdout)"
     )
+    p_off.add_argument(
+        "--line-ending",
+        choices=("keep", "lf", "crlf"),
+        default="keep",
+        help=("输出的行尾. keep (默认) 沿用输入文件的行尾; 输入混用或没有换行时用 lf."),
+    )
 
     # ---- to-srt ----
     p_srt = sub.add_parser("to-srt", help="转换为 SRT 字幕")
@@ -107,7 +114,10 @@ def _read_text(path: str) -> str | None:
         "返回码"与 ``SystemExit`` 两套控制流.
     """
     try:
-        return Path(path).read_text(encoding="utf-8-sig")
+        # newline="": 不让 Python 把 \r\n 转成 \n, 否则 offset 无法沿用原文件的行尾.
+        # 解析器自己能按行切开任意行尾. (Path.read_text 到 3.13 才有 newline 参数.)
+        with Path(path).open(encoding="utf-8-sig", newline="") as fp:
+            return fp.read()
     except FileNotFoundError:
         print(f"Error: file not found: {path}", file=sys.stderr)
     except OSError as exc:
@@ -115,16 +125,25 @@ def _read_text(path: str) -> str | None:
     return None
 
 
-def _read_lrc(path: str) -> Lyrics | None:
-    """从文件路径读取并解析 LRC; 失败时打印错误并返回 ``None``."""
+def _read_lrc(path: str) -> tuple[Lyrics, str] | None:
+    """从文件路径读取并解析 LRC, 连同原文一起返回; 失败时打印错误并返回 ``None``."""
     text = _read_text(path)
     if text is None:
         return None
     try:
-        return Lyrics.loads(text)
+        return Lyrics.loads(text), text
     except LyricsParserError as exc:
         print(f"Error: failed to parse {path}: {exc}", file=sys.stderr)
     return None
+
+
+def _resolve_line_ending(choice: str, source: str) -> LineEnding:
+    """把 ``--line-ending`` 落成具体的行尾; ``keep`` 时探测 ``source``."""
+    if choice == "crlf":
+        return "crlf"
+    if choice == "lf":
+        return "lf"
+    return "crlf" if detect_line_ending(source) == "crlf" else "lf"
 
 
 @contextmanager
@@ -186,15 +205,27 @@ def _validate(path: str, *, fail_on_error: bool) -> int:
 
 
 def _write_output(text: str, output_path: str | None) -> bool:
-    """将文本写到文件或 stdout, 返回写入是否成功."""
+    """将文本原样写到文件或 stdout, 返回写入是否成功.
+
+    "原样"指不做换行转换: 行尾已经由调用方决定好了. 文本模式在 Windows 上会把
+    ``\\n`` 转成 ``\\r\\n``, 遇到已经是 CRLF 的文本就会写成 ``\\r\\r\\n``.
+    """
     if output_path:
         try:
-            Path(output_path).write_text(text, encoding="utf-8")
+            # Path.write_text 到 3.10 才有 newline 参数.
+            with Path(output_path).open("w", encoding="utf-8", newline="") as fp:
+                fp.write(text)
         except OSError as exc:
             print(f"Error: failed to write {output_path}: {exc}", file=sys.stderr)
             return False
     else:
-        sys.stdout.write(text)
+        buffer = getattr(sys.stdout, "buffer", None)
+        if buffer is None:  # 被替换成纯文本流 (测试捕获、IDE 控制台等)
+            sys.stdout.write(text)
+        else:
+            sys.stdout.flush()
+            buffer.write(text.encode(sys.stdout.encoding or "utf-8"))
+            buffer.flush()
     return True
 
 
@@ -214,9 +245,10 @@ def main(args: list[str] | None = None) -> int:
         )
 
     elif ns.command == "offset":
-        lyrics = _read_lrc(ns.file)
-        if lyrics is None:
+        loaded = _read_lrc(ns.file)
+        if loaded is None:
             return 1
+        lyrics, source = loaded
         try:
             shifted = lyrics.apply_delta(ns.delta)
         # CLI 边界刻意宽捕获: 任何异常都转成 stderr 提示 + 退出码 1,
@@ -224,21 +256,22 @@ def main(args: list[str] | None = None) -> int:
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
-        output = shifted.dumps(options=SerializationOptions())
+        line_ending = _resolve_line_ending(ns.line_ending, source)
+        output = shifted.dumps(options=SerializationOptions(line_ending=line_ending))
         return 0 if _write_output(output, ns.output) else 1
 
     elif ns.command == "to-srt":
-        lyrics = _read_lrc(ns.file)
-        if lyrics is None:
+        loaded = _read_lrc(ns.file)
+        if loaded is None:
             return 1
-        output = lyrics.to_srt()
+        output = loaded[0].to_srt()
         return 0 if _write_output(output, ns.output) else 1
 
     elif ns.command == "to-webvtt":
-        lyrics = _read_lrc(ns.file)
-        if lyrics is None:
+        loaded = _read_lrc(ns.file)
+        if loaded is None:
             return 1
-        output = lyrics.to_webvtt()
+        output = loaded[0].to_webvtt()
         return 0 if _write_output(output, ns.output) else 1
 
     return 0  # pragma: no cover - argparse required=True 保证命令必然匹配上面某支

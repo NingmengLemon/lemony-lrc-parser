@@ -319,11 +319,12 @@ class TestCLIEdgeCases:
     ) -> None:
         """读取文件时发生 OSError 应友好报错并返回退出码 1."""
 
-        def _failing_read_text(*args: object, **kwargs: object) -> object:
+        path = _write_temp_lrc()
+
+        def _failing_open(*args: object, **kwargs: object) -> object:
             raise OSError("permission denied")
 
-        monkeypatch.setattr("pathlib.Path.read_text", _failing_read_text)
-        path = _write_temp_lrc()
+        monkeypatch.setattr("pathlib.Path.open", _failing_open)
         try:
             rc = main(["validate", path])
             captured = capsys.readouterr()
@@ -438,11 +439,15 @@ class TestCLIEdgeCases:
     ) -> None:
         """转换命令写入输出文件失败时应报错并返回退出码 1."""
 
-        def _failing_write_text(*args: object, **kwargs: object) -> int:
-            raise OSError("permission denied")
-
-        monkeypatch.setattr(Path, "write_text", _failing_write_text)
         path = _write_temp_lrc()
+        real_open = Path.open
+
+        def _failing_open(self: Path, mode: str = "r", **kwargs: str) -> object:
+            if "w" in mode:
+                raise OSError("permission denied")
+            return real_open(self, mode, **kwargs)  # ty: ignore[no-matching-overload]
+
+        monkeypatch.setattr(Path, "open", _failing_open)
         try:
             rc = main([*args, path, "--output", "unwritable-output.lrc"])
             captured = capsys.readouterr()
