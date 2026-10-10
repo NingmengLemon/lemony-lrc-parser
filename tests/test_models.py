@@ -7,7 +7,14 @@ import warnings
 
 import pytest
 
-from lemony_lrc_parser import COMMON_METADATA_KEYS, MetadataDict, MetadataKey
+from lemony_lrc_parser import (
+    COMMON_METADATA_KEYS,
+    MetadataDict,
+    MetadataKey,
+    ProgrammingError,
+    SerializationOptions,
+    SubtitleOptions,
+)
 from lemony_lrc_parser.models import BasicLyricLine, LyricLine, Lyrics, LyricToken
 from lemony_lrc_parser.regex import METATAG_KEY_REGEX, compile_regex
 
@@ -731,3 +738,73 @@ class TestLyricsEquality:
 
     def test_not_equal_to_unrelated_type(self) -> None:
         assert Lyrics.loads("[00:01.000]x\n") != 42
+
+
+class TestOptionValidation:
+    """选项 dataclass 在构造时拒绝非法值, 而不是等到用的时候才炸."""
+
+    @pytest.mark.parametrize(
+        "field", ["line_tag_decimal_length", "word_tag_decimal_length"]
+    )
+    @pytest.mark.parametrize("value", [0, 7])
+    def test_tail_digits_out_of_range(self, field: str, value: int) -> None:
+        with pytest.raises(ProgrammingError, match=field):
+            SerializationOptions(**{field: value})  # ty: ignore[invalid-argument-type]
+
+    @pytest.mark.parametrize("value", [0, -1])
+    def test_non_positive_default_duration(self, value: int) -> None:
+        with pytest.raises(ProgrammingError, match="default_duration_ms"):
+            SubtitleOptions(default_duration_ms=value)
+
+
+class TestModelProtocols:
+    """``str()`` / ``len()`` / ``iter()`` 在各层模型上的口径."""
+
+    def test_str_is_the_text(self) -> None:
+        tokens = [LyricToken(content="a", start=0, end=1), LyricToken(content="b")]
+        assert str(tokens[0]) == "a"
+        assert str(BasicLyricLine(tokens)) == "ab"
+
+    def test_lyric_line_len_and_iter_follow_its_tokens(self) -> None:
+        tokens = [LyricToken(content="a"), LyricToken(content="b")]
+        line = LyricLine(start=0, content=BasicLyricLine(tokens))
+        assert len(line) == 2
+        assert list(line) == tokens
+
+
+class TestUnsupportedOperators:
+    """不支持的运算返回 ``NotImplemented``, 让 Python 自己抛 ``TypeError``."""
+
+    def test_add_non_lyrics(self) -> None:
+        lyrics = Lyrics([_line(0, "x")])
+        with pytest.raises(TypeError):
+            lyrics + [_line(1, "y")]  # ty: ignore[unsupported-operator]  # noqa: RUF005
+        with pytest.raises(TypeError):
+            [_line(1, "y")] + lyrics  # noqa: RUF005
+
+    def test_iadd_non_lyrics(self) -> None:
+        lyrics = Lyrics([_line(0, "x")])
+        with pytest.raises(TypeError):
+            lyrics += 1  # ty: ignore[unsupported-operator]
+
+    def test_multiplication_is_not_supported(self) -> None:
+        """``UserList`` 的重复拼接对歌词没有意义 (会造出同时间戳的重复行)."""
+        lyrics = Lyrics([_line(0, "x")])
+        with pytest.raises(TypeError):
+            lyrics * 2
+        with pytest.raises(TypeError):
+            2 * lyrics
+        with pytest.raises(TypeError):
+            lyrics *= 2
+
+    @pytest.mark.parametrize("ms", [1.5, "100"])
+    def test_shift_requires_int(self, ms: object) -> None:
+        lyrics = Lyrics([_line(1000, "x")])
+        with pytest.raises(TypeError):
+            lyrics << ms  # ty: ignore[unsupported-operator]
+        with pytest.raises(TypeError):
+            lyrics >> ms  # ty: ignore[unsupported-operator]
+
+    def test_combine_rejects_non_iterable(self) -> None:
+        with pytest.raises(TypeError, match="Iterable"):
+            Lyrics().combine(42)  # ty: ignore[invalid-argument-type]

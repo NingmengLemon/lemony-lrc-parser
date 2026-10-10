@@ -16,7 +16,7 @@ import re
 import sys
 import warnings
 from collections import UserList
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
@@ -64,12 +64,13 @@ def _warn_ambiguous_contains(owner: str, method: str) -> None:
 
     只发告警, **不改变行为**: ``in`` 在这些模型上历史语义各不相同 (子串 /
     词元相等 / 行相等), 用户很容易误读, 因此引导到显式的
-    ``contains_text()`` / ``find_text()``.
+    ``contains_text()`` / ``find_text()``. 0.6.0 起 ``str in <模型>`` 抛
+    ``TypeError``.
     """
     warnings.warn(
         f"`str in {owner}` is ambiguous (substring? token equality? line "
-        f"equality?); use `{method}()` for text lookup. Behavior is unchanged, "
-        f"but this usage will be removed in a future version.",
+        f"equality?); use `{method}()` for text lookup. Behavior is unchanged "
+        f"for now; starting with 0.6.0 it raises TypeError.",
         DeprecationWarning,
         stacklevel=3,
     )
@@ -241,7 +242,7 @@ class LyricToken:
         return LyricTokenDict(content=self.content, start=self.start, end=self.end)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LyricToken:
+    def from_dict(cls, data: Mapping[str, Any]) -> LyricToken:
         return cls(
             content=data.get("content", ""),
             start=data["start"],
@@ -301,7 +302,7 @@ class BasicLyricLine(UserList[LyricToken]):
         return [token.to_dict() for token in self]
 
     @classmethod
-    def from_dict(cls, data: list[dict[str, Any]]) -> BasicLyricLine:
+    def from_dict(cls, data: Sequence[Mapping[str, Any]]) -> BasicLyricLine:
         return BasicLyricLine([LyricToken.from_dict(token_data) for token_data in data])
 
 
@@ -415,7 +416,7 @@ class LyricLine:
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LyricLine:
+    def from_dict(cls, data: Mapping[str, Any]) -> LyricLine:
         return cls(
             start=data["start"],
             end=data.get("end"),
@@ -1011,7 +1012,7 @@ class Lyrics(UserList[LyricLine]):
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Lyrics:
+    def from_dict(cls, data: Mapping[str, Any]) -> Lyrics:
         metadata = data.get("metadata")
         metadata = Metadata(metadata) if isinstance(metadata, Mapping) else Metadata()
         return cls(
