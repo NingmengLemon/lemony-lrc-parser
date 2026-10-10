@@ -1,7 +1,11 @@
-"""解析报告.
+"""解析报告与序列化报告.
 
-把解析过程中"丢了什么 / 忽略了什么 / 改了什么"从日志变成结构化数据: 日志适合人
-排查, 报告适合程序消费 (CLI 输出、审计、上游重试、strict 模式的判定依据).
+把解析 / 序列化过程中"丢了什么 / 忽略了什么 / 改了什么"从日志变成结构化数据: 日志
+适合人排查, 报告适合程序消费 (CLI 输出、审计、上游重试、strict 模式的判定依据).
+
+* :class:`ParseReport`: :func:`~.parser.parse_with_report` 给出, 位置是源文件行号.
+* :class:`DumpReport`: :func:`~.serializer.dump_with_report` 给出, 位置是
+  :class:`~.models.Lyrics` 里的行下标 (写出时没有源文件可言).
 
 事件代码 (``ParseEvent.code``) 与 :class:`~.validation.ValidationIssue` 的错误码
 同属一套 kebab-case 命名, 后续 strict 模式复用同一批代码, 不再另立枚举.
@@ -21,7 +25,11 @@ from typing import Literal
 
 __all__ = [
     "DROPPED_LINE_CODES",
+    "LOSSY_DUMP_CODES",
     "STRICT_ERROR_CODES",
+    "DumpEvent",
+    "DumpEventCode",
+    "DumpReport",
     "ParseEvent",
     "ParseEventCode",
     "ParseReport",
@@ -126,3 +134,89 @@ class ParseReport:
     def dropped_lines(self) -> list[ParseEvent]:
         """整行没有进入结果的事件 (孤儿行 / 被 ``line_filter`` 丢掉的行)."""
         return [event for event in self.events if event.code in DROPPED_LINE_CODES]
+
+
+#: 序列化事件的已知代码. 与 :data:`ParseEventCode` 一样只是提示, 不限制取值.
+#:
+#: * ``bracket-first-tag-splits-line``: ``use_bracket_for_byword_tag=True`` 下延迟的
+#:   首词元写成 ``[行首][首字]正文``, 后面没有可区分的标签, 重新解析会读成两行、
+#:   正文重复.
+#: * ``bracket-first-tag-adds-token``: 同一写法, 但后面还有标签, 重新解析仍是一行,
+#:   行首多一个零文本词元. 正文与时间不丢.
+#: * ``byword-out-of-range-omitted``: 逐字标记落在行的 ``[start, end]`` 之外, 解析端
+#:   按 SPL 会忽略它, 所以不写出.
+#: * ``textless-reference-skipped``: 没有正文的参考行 LRC 表达不了, 不写出.
+#: * ``metadata-key-unparsable``: metadata key 不符合解析规则, 重新解析时丢失.
+#: * ``metadata-value-unbalanced``: value 里方括号不配对, 重新解析时整行变成正文.
+#: * ``metadata-value-newline``: value 含换行, 会破坏 metadata 行结构.
+DumpEventCode = Literal[
+    "bracket-first-tag-splits-line",
+    "bracket-first-tag-adds-token",
+    "byword-out-of-range-omitted",
+    "textless-reference-skipped",
+    "metadata-key-unparsable",
+    "metadata-value-unbalanced",
+    "metadata-value-newline",
+]
+
+#: 重新解析读不回原数据的序列化事件. 只有 ``bracket-first-tag-adds-token`` 不在其中:
+#: 它改变了词元结构 (多一个空词元), 但正文与所有时间都还在.
+LOSSY_DUMP_CODES: frozenset[str] = frozenset(
+    {
+        "bracket-first-tag-splits-line",
+        "byword-out-of-range-omitted",
+        "textless-reference-skipped",
+        "metadata-key-unparsable",
+        "metadata-value-unbalanced",
+        "metadata-value-newline",
+    }
+)
+
+
+@dataclass(frozen=True)
+class DumpEvent:
+    """序列化过程中的一条事件.
+
+    Attributes:
+        code: 事件代码, 见 :data:`DumpEventCode`.
+        message: 人类可读的描述 (英文, 与运行时日志口径一致).
+        line_index: 涉事行在 ``lyrics`` 中的下标, metadata 事件为 ``None``.
+        reference_index: 涉事参考行在 ``line.reference_lines`` 中的下标; 主行或
+            metadata 事件为 ``None``.
+        metadata_key: metadata 事件的 key, 其它事件为 ``None``.
+    """
+
+    code: str
+    message: str
+    line_index: int | None = None
+    reference_index: int | None = None
+    metadata_key: str | None = None
+
+
+@dataclass(frozen=True)
+class DumpReport:
+    """一次序列化的结构化报告. 能无损写出的歌词报告为空 (``bool(report)`` 为假).
+
+    Attributes:
+        events: 事件, 按写出顺序.
+    """
+
+    events: tuple[DumpEvent, ...] = ()
+
+    def __len__(self) -> int:
+        return len(self.events)
+
+    def __iter__(self) -> Iterator[DumpEvent]:
+        return iter(self.events)
+
+    def __bool__(self) -> bool:
+        return bool(self.events)
+
+    def of_code(self, code: str) -> list[DumpEvent]:
+        """取出指定代码的全部事件, 按发生顺序."""
+        return [event for event in self.events if event.code == code]
+
+    @property
+    def lossy(self) -> list[DumpEvent]:
+        """重新解析读不回原数据的事件 (见 :data:`LOSSY_DUMP_CODES`)."""
+        return [event for event in self.events if event.code in LOSSY_DUMP_CODES]

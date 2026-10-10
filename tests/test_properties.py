@@ -24,6 +24,7 @@ from lemony_lrc_parser import (
     SerializationOptions,
     TimestampOverflowError,
     TimestampUnderflowError,
+    dump_with_report,
     format_timetag,
     parse_timetag,
 )
@@ -204,23 +205,32 @@ def test_dict_roundtrip(lyrics: Lyrics) -> None:
 DUMPS_BRACKET = SerializationOptions(use_bracket_for_byword_tag=True, line_separator="")
 
 
+def _entries(lyrics: Lyrics) -> int:
+    """主行与参考行的总数."""
+    return sum(1 + len(line.reference_lines) for line in lyrics)
+
+
 @given(lyrics_objects())
-def test_bracket_first_tag_warning_matches_the_real_outcome(lyrics: Lyrics) -> None:
-    """方括号首词元标签: 有 warning 当且仅当重新解析真的多出行.
+def test_bracket_first_tag_event_matches_the_real_outcome(lyrics: Lyrics) -> None:
+    """方括号首词元标签: ``bracket-first-tag-splits-line`` 的个数等于真实多出的正文份数.
 
-    告警的判据 (``serializer._bracket_first_tag_splits``) 是对解析器 2b 分支的
-    推断; 这里拿真实的重新解析结果核对它, 免得两边各改各的.
+    判据 (``serializer._bracket_first_tag_splits``) 是对解析器 2b 分支的推断;
+    这里拿真实的重新解析结果核对它, 免得两边各改各的.
     """
-    from unittest import mock
+    dumped, report = dump_with_report(lyrics, options=DUMPS_BRACKET)
+    assert dumped == lyrics.dumps(options=DUMPS_BRACKET)
+    # 每次拆行都恰好多出一份正文: 落到空时间点就是新行, 时间点上已有行 (包括
+    # 另一次拆行刚放下的) 就挂成它的参考行. 所以数"行 + 参考行", 而不是只数行.
+    extra = _entries(Lyrics.loads(dumped)) - _entries(lyrics)
+    splits = report.of_code("bracket-first-tag-splits-line")
+    assert len(splits) == extra
 
-    from lemony_lrc_parser import serializer
 
-    with mock.patch.object(serializer.logger, "warning") as warning:
-        dumped = lyrics.dumps(options=DUMPS_BRACKET)
-    reparsed = Lyrics.loads(dumped)
-    main_split = len(reparsed) - len(lyrics)
-    # 参考行被拆时, 拆出来的那份落在新时间点上, 同样表现为行数增加.
-    assert (warning.call_count > 0) == (main_split > 0)
+@given(lyrics_objects())
+def test_lossless_dump_has_no_lossy_events(lyrics: Lyrics) -> None:
+    """生成器只造能无损写出的结构, 所以默认写法下报告里不该有有损事件."""
+    _, report = dump_with_report(lyrics, options=DUMPS)
+    assert not report.lossy, [event.code for event in report]
 
 
 # ---------------------------------------------------------------------------

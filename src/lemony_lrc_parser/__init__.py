@@ -53,7 +53,15 @@ from .models import (
     SubtitleOptions,
 )
 from .parser import parse_line, parse_lrc, parse_with_report
-from .report import ParseEvent, ParseEventCode, ParseReport
+from .report import (
+    DumpEvent,
+    DumpEventCode,
+    DumpReport,
+    ParseEvent,
+    ParseEventCode,
+    ParseReport,
+)
+from .serializer import dump_with_report
 from .subtitle import dump_srt, dump_webvtt, parse_srt, parse_webvtt
 from .timetag import format_timetag, parse_timetag
 from .validation import (
@@ -83,6 +91,9 @@ __all__ = [
     "ParseOptions",
     "SerializationOptions",
     "SubtitleOptions",
+    "DumpEvent",
+    "DumpEventCode",
+    "DumpReport",
     "ParseEvent",
     "ParseEventCode",
     "ParseReport",
@@ -97,6 +108,7 @@ __all__ = [
     "parse_line",
     "parse_lrc",
     "parse_with_report",
+    "dump_with_report",
     "format_timetag",
     "parse_timetag",
     "dump_srt",
