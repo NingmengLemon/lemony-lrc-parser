@@ -356,15 +356,17 @@ output = lyrics.dumps(
 
 #### 往返保真度
 
-`dumps()` 的输出在重新解析后应当还原原对象. 已知的有损写法有两类 (见下表): 属于选项
-自身代价的照常写出并 warning (与 metadata 的处理一致), 确实无法用 LRC 表达的则跳过
-并记 debug 日志.
+`dumps()` 的输出在重新解析后应当还原原对象. 已知例外见下表: 属于选项自身代价的照常
+写出, 确实无法用 LRC 表达的跳过. 每一种都有日志, 也都会出现在
+[序列化报告](#序列化报告)里 (表中最后一列是事件代码).
 
-| 情形 | 写出的文本 | 重新解析的结果 |
-| --- | --- | --- |
-| `use_bracket_for_byword_tag=True` 且首词元晚于行首, 后面没有别的标签 | `[00:01.000][00:01.500]hello` | 两行, 文本重复 (warning) |
-| 同上, 但后面还有逐字标签或行尾标签 | `[00:01.000][00:01.500]hello[00:03.000]` | 一行, 行首多一个零文本词元 `''@1000..1500` (debug) |
-| 无正文的参考行 (逐字时间也一起丢) | 不写出, 只有 debug 日志 | 该参考行消失 |
+| 情形 | 写出的文本 | 重新解析的结果 | 事件 |
+| --- | --- | --- | --- |
+| `use_bracket_for_byword_tag=True` 且首词元晚于行首, 后面没有别的标签 | `[00:01.000][00:01.500]hello` | 两行, 文本重复 (warning) | `bracket-first-tag-splits-line` |
+| 同上, 但后面还有逐字标签或行尾标签 | `[00:01.000][00:01.500]hello[00:03.000]` | 一行, 行首多一个零文本词元 `''@1000..1500` (debug) | `bracket-first-tag-adds-token` |
+| 逐字标记落在行的时间范围之外 | 不写出该标记 (warning) | 该时间点消失 | `byword-out-of-range-omitted` |
+| 无正文的参考行 (逐字时间也一起丢) | 不写出 (debug) | 该参考行消失 | `textless-reference-skipped` |
+| metadata 的 key 或 value 无法往返 | 照常写出 (warning) | 见 [元数据语法](#元数据语法) | `metadata-*` |
 
 方括号写法下 `[行首][首字]正文` 与重复行简写同形, 解析端靠"正文里还有没有别的时间
 标签、整行是否非递减"区分两者, 所以只有第一种真的会拆行. 第二种正文与时间都不丢,
@@ -599,6 +601,36 @@ for event in report:
 ```
 
 报告里的 `line_no` 是源文件行号, `raw_line` 是原文, 可以直接写进产物旁边的审计文件.
+
+### 序列化报告
+
+`dump_with_report` 是写出那一侧的对应物: 文本与 `dumps()` 一字不差, 另给一份报告,
+列出 [往返保真度](#往返保真度) 表里那些情形. 位置是 `lyrics` 里的行下标
+(`line_index`) 与参考行下标 (`reference_index`), metadata 事件带 `metadata_key`.
+
+```python
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+lyrics = llp.loads(
+    "[00:01.000]<00:01.500>Feel <00:02.000>it[00:03.000]\n[00:04.000]<00:04.500>gone\n"
+)
+text, report = llp.dump_with_report(
+    lyrics, options=SerializationOptions(use_bracket_for_byword_tag=True)
+)
+for event in report:
+    print(f"lyrics[{event.line_index}]: [{event.code}]")
+# lyrics[0]: [bracket-first-tag-adds-token]
+# lyrics[1]: [bracket-first-tag-splits-line]
+
+report.lossy  # 重新解析读不回原数据的那些, 这里只有 lyrics[1]
+```
+
+事件代码: `bracket-first-tag-splits-line`、`bracket-first-tag-adds-token`、
+`byword-out-of-range-omitted`、`textless-reference-skipped`、
+`metadata-key-unparsable`、`metadata-value-unbalanced`、`metadata-value-newline`.
+`report.lossy` 是除 `bracket-first-tag-adds-token` 以外的全部: 那一种改变了词元
+结构, 但正文与时间都还在. 能无损写出的歌词报告为空.
 
 ### 校验
 

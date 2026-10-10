@@ -373,16 +373,18 @@ centiseconds).
 #### Round-trip Fidelity
 
 The output of `dumps()` should reconstruct the original object when re-parsed.
-There are two known kinds of lossy write (see the table below): writes that are
-the cost of the options themselves are written out anyway with a warning
-(consistent with metadata handling), while writes LRC simply cannot express are
-skipped with a debug log.
+The known exceptions are listed below: writes that are the cost of the options
+themselves are written out anyway, and writes LRC simply cannot express are
+skipped. Each one is logged and also shows up in the
+[dump report](#dump-report) (the last column is the event code).
 
-| Case | Text written | Result of re-parsing |
-| --- | --- | --- |
-| `use_bracket_for_byword_tag=True`, the first token is later than the line start, and no other tag follows | `[00:01.000][00:01.500]hello` | two lines, duplicated text (warning) |
-| Same, but a later word tag or a line-end tag follows | `[00:01.000][00:01.500]hello[00:03.000]` | one line with an extra empty leading token `''@1000..1500` (debug) |
-| Reference line without text (its word timing is dropped too) | not written, debug log only | the reference line disappears |
+| Case | Text written | Result of re-parsing | Event |
+| --- | --- | --- | --- |
+| `use_bracket_for_byword_tag=True`, the first token is later than the line start, and no other tag follows | `[00:01.000][00:01.500]hello` | two lines, duplicated text (warning) | `bracket-first-tag-splits-line` |
+| Same, but a later word tag or a line-end tag follows | `[00:01.000][00:01.500]hello[00:03.000]` | one line with an extra empty leading token `''@1000..1500` (debug) | `bracket-first-tag-adds-token` |
+| A word tag outside the line's time span | the tag is not written (warning) | that time point is gone | `byword-out-of-range-omitted` |
+| Reference line without text (its word timing is dropped too) | not written (debug) | the reference line disappears | `textless-reference-skipped` |
+| A metadata key or value that cannot round-trip | written anyway (warning) | see [Metadata Syntax](#metadata-syntax) | `metadata-*` |
 
 With square brackets, `[line start][first word]text` looks exactly like the
 repeated-line shorthand. The parser tells them apart by whether the text carries
@@ -655,6 +657,38 @@ for event in report:
 
 `line_no` is the source line number and `raw_line` the original text, so they can
 go straight into an audit file next to your output.
+
+### Dump Report
+
+`dump_with_report` is the writing-side counterpart: the text is identical to
+`dumps()`, plus a report of the cases in the [round-trip fidelity](#round-trip-fidelity)
+table. Positions are the index into `lyrics` (`line_index`) and into the line's
+reference lines (`reference_index`); metadata events carry `metadata_key`.
+
+```python
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+lyrics = llp.loads(
+    "[00:01.000]<00:01.500>Feel <00:02.000>it[00:03.000]\n[00:04.000]<00:04.500>gone\n"
+)
+text, report = llp.dump_with_report(
+    lyrics, options=SerializationOptions(use_bracket_for_byword_tag=True)
+)
+for event in report:
+    print(f"lyrics[{event.line_index}]: [{event.code}]")
+# lyrics[0]: [bracket-first-tag-adds-token]
+# lyrics[1]: [bracket-first-tag-splits-line]
+
+report.lossy  # the ones that do not read back as written; here only lyrics[1]
+```
+
+Event codes: `bracket-first-tag-splits-line`, `bracket-first-tag-adds-token`,
+`byword-out-of-range-omitted`, `textless-reference-skipped`,
+`metadata-key-unparsable`, `metadata-value-unbalanced`, `metadata-value-newline`.
+`report.lossy` is all of them except `bracket-first-tag-adds-token`, which changes
+the token structure but keeps every piece of text and timing. Lyrics that can be
+written losslessly yield an empty report.
 
 ### Validation
 

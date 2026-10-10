@@ -12,6 +12,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- `dump_with_report(lyrics, *, options=None) -> (str, DumpReport)`: 写出那一侧的
+  结构化报告, 与 `parse_with_report` 对称. 文本与 `dumps()` 一字不差; 报告列出无法
+  无损写出或会改变结构的处理 (`DumpEvent`, 位置是 `line_index` / `reference_index`
+  / `metadata_key`). 事件代码见 `report.py` 的 `DumpEventCode`:
+  `bracket-first-tag-splits-line` / `bracket-first-tag-adds-token` /
+  `byword-out-of-range-omitted` / `textless-reference-skipped` /
+  `metadata-key-unparsable` / `metadata-value-unbalanced` / `metadata-value-newline`.
+  `DumpReport.lossy` 取 `LOSSY_DUMP_CODES` 里的那些, 即除
+  `bracket-first-tag-adds-token` 外的全部. 每个事件同时照旧打日志, 所以把库的日志
+  静音的消费方 (例如 karakara) 也能拿到同样的信息.
+
+### Fixed
+
+- **落在行时间范围之外的逐字标记在写出时被静默省略**. 省略本身是对的 (解析端按 SPL
+  会忽略它, 写出来也读不回来), 但此前没有任何日志, 只有事先跑过 `validate()` 的人
+  才知道 (`token-before-line-start` / `token-after-line-end`). 现在每行记一条
+  warning, 并进序列化报告 (`byword-out-of-range-omitted`).
+
 ### Changed
 
 - **`use_bracket_for_byword_tag=True` 的首词元告警按真实后果分级**. 首词元晚于行首时

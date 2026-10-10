@@ -7,8 +7,8 @@
 | `models.py` | 数据模型 `LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics`，以及各种选项 dataclass |
 | `metadata.py` | `Metadata`：有序、同名可重复的 ID 标签容器 |
 | `parser.py` | LRC 文本 → `Lyrics`。公共入口 `parse_line` / `parse_lrc` / `parse_with_report`，内部是 `LrcParser` |
-| `report.py` | 解析报告 `ParseReport` / `ParseEvent`，以及 strict 模式的触发集合 `STRICT_ERROR_CODES` |
-| `serializer.py` | `Lyrics` → LRC 文本 |
+| `report.py` | 解析报告 `ParseReport` / `ParseEvent` 与 strict 的触发集合 `STRICT_ERROR_CODES`；序列化报告 `DumpReport` / `DumpEvent` 与 `LOSSY_DUMP_CODES` |
+| `serializer.py` | `Lyrics` → LRC 文本。公共入口 `dump_lrc` / `dump_with_report`，内部是 `_Writer` |
 | `validation.py` | 对结果数据做一致性检查，产出 `ValidationIssue` |
 | `subtitle.py` | SRT / WebVTT 双向转换 |
 | `offset.py` | 整体时间偏移 |
@@ -68,6 +68,20 @@ CLI 的 `validate` 把前后两者都输出：先是解析报告（位置是源�
 行为，所以没有沿用 "strict" 这个词。`validate` 期间在库的 logger 上挂一个
 `NullHandler`，避免同一批 warning 经 Python 的 last-resort handler 再打一遍；
 调用方自己配置的 handler 不受影响。
+
+## 序列化报告
+
+写出一侧的对应物是 `DumpReport`，由 `serializer._Writer` 在写的同时收集，结构与
+`ParseReport` 平行，但位置字段不同：写出时没有源文件，所以用 `line_index` /
+`reference_index` 指向 `Lyrics` 里的对象，metadata 事件带 `metadata_key`。
+
+判据是"重新解析能不能读回原数据"。读不回的进 `LOSSY_DUMP_CODES`；
+`bracket-first-tag-adds-token` 只改词元结构、不丢正文与时间，所以单列。每个事件
+同时打日志，级别与事件严重度一致（会丢数据的 warning，不丢的 debug），报告与日志
+不会说两套话。
+
+写出时不检查数据本身是否自洽（乱序、重复 `start` 等），那是 `validate()` 的事；
+报告只描述"写出这一步做了什么"。
 
 ## 演进方向
 

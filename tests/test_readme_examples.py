@@ -2,8 +2,8 @@
 
 按标题定位代码块, 执行它, 把 ``print`` 的输出与代码块里紧跟其后的 ``# ...`` 注释
 比对. 中英两份 README 的示例是同一段代码, 两份都查, 免得一份改了另一份忘了.
-目前只覆盖"从看日志改成读报告"这一节; 别的示例要加进来, 往 :data:`SECTIONS` 里
-追加即可.
+要加别的示例, 往 :data:`SECTIONS` (还核对 ``Counter`` 那一行) 或
+:data:`PRINT_ONLY_SECTIONS` (只核对 ``print`` 输出) 里追加即可.
 """
 
 from __future__ import annotations
@@ -22,6 +22,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SECTIONS = [
     ("README.md", "#### 从看日志改成读报告"),
     ("README.en.md", "#### From reading logs to reading the report"),
+]
+
+#: 只核对 ``print`` 输出的小节.
+PRINT_ONLY_SECTIONS = [
+    ("README.md", "### 序列化报告"),
+    ("README.en.md", "### Dump Report"),
 ]
 
 
@@ -68,3 +74,20 @@ def test_report_example_output(readme: str, heading: str) -> None:
     assert counter is not None
     summary = eval(counter.group(0).splitlines()[0], namespace)
     assert repr(summary) == counter.group(1)
+
+
+@pytest.mark.parametrize(("readme", "heading"), PRINT_ONLY_SECTIONS)
+def test_print_examples(readme: str, heading: str) -> None:
+    code = _code_block_after((ROOT / readme).read_text(encoding="utf-8"), heading)
+    expected = _expected_prints(code)
+    assert expected, "示例里应当写明期望输出"
+    out = io.StringIO()
+    library_logger = logging.getLogger("lemony_lrc_parser")
+    level = library_logger.level
+    library_logger.setLevel(logging.CRITICAL)  # 示例本身会触发 warning
+    try:
+        with contextlib.redirect_stdout(out):
+            exec(compile(code, f"{readme}:{heading}", "exec"), {})
+    finally:
+        library_logger.setLevel(level)
+    assert out.getvalue().splitlines() == expected
