@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from lemony_lrc_parser.exceptions import TimestampUnderflowError
-from lemony_lrc_parser.timetag import format_timetag, parse_timetag
+from lemony_lrc_parser.exceptions import (
+    TimestampOverflowError,
+    TimestampUnderflowError,
+)
+from lemony_lrc_parser.timetag import (
+    MAX_TIMESTAMP_MS,
+    format_timetag,
+    parse_timetag,
+)
 
 
 class TestFormatTimetag:
@@ -88,6 +95,15 @@ class TestFormatTimetag:
             TimestampUnderflowError, match="Negative timestamp is not allowed"
         ):
             format_timetag(-5000, tail_digits=3, use_angle_bracket=False)
+
+    def test_overflow_raises(self) -> None:
+        """超过 ``[9999:59.999]`` 的时间写不出解析器读得回来的标签, 直接报错."""
+        assert (
+            format_timetag(MAX_TIMESTAMP_MS, tail_digits=3, use_angle_bracket=False)
+            == "[9999:59.999]"
+        )
+        with pytest.raises(TimestampOverflowError, match="exceeds the LRC limit"):
+            format_timetag(MAX_TIMESTAMP_MS + 1, tail_digits=3, use_angle_bracket=False)
 
 
 class TestParseTimetag:

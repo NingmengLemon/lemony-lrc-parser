@@ -36,6 +36,7 @@ from .exceptions import (
     InvalidLyricsError,
     LyricsParserError,
     ProgrammingError,
+    TimestampOverflowError,
     TimestampUnderflowError,
 )
 from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
@@ -77,6 +78,7 @@ __all__ = [
     "InvalidLyricsError",
     "LyricsParserError",
     "ProgrammingError",
+    "TimestampOverflowError",
     "TimestampUnderflowError",
     "ParseOptions",
     "SerializationOptions",

@@ -8,13 +8,21 @@ from __future__ import annotations
 from logging import getLogger
 
 from ._utils import match_to_ms
-from .exceptions import ProgrammingError, TimestampUnderflowError
+from .exceptions import (
+    ProgrammingError,
+    TimestampOverflowError,
+    TimestampUnderflowError,
+)
 from .regex import LINE_TIMETAG_REGEX, compile_regex
 
 logger = getLogger(__name__)
 
 MIN_TAIL_DIGITS: int = 1
 MAX_TAIL_DIGITS: int = 6
+
+#: LRC 时间标签能表达的最大毫秒数: 分钟最多 4 位 (``[9999:59.999]``), 与
+#: :data:`.regex.LINE_TIMETAG_REGEX` 的分钟位数一致.
+MAX_TIMESTAMP_MS: int = 9999 * 60_000 + 59_999
 
 __all__ = [
     "format_timetag",
@@ -31,15 +39,26 @@ def format_timetag(
     """将毫秒数格式化为 LRC 时间标签字符串.
 
     Args:
-        ms: 毫秒时间戳 (不允许为负) .
+        ms: 毫秒时间戳, 范围 ``0`` 到 :data:`MAX_TIMESTAMP_MS`.
         use_angle_bracket: True 使用 ``<...>`` (逐字标签) , False 使用 ``[...]`` (行标签) .
         tail_digits: 毫秒尾部补齐的位数.
 
     Returns:
         形如 ``[01:23.456]`` 或 ``<01:23.456>`` 的字符串.
+
+    Raises:
+        TimestampUnderflowError: ``ms`` 为负.
+        TimestampOverflowError: ``ms`` 超过 :data:`MAX_TIMESTAMP_MS`; 写出来的
+            5 位分钟标签解析器读不回来.
+        ProgrammingError: ``tail_digits`` 不在 1-6 之间.
     """
     if ms < 0:
         raise TimestampUnderflowError(f"Negative timestamp is not allowed: {ms}ms")
+    if ms > MAX_TIMESTAMP_MS:
+        raise TimestampOverflowError(
+            f"Timestamp {ms}ms exceeds the LRC limit of {MAX_TIMESTAMP_MS}ms "
+            f"([9999:59.999])"
+        )
     if not MIN_TAIL_DIGITS <= tail_digits <= MAX_TAIL_DIGITS:
         raise ProgrammingError(
             f"tail_digits must be between {MIN_TAIL_DIGITS} and {MAX_TAIL_DIGITS}, got {tail_digits}"
