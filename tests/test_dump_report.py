@@ -131,8 +131,11 @@ class TestReferenceLines:
         assert event.code == "textless-reference-skipped"
         assert (event.line_index, event.reference_index) == (0, 1)
 
-    def test_empty_text_line_with_references_round_trips(self) -> None:
-        """空正文行的参考行写在后面, 读回时按同时间戳挂回原处, 不算事件."""
+    def test_empty_text_line_with_references_is_reported(self) -> None:
+        """空正文行带参考行: 空 cue 不当宿主, 读回时参考行升为正文, 记有损事件.
+
+        这正是 0.4.x 把"空行 + 同时间戳的歌词"读出来的形状.
+        """
         lyrics = Lyrics(
             [
                 _line(1000, 1800, [_tok("")], refs=[BasicLyricLine([_tok("tr")])]),
@@ -140,13 +143,15 @@ class TestReferenceLines:
             ]
         )
         text, report = dump_with_report(lyrics)
-        assert not report
+        assert _codes(report) == ["empty-line-references"]
+        assert report.events[0].line_index == 0
+        assert report.lossy == list(report)
         reparsed = Lyrics.loads(text)
-        assert [(line.start, line.end, line.text) for line in reparsed] == [
-            (1000, 1800, ""),
-            (2000, None, "x"),
+        assert [(line.start, line.text) for line in reparsed] == [
+            (1000, "tr"),
+            (2000, "x"),
         ]
-        assert [ref.text for ref in reparsed[0].reference_lines] == ["tr"]
+        assert reparsed[0].reference_lines == []
 
 
 class TestBracketFirstTag:

@@ -528,6 +528,68 @@ class TestParseLrcEmptyLines:
         ]
 
 
+class TestEmptyCueIsNeverAnAnchor:
+    """尖括号写的空 cue (``<00:02.000>``) 保留为空正文行, 但不参与翻译识别.
+
+    方括号的空正文行是结束标记, 本来就不进行池; 尖括号的空 cue 进行池, 所以它
+    得单独守住三条: 不当无标签行的锚点、不当同时间戳歌词的宿主、不当别人的参考行.
+    """
+
+    @staticmethod
+    def _view(lrc: str) -> list[tuple[int, str, list[str]]]:
+        return [
+            (line.start, line.text, [r.text for r in line.reference_lines])
+            for line in parse_lrc(lrc)
+        ]
+
+    def test_untagged_line_after_cue_attaches_to_previous_lyric(self) -> None:
+        assert self._view("[00:01.000]a\n<00:02.000>\n译\n[00:03.000]b\n") == [
+            (1000, "a", ["译"]),
+            (2000, "", []),
+            (3000, "b", []),
+        ]
+
+    def test_lyric_sharing_the_cue_timestamp_replaces_it(self) -> None:
+        """同一时刻不能既空又有字: 歌词为准, 而不是挂成空行的翻译."""
+        assert self._view("<00:02.000>\n[00:02.000]text\n[00:02.000]译\n") == [
+            (2000, "text", ["译"]),
+        ]
+
+    def test_cue_after_lyric_at_same_timestamp_is_dropped(self) -> None:
+        assert self._view("[00:02.000]text\n<00:02.000>\n") == [(2000, "text", [])]
+
+    def test_lone_cue_is_kept(self) -> None:
+        assert self._view("[00:01.000]a\n<00:02.000>\n[00:03.000]b\n") == [
+            (1000, "a", []),
+            (2000, "", []),
+            (3000, "b", []),
+        ]
+
+    def test_files_written_by_0_3_read_correctly(self) -> None:
+        """llp 0.3.x 把上游的 ``[t-1ms]`` 空行与 ``[t]`` 歌词截成同一个 2 位时间戳写出.
+
+        取自真实文件 (网易云歌词经 0.3.1 写出). 在 0.4.0 之前, 这一段读回来是一条
+        空行带两条翻译, 原文被挂成翻译.
+        """
+        lrc = (
+            "[00:38.03]通り魔が攫ってくれるのをひたすら待ってる\n"
+            "[00:38.03]一个劲地等待着路过的恶魔能将我带走\n"
+            "\n"
+            "[00:43.36]\n"
+            "[00:43.36]打ち明けてしまったら\n"
+            "[00:43.36]\n"
+            "[00:43.36]如果一旦坦白\n"
+        )
+        assert self._view(lrc) == [
+            (
+                38030,
+                "通り魔が攫ってくれるのをひたすら待ってる",
+                ["一个劲地等待着路过的恶魔能将我带走"],
+            ),
+            (43360, "打ち明けてしまったら", ["如果一旦坦白"]),
+        ]
+
+
 class TestParseLrcWordLevel:
     """测试逐字歌词解析."""
 

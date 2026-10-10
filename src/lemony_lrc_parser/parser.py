@@ -512,11 +512,12 @@ class LrcParser:
             if line[0].start is not None:
                 self._register_line_at_tags(line, [line[0].start])
                 self._apply_explicit_line_end([line[0].start], line_end)
-                self.last_tag = line[0].start
                 # 没有正文的尖括号行 (如 "<00:01.000>") 是 LRC 家族里唯一能
-                # 无歧义表达"空 cue"的写法, 保留为一条空正文行; 但它不是一句
-                # 歌词, 因此不能当结束标记的收尾目标.
+                # 无歧义表达"空 cue"的写法, 保留为一条空正文行. 但它不是一句
+                # 歌词: 不当结束标记的收尾目标, 也不当参考行的锚点 (锚点仍指向
+                # 上一句歌词), 否则紧随其后的翻译会挂到空行上.
                 if line.text:
+                    self.last_tag = line[0].start
                     self.last_text_tags = [line[0].start]
                 return
             if self.last_tag is None:
@@ -596,12 +597,26 @@ class LrcParser:
         """
         registered: list[int] = []
         for tag in time_tags:
-            if tag in self.line_pool:
+            existing = self.line_pool.get(tag)
+            if existing is not None and not existing.text:
+                # 空 cue 与歌词同时间戳: 歌词为准. 空 cue 既不当这句歌词的宿主
+                # (否则歌词被挂成空行的翻译), 也不保留 (同一时刻不能既空又有字).
+                if line.text:
+                    logger.debug(f"Empty cue at {tag}ms replaced by lyric {line!r}")
+                    self.line_pool[tag] = LyricLine(start=tag, content=line.copy())
+                registered.append(tag)
+                continue
+            if existing is not None:
+                if not line.text:
+                    # 空 cue 落在已有歌词的时间点上: 它不是翻译, 丢弃即可.
+                    logger.debug(f"Empty cue at {tag}ms dropped: {existing!r}")
+                    registered.append(tag)
+                    continue
                 # 同一个时间点已有行 → 当前行变为参考行.
                 # 必须拷贝: 同一行的多个重复时间标签可能都命中已存在的时间点,
                 # 若直接 append 原实例, 多个 reference_lines 槽位会共享同一对象,
                 # 改动其一会波及其它槽位.
-                self.line_pool[tag].reference_lines.append(line.copy())
+                existing.reference_lines.append(line.copy())
             else:
                 # 拷贝 word 列表, 避免多个 LyricLine 共享同一 LyricToken 实例
                 self.line_pool[tag] = LyricLine(start=tag, content=line.copy())

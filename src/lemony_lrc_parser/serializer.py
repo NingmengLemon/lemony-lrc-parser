@@ -121,8 +121,17 @@ class _Writer:
             # SRT cue 互转时的形状): 解析端把行首的尖括号标签当行标签, 于是 dumps
             # → loads 仍是不动点. 若改用方括号写出 "[start][end]", 重新解析会把它
             # 当成上一行的结束标记, 静默改掉上一行的时间范围.
-            # 它的参考行照常以 "[start]译文" 写在后面, 读回时按同时间戳挂回这一行.
+            # 它的参考行照常以 "[start]译文" 写在后面; 但空 cue 不当宿主, 读回时
+            # 第一条参考行会成为这一行的正文, 所以记一条有损事件.
             if not line.text:
+                if line.reference_lines:
+                    self._emit(
+                        "empty-line-references",
+                        f"Line at {line_start}ms has no text but has "
+                        f"{len(line.reference_lines)} reference line(s); on "
+                        f"re-parsing the first one becomes this line's text",
+                        logging.WARNING,
+                    )
                 self._write_line_tag(line_start, use_angle=True)
                 buffer.write(
                     self._format_line(

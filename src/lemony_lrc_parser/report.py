@@ -153,6 +153,10 @@ class ParseReport:
 #: * ``byword-out-of-range-omitted``: 逐字标记落在行的 ``[start, end]`` 之外, 解析端
 #:   按 SPL 会忽略它, 所以不写出.
 #: * ``textless-reference-skipped``: 没有正文的参考行 LRC 表达不了, 不写出.
+#: * ``empty-line-references``: 空正文行带着参考行. 空行写成空 cue, 参考行写成同
+#:   时间戳的歌词行, 重新解析时第一条参考行变成这一行的正文 (空 cue 不当宿主).
+#:   0.4.x 的解析器会把"空行 + 同时间戳的歌词"读成这种形状, 用旧版本解析出的
+#:   对象再写出时会遇到.
 #: * ``metadata-key-unparsable``: metadata key 不符合解析规则, 重新解析时丢失.
 #: * ``metadata-value-unbalanced``: value 里方括号不配对, 重新解析时整行变成正文.
 #: * ``metadata-value-newline``: value 含换行, 会破坏 metadata 行结构.
@@ -161,6 +165,7 @@ DumpEventCode = Literal[
     "bracket-first-tag-adds-token",
     "byword-out-of-range-omitted",
     "textless-reference-skipped",
+    "empty-line-references",
     "metadata-key-unparsable",
     "metadata-value-unbalanced",
     "metadata-value-newline",
@@ -173,6 +178,7 @@ LOSSY_DUMP_CODES: frozenset[str] = frozenset(
         "bracket-first-tag-splits-line",
         "byword-out-of-range-omitted",
         "textless-reference-skipped",
+        "empty-line-references",
         "metadata-key-unparsable",
         "metadata-value-unbalanced",
         "metadata-value-newline",
