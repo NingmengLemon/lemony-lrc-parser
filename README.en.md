@@ -325,22 +325,24 @@ Filtering is judged by the **main line** text only: reference lines (translation
 / transliteration) sharing the main line's timestamp are dropped together with
 the main line, even if their own text does not match.
 
-`strict=True` turns on strict mode: the parser no longer drops or ignores anything
-the file declares, and raises `InvalidLyricsError` on the spot (carrying `line_no`
-/ `raw_line`):
+`strict=True` turns on strict mode: whenever the parser would have to drop text
+or word timing from the file, it raises `InvalidLyricsError` on the spot
+(carrying `line_no` / `raw_line`):
 
 ```python
 from lemony_lrc_parser import Lyrics, ParseOptions
 
-# anchorless lines, out-of-range or unordered word tags, ignored end markers and
-# discarded end-time inferences all raise
+# anchorless lines, out-of-range or unordered word tags and discarded end-time
+# inferences all raise
 Lyrics.loads(lrc_text, options=ParseOptions(strict=True))
 ```
 
 It defaults to `False` because real-world LRC is wild and lenient keeps it
-compatible. Two things deliberately never raise: lines dropped by `line_filter`
-(the caller asked for that), and metadata key / `offset` problems (they do not
-affect the parse result; `validate()` reports those). The exact codes are in
+compatible. Three things deliberately never raise: lines dropped by `line_filter`
+(the caller asked for that); end markers with nothing to close (a timestamp-only
+line loses just one time point, and about a tenth of real files have one); and
+metadata key / `offset` problems (they do not affect the parse result;
+`validate()` reports those). The exact codes are in
 `STRICT_ERROR_CODES`, see [Parse Report](#parse-report).
 
 #### Serialization Options
@@ -415,6 +417,7 @@ skipped. Each one is logged and also shows up in the
 | Same, but a later word tag or a line-end tag follows | `[00:01.000][00:01.500]hello[00:03.000]` | one line with an extra empty leading token `''@1000..1500` (debug) | `bracket-first-tag-adds-token` |
 | A word tag outside the line's time span | the tag is not written (warning) | that time point is gone | `byword-out-of-range-omitted` |
 | Reference line without text (its word timing is dropped too) | not written (debug) | the reference line disappears | `textless-reference-skipped` |
+| Empty line with reference lines (the shape 0.4.0 and earlier produce) | an empty cue plus same-timestamp lyric lines (warning) | the first reference becomes the line's text | `empty-line-references` |
 | A metadata key or value that cannot round-trip | written anyway (warning) | see [Metadata Syntax](#metadata-syntax) | `metadata-*` |
 
 With square brackets, `[line start][first word]text` looks exactly like the
@@ -638,6 +641,7 @@ if report:  # the report of a clean file is empty
 report.dropped_lines  # lines that never made it into the result
 report.of_code("byword-unordered")  # filter by event code
 report.reference_lines_attached, report.end_markers_applied  # normal work, counts
+report.end_markers_redundant  # end markers restating an existing end, counted too
 ```
 
 Event codes: `orphaned-line`, `line-filtered`, `byword-before-line-start`,
@@ -645,13 +649,16 @@ Event codes: `orphaned-line`, `line-filtered`, `byword-before-line-start`,
 `inferred-end-discarded`.
 
 Only events worth knowing about are reported; normal work (attaching reference
-lines, closing a line with an end marker) only bumps the two counters above, so
-a clean file yields an empty `report` (`bool(report)` is `False`). Logging is
+lines, closing a line with an end marker, a redundant end marker restating an
+existing end) only bumps the three counters above, so a clean file yields an
+empty `report` (`bool(report)` is `False`). The message of `end-marker-ignored`
+says why: no lyric line before it, not after the previous line's start, or the
+previous line already ends at another time. Logging is
 unchanged: the word-tag warnings keep their old format, the report just adds the
 line number.
 
 `STRICT_ERROR_CODES` is the subset that raises under strict mode (without
-`line-filtered`, since the caller asked for that); see `strict` under
+`line-filtered` and `end-marker-ignored`); see `strict` under
 [Parsing Options](#parsing-options).
 
 #### From reading logs to reading the report
@@ -680,7 +687,7 @@ Counter(event.code for event in report)
 # Counter({'byword-before-line-start': 1, 'orphaned-line': 1})
 
 for event in report:
-    if event.code in STRICT_ERROR_CODES:  # a declaration in the file was dropped
+    if event.code in STRICT_ERROR_CODES:  # text or word timing was dropped
         print(f"line {event.line_no}: [{event.code}] {event.raw_line!r}")
 # line 1: [byword-before-line-start] '[00:01.000]a<00:00.500>b'
 # line 3: [orphaned-line] 'orphan'
@@ -715,7 +722,7 @@ report.lossy  # the ones that do not read back as written; here only lyrics[1]
 ```
 
 Event codes: `bracket-first-tag-splits-line`, `bracket-first-tag-adds-token`,
-`byword-out-of-range-omitted`, `textless-reference-skipped`,
+`byword-out-of-range-omitted`, `textless-reference-skipped`, `empty-line-references`,
 `metadata-key-unparsable`, `metadata-value-unbalanced`, `metadata-value-newline`.
 `report.lossy` is all of them except `bracket-first-tag-adds-token`, which changes
 the token structure but keeps every piece of text and timing. Lyrics that can be

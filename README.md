@@ -314,19 +314,20 @@ lyrics = Lyrics.loads(
 过滤只按**主行**文本判定: 与主行同一时间戳的参考行 (翻译/音译) 会随主行一起被
 丢弃, 即使它自身的文本并不匹配.
 
-`strict=True` 打开严格模式: 解析器不再"丢掉 / 忽略掉"文件里的任何声明, 而是当场
+`strict=True` 打开严格模式: 解析器不得不丢掉文件里的正文或逐字时间时, 当场
 抛 `InvalidLyricsError` (带 `line_no` / `raw_line`):
 
 ```python
 from lemony_lrc_parser import Lyrics, ParseOptions
 
-# 无锚点的行、越界或乱序的逐字标记、被忽略的结束标记、被丢弃的行尾推断, 都会抛
+# 无锚点的行、越界或乱序的逐字标记、被丢弃的行尾推断, 都会抛
 Lyrics.loads(lrc_text, options=ParseOptions(strict=True))
 ```
 
-默认是 `False`, 因为真实世界的 LRC 很野, 默认宽松才兼容. 两类刻意不抛:
-`line_filter` 丢掉的行 (那是调用方自己要求的), 以及 metadata key / `offset` 的
-问题 (它们不影响解析结果, 交给 `validate()` 报). 触发的具体代码见
+默认是 `False`, 因为真实世界的 LRC 很野, 默认宽松才兼容. 三类刻意不抛:
+`line_filter` 丢掉的行 (那是调用方自己要求的); 补不上的结束标记 (只有时间戳的行,
+丢掉的只是一个时间点, 真实曲库里约一成的文件有); metadata key / `offset` 的问题
+(它们不影响解析结果, 交给 `validate()` 报). 触发的具体代码见
 [解析报告](#解析报告) 里的 `STRICT_ERROR_CODES`.
 
 #### 序列化选项
@@ -396,6 +397,7 @@ with path.open("w", encoding="utf-8", newline="") as fp:
 | 同上, 但后面还有逐字标签或行尾标签 | `[00:01.000][00:01.500]hello[00:03.000]` | 一行, 行首多一个零文本词元 `''@1000..1500` (debug) | `bracket-first-tag-adds-token` |
 | 逐字标记落在行的时间范围之外 | 不写出该标记 (warning) | 该时间点消失 | `byword-out-of-range-omitted` |
 | 无正文的参考行 (逐字时间也一起丢) | 不写出 (debug) | 该参考行消失 | `textless-reference-skipped` |
+| 空正文行带参考行 (0.4.0 及更早读出的形状) | 空 cue + 同时间戳的歌词行 (warning) | 第一条参考行升为正文 | `empty-line-references` |
 | metadata 的 key 或 value 无法往返 | 照常写出 (warning) | 见 [元数据语法](#元数据语法) | `metadata-*` |
 
 方括号写法下 `[行首][首字]正文` 与重复行简写同形, 解析端靠"正文里还有没有别的时间
@@ -587,18 +589,21 @@ if report:  # 干净文件的报告是空的
 report.dropped_lines  # 整行没进结果的 (孤儿行 / 被 line_filter 丢掉的行)
 report.of_code("byword-unordered")  # 按事件代码筛选
 report.reference_lines_attached, report.end_markers_applied  # 正常操作只计数
+report.end_markers_redundant  # 与上一行结尾重合的结束标记, 也只计数
 ```
 
 事件代码: `orphaned-line`、`line-filtered`、`byword-before-line-start`、
 `byword-after-line-end`、`byword-unordered`、`end-marker-ignored`、
 `inferred-end-discarded`.
 
-报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾) 只进上面两个
-计数, 所以干净文件的 `report` 为空 (`bool(report)` 是 `False`). 日志行为不变:
+报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾、与上一行结尾
+重合的冗余结束标记) 只进上面三个计数, 所以干净文件的 `report` 为空 (`bool(report)`
+是 `False`). `end-marker-ignored` 的消息里写明了原因: 前面没有歌词行、不晚于上一行
+的开头, 或上一行已在别的时刻结束. 日志行为不变:
 逐字标记那几条仍按原格式打印, 只是报告里会补上行号.
 
-`STRICT_ERROR_CODES` 是其中"严格模式下会直接抛异常"的子集 (少了 `line-filtered`,
-因为那是调用方自己要丢的), 见 [解析选项](#解析选项) 里的 `strict`.
+`STRICT_ERROR_CODES` 是其中"严格模式下会直接抛异常"的子集 (少了 `line-filtered`
+与 `end-marker-ignored`), 见 [解析选项](#解析选项) 里的 `strict`.
 
 #### 从看日志改成读报告
 
@@ -624,7 +629,7 @@ Counter(event.code for event in report)
 # Counter({'byword-before-line-start': 1, 'orphaned-line': 1})
 
 for event in report:
-    if event.code in STRICT_ERROR_CODES:  # 文件里有声明被丢掉或忽略
+    if event.code in STRICT_ERROR_CODES:  # 文件里的正文或逐字时间被丢掉
         print(f"line {event.line_no}: [{event.code}] {event.raw_line!r}")
 # line 1: [byword-before-line-start] '[00:01.000]a<00:00.500>b'
 # line 3: [orphaned-line] 'orphan'
@@ -657,7 +662,7 @@ report.lossy  # 重新解析读不回原数据的那些, 这里只有 lyrics[1]
 ```
 
 事件代码: `bracket-first-tag-splits-line`、`bracket-first-tag-adds-token`、
-`byword-out-of-range-omitted`、`textless-reference-skipped`、
+`byword-out-of-range-omitted`、`textless-reference-skipped`、`empty-line-references`、
 `metadata-key-unparsable`、`metadata-value-unbalanced`、`metadata-value-newline`.
 `report.lossy` 是除 `bracket-first-tag-adds-token` 以外的全部: 那一种改变了词元
 结构, 但正文与时间都还在. 能无损写出的歌词报告为空.

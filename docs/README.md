@@ -15,6 +15,7 @@ research 目录下按主题分文件：
 
 - [corpus.md](research/corpus.md)：真实语料基线。
 - [spl.md](research/spl.md)：与 SPL 标准的逐条对照。
+- [blank-lines.md](research/blank-lines.md)：空正文行在各家实现里的读法与语料统计。
 - [metadata.md](research/metadata.md)：ID 标签、value 里的方括号、同名 key 的容器。
 - [offset.md](research/offset.md)：`[offset:]` 的正负语义。
 - [timetags.md](research/timetags.md)：时间标签的宽松写法。
