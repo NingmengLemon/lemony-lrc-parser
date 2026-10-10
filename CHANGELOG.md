@@ -12,6 +12,51 @@
 
 ## [Unreleased]
 
+## [0.5.0b2] — 2026-10-10
+
+正式版之前把 0.5.0 新加的公开接口定型. 下面三处相对 0.5.0b1 不兼容, 从 0.4.x
+直接升级不受影响 (0.4.x 里没有这些接口, 或者这里恢复的正是 0.4.x 的行为).
+
+### Changed
+
+- **相对 b1 不兼容**: `Metadata.items()` 改回 `Mapping` 协议的 dict 视角,
+  每个 key 一条, 取最后一次出现的值. b1 里它返回全部条目, 于是把 `Metadata` 当
+  普通 `Mapping` 消费的代码 (`for k, v in meta.items()`) 会拿到同一个 key 两次.
+  无损读取只走 `to_pairs()` / `getlist()`. 与 0.4.x 的 `dict.items()` 一致.
+- **相对 b1 不兼容**: `parse_line(on_event=...)` 的回调改为收一个 `ParseEvent`
+  (`line_no` / `raw_line` 为 `None`), 不再收 `(code, message)` 两个参数. 以后给
+  事件加字段不会再破坏回调签名.
+- **CLI**: `validate` 现在先输出解析报告里的事件 (孤儿行、被忽略的逐字标记等,
+  位置是源文件行号 `line N`), 再输出校验问题 (位置是解析后的行下标
+  `lyrics[N]`, 之前同样写成 `line N`, 容易与源文件行号混淆). 严格模式会拒绝的
+  解析事件算 error. 同一批 warning 不再经 Python 的 last-resort handler 重复打印.
+- **CLI**: `validate --strict` 改名 `--fail-on-error`. 它只决定退出码, 与 API 的
+  `ParseOptions(strict=True)` (解析时当场抛异常) 同名不同义. `--strict` 在 0.5.x
+  里仍可用并提示改名, 0.6.0 移除.
+- `str in <模型>` 的 `DeprecationWarning` 写明 0.6.0 起抛 `TypeError`.
+- `LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics` 的 `from_dict()` 参数
+  类型放宽为 `Mapping` / `Sequence`, 于是 `Lyrics.from_dict(lyrics.to_dict())`
+  能通过类型检查 (此前 `TypedDict` 不能赋给 `dict[str, Any]`).
+
+### Fixed
+
+- 超过 `[9999:59.999]` 的时间戳在 `dumps()` 时抛新的 `TimestampOverflowError`
+  (`LyricsParserError` 子类). 此前会写出 5 位分钟的标签, 解析器读不回来, 那一行
+  下次解析时被当成孤儿行丢掉.
+
+### Docs
+
+- `docs/research/timetags.md` 更正: `[hh:mm:ss.fff]` 不被支持, `[01:02:03]` 读作
+  1 分 2.03 秒. 支持带小时的标签记为 roadmap PARSE-4.
+
+### Tooling
+
+- 新增 hypothesis 性质测试 `tests/test_properties.py`: 时间标签往返、结构化歌词的
+  `dumps` / `loads` 往返与不动点、`to_dict` 往返、任意拼接输入下的校验与收敛、
+  `apply_delta` 可加性、`combine` 不改输入且不丢主行、`Metadata` 两种视角的一致性.
+  上面的时间戳上溢就是它找到的. hypothesis 只进 dev 依赖 (3.9 上解析到 6.141.1,
+  3.10+ 用最新版).
+
 ## [0.5.0b1] — 2026-10-09
 
 0.5.0 的第一个预发布. 有三处破坏性改动, 升级前请看下面的「从 0.4.x 迁移」.
@@ -512,7 +557,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...HEAD
+[0.5.0b2]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...v0.5.0b2
 [0.5.0b1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0b1
 [0.4.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b3...v0.4.0
