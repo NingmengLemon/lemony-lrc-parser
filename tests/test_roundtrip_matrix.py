@@ -325,13 +325,59 @@ class TestKnownLossyBehaviors:
                 )
             )
         assert dumped == "[00:01.000][00:01.500]hello\n"
-        assert "split this line into two" in caplog.text
+        assert "duplicate this line's text" in caplog.text
 
         reparsed = Lyrics.loads(dumped)
         assert [line.text for line in reparsed] == ["hello", "hello"]
 
         # 默认 (尖括号) 写法没有这个问题
         assert Lyrics.loads(lyrics.dumps(options=DUMPS_OPTS)) == lyrics
+
+    def test_bracket_byword_tag_with_line_end_keeps_one_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """有行尾标签时同一写法读回一行, 只多一个零文本词元, 因此不告警.
+
+        这是 karakara 的产物形态 (行尾总是显式的): 一首歌里每一行都命中, 若仍按
+        "会拆行"告警, 日志会被并未发生的后果刷满.
+        """
+        lyrics = Lyrics.loads("[00:01.000]<00:01.500>hello[00:03.000]")
+        with caplog.at_level(logging.DEBUG, logger="lemony_lrc_parser.serializer"):
+            dumped = lyrics.dumps(
+                options=SerializationOptions(use_bracket_for_byword_tag=True)
+            )
+        assert dumped == "[00:01.000][00:01.500]hello[00:03.000]\n"
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert "adds an empty leading token" in caplog.text
+
+        reparsed = Lyrics.loads(dumped)
+        assert [(line.start, line.end, line.text) for line in reparsed] == [
+            (1000, 3000, "hello")
+        ]
+        assert [(t.content, t.start, t.end) for t in reparsed[0].content] == [
+            ("", 1000, 1500),
+            ("hello", 1500, 3000),
+        ]
+
+    def test_bracket_byword_tag_with_unordered_tokens_still_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """后面的标签出现递减时, 解析器按重复行简写展开, 所以即使有行尾也要告警."""
+        from lemony_lrc_parser import BasicLyricLine, LyricLine, LyricToken
+
+        tokens = [
+            LyricToken(content="a", start=2000, end=2500),
+            LyricToken(content="b", start=1500, end=3000),
+        ]
+        lyrics = Lyrics(
+            [LyricLine(start=1000, end=3000, content=BasicLyricLine(tokens))]
+        )
+        with caplog.at_level(logging.WARNING, logger="lemony_lrc_parser.serializer"):
+            dumped = lyrics.dumps(
+                options=SerializationOptions(use_bracket_for_byword_tag=True)
+            )
+        assert "duplicate this line's text" in caplog.text
+        assert len(Lyrics.loads(dumped)) == 2
 
     def test_early_byword_tag_is_ignored_line_tag_wins(self) -> None:
         """越界逐字标签被忽略, 行标签为准 (SPL); 本行与翻译行都不丢.

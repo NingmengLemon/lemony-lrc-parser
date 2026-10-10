@@ -209,14 +209,25 @@ def _format_line(
 
     Note:
         当 ``use_bracket_for_byword_tag=True`` 且首个词元的 ``start`` 与
-        ``line_start`` 不同时, 这个"逐字标签"会紧跟在行首标签之后写成
-        ``[start][word]``; 重新解析时它会被读成行首标签 (折叠标签), 整行被
-        拆成两行. 该写法属于选项自身的代价, 此处只告警不改变输出 (行首时间
-        不能省略, 否则信息丢失).
+        ``line_start`` 不同时, 这个逐字标签紧跟在行首标签之后, 写成
+        ``[start][word]正文``, 与"重复行简写"同形. 解析端按"整行标签是否非递减、
+        正文里有没有别的时间标签"来区分两种读法 (见 :mod:`.parser` 的 2b 分支),
+        所以后果只有两种:
+
+        * 正文里还有别的标签 (后续词元或行尾) 且整行非递减: 读回一行, 行首多出
+          一个零文本词元 (``''@start..word``), 正文与时间都不丢. 只记 debug.
+        * 否则: 读成两行, 正文重复. 记 warning.
+
+        判据见 :func:`_bracket_first_tag_splits`. 这是选项自身的代价, 只提示不改变
+        输出 (行首时间不能省略, 否则信息丢失).
     """
     use_angle = not use_bracket_for_byword_tag
     parts: list[str] = []
     last_idx = len(line) - 1
+    #: 方括号模式下写成 ``[start][word]`` 的首词元标签 (毫秒), 没有则为 ``None``.
+    bracket_first_tag: int | None = None
+    #: 首词元标签之后、本函数写出的其它时间标签, 按写出顺序.
+    later_tags: list[int] = []
 
     def in_range(value: int) -> bool:
         if line_start is not None and value < line_start:
@@ -231,23 +242,14 @@ def _format_line(
             if idx == 0:
                 if word.start != line_start:
                     if not use_angle:
-                        tag = format_timetag(
-                            word.start,
-                            use_angle_bracket=False,
-                            tail_digits=tail_digits,
-                        )
-                        logger.warning(
-                            f"Byword tag for the first token of the line starting "
-                            f"at {line_start}ms is written as '{tag}' because "
-                            f"use_bracket_for_byword_tag=True; re-parsing will read "
-                            f"it as a line time tag and split this line into two"
-                        )
+                        bracket_first_tag = word.start
                     prefix = format_timetag(
                         word.start,
                         use_angle_bracket=use_angle,
                         tail_digits=tail_digits,
                     )
             elif line[idx - 1].end != word.start:
+                later_tags.append(word.start)
                 prefix = format_timetag(
                     word.start,
                     use_angle_bracket=use_angle,
@@ -259,6 +261,7 @@ def _format_line(
             if idx == last_idx and word.end == line_end:
                 pass
             else:
+                later_tags.append(word.end)
                 suffix = format_timetag(
                     word.end,
                     use_angle_bracket=use_angle,
@@ -267,4 +270,43 @@ def _format_line(
 
         parts.append(f"{prefix}{word.content}{suffix}")
 
+    if bracket_first_tag is not None and line_start is not None:
+        # 调用方会在正文之后写出行尾标签 (参考行传进来的 line_end 是 None).
+        if line_end is not None:
+            later_tags.append(line_end)
+        _report_bracket_first_tag(line_start, bracket_first_tag, later_tags)
+
     return "".join(parts)
+
+
+def _bracket_first_tag_splits(
+    line_start: int, first_tag: int, later_tags: list[int]
+) -> bool:
+    """``[line_start][first_tag]正文...`` 重新解析时是否会被拆成两行.
+
+    与 :mod:`.parser` 的 2b 分支同一判据: 正文里还有别的时间标签, 且整行标签
+    非递减, 才读成"行标签 + 延迟首字"的一行; 否则按重复行简写展开.
+    ``tests/test_properties.py`` 用真实的重新解析结果核对这条判据.
+    """
+    values = [line_start, first_tag, *later_tags]
+    non_decreasing = all(a <= b for a, b in zip(values, values[1:]))
+    return not (later_tags and non_decreasing)
+
+
+def _report_bracket_first_tag(
+    line_start: int, first_tag: int, later_tags: list[int]
+) -> None:
+    """按真实后果记录方括号首词元标签: 会拆行记 warning, 否则只记 debug."""
+    if _bracket_first_tag_splits(line_start, first_tag, later_tags):
+        logger.warning(
+            f"Line at {line_start}ms: the first token's byword tag at {first_tag}ms is "
+            f"written in square brackets (use_bracket_for_byword_tag=True) and nothing "
+            f"after it disambiguates; re-parsing will read it as a second line "
+            f"tag and duplicate this line's text"
+        )
+    else:
+        logger.debug(
+            f"Line at {line_start}ms: the first token's byword tag at {first_tag}ms is "
+            f"written in square brackets; re-parsing keeps one line and adds an empty "
+            f"leading token for the gap (text and timing are preserved)"
+        )

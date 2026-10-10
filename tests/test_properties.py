@@ -56,39 +56,50 @@ metadata = st.lists(st.tuples(metadata_keys, metadata_values), max_size=4).map(M
 
 
 @st.composite
+def byword_tokens(
+    draw: st.DrawFn, start: int, upper: int, *, last_end: bool
+) -> list[LyricToken]:
+    """``[start, upper]`` 内的逐字词元, 时间严格递增.
+
+    首词元可以晚于行首 (SPL 的"延迟首字"). ``last_end=False`` 时末词元不带
+    ``end``: 参考行没有行尾标签, 末词元的 ``end`` 写不出来.
+    """
+    first = start
+    if upper - start >= 2 and draw(st.booleans()):
+        first = draw(st.integers(start + 1, upper - 1))
+    count = draw(st.integers(1, min(4, upper - first)))
+    bounds = draw(
+        st.lists(
+            st.integers(first + 1, upper), min_size=count, max_size=count, unique=True
+        ).map(sorted)
+    )
+    starts = [first, *bounds[:-1]]
+    ends: list[int | None] = list(bounds)
+    if not last_end:
+        ends[-1] = None
+    return [
+        LyricToken(content=draw(texts), start=token_start, end=token_end)
+        for token_start, token_end in zip(starts, ends)
+    ]
+
+
+@st.composite
 def lyric_lines(draw: st.DrawFn, start: int) -> LyricLine:
-    """一行歌词: 整行正文或逐字词元, 可选行尾, 可选参考行."""
+    """一行歌词: 整行正文或逐字词元, 可选行尾, 可选参考行 (也可以是逐字的)."""
     end = draw(st.none() | st.integers(start + 1, start + 20_000))
+    upper = end if end is not None else start + 20_000
     if draw(st.booleans()):
         content = BasicLyricLine([LyricToken(content=draw(texts))])
     else:
-        # 逐字行: 首个词元从行首开始, 词元时间严格递增且不越过行尾.
-        upper = end if end is not None else start + 20_000
-        count = draw(st.integers(1, min(4, upper - start)))
-        offsets = draw(
-            st.lists(
-                st.integers(start + 1, upper),
-                min_size=count,
-                max_size=count,
-                unique=True,
-            ).map(sorted)
-        )
-        starts = [start, *offsets[:-1]]
-        tokens = [
-            LyricToken(content=draw(texts), start=token_start, end=token_end)
-            for token_start, token_end in zip(starts, offsets)
-        ]
+        tokens = draw(byword_tokens(start, upper, last_end=True))
         content = BasicLyricLine(tokens)
         # 逐字行末尾的标签同时是末词元的 end 与行尾 (解析器据此推断行尾),
         # 所以"词元有 end 而行没有 end"在 LRC 里写不出来.
         if end is None:
-            end = offsets[-1]
-    references = draw(
-        st.lists(
-            texts.map(lambda text: BasicLyricLine([LyricToken(content=text)])),
-            max_size=2,
-        )
-    )
+            end = tokens[-1].end
+    plain_ref = texts.map(lambda text: BasicLyricLine([LyricToken(content=text)]))
+    byword_ref = byword_tokens(start, upper, last_end=False).map(BasicLyricLine)
+    references = draw(st.lists(plain_ref | byword_ref, max_size=2))
     return LyricLine(start=start, end=end, content=content, reference_lines=references)
 
 
@@ -187,6 +198,29 @@ def test_dict_roundtrip(lyrics: Lyrics) -> None:
     restored = Lyrics.from_dict(lyrics.to_dict())
     assert list(restored) == list(lyrics)
     assert restored.metadata.to_pairs() == list(lyrics.metadata.items())
+
+
+#: 方括号逐字标签的写法, 仍不写空行 (与 :data:`DUMPS` 同理).
+DUMPS_BRACKET = SerializationOptions(use_bracket_for_byword_tag=True, line_separator="")
+
+
+@given(lyrics_objects())
+def test_bracket_first_tag_warning_matches_the_real_outcome(lyrics: Lyrics) -> None:
+    """方括号首词元标签: 有 warning 当且仅当重新解析真的多出行.
+
+    告警的判据 (``serializer._bracket_first_tag_splits``) 是对解析器 2b 分支的
+    推断; 这里拿真实的重新解析结果核对它, 免得两边各改各的.
+    """
+    from unittest import mock
+
+    from lemony_lrc_parser import serializer
+
+    with mock.patch.object(serializer.logger, "warning") as warning:
+        dumped = lyrics.dumps(options=DUMPS_BRACKET)
+    reparsed = Lyrics.loads(dumped)
+    main_split = len(reparsed) - len(lyrics)
+    # 参考行被拆时, 拆出来的那份落在新时间点上, 同样表现为行数增加.
+    assert (warning.call_count > 0) == (main_split > 0)
 
 
 # ---------------------------------------------------------------------------
