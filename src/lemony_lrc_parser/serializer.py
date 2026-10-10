@@ -33,8 +33,7 @@ def dump_lrc(lyrics: Lyrics, *, options: SerializationOptions | None = None) -> 
     options = options or SerializationOptions()
 
     if options.with_metadata:
-        # 用 to_pairs() 而不是 items(): 两者当前都给出全部条目, 但这里显式取
-        # 无损视图, 免得以后 items() 被改回 dict 语义时静默丢掉同名重复的 tag.
+        # 必须用 to_pairs(): items() 是 dict 视角, 会丢掉同名重复的 tag.
         for key, value in lyrics.metadata.to_pairs():
             _warn_non_roundtrippable_metadata(key, value)
             buffer.write(f"[{key}: {value}]\n")

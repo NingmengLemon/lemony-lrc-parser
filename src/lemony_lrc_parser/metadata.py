@@ -76,22 +76,19 @@ class Metadata(MutableMapping[str, str]):
 
     三种读法各有明确口径, 不会互相"顺手"改变语义:
 
-    * ``meta["ti"]`` / ``meta.get("ti")`` / ``dict(meta)``: **有损的 dict 视角**,
-      同名 key 取**最后**一次出现的值 (与 0.4.x 的裸 ``dict`` 行为一致, 所以
-      升级不会让既有代码读到不一样的值).
-    * :meth:`items` / :meth:`to_pairs`: **无损视角**, 按出现顺序给出全部
-      ``(key, value)``, 含重复. ``dumps()`` 走的就是这条.
+    * ``Mapping`` 协议 (``meta["ti"]`` / ``get()`` / ``keys()`` / ``values()`` /
+      ``items()`` / ``len()`` / ``dict(meta)``): **有损的 dict 视角**, 每个 key
+      一条, 取**最后**一次出现的值 (与 0.4.x 的裸 ``dict`` 行为一致, 所以升级
+      不会让既有代码读到不一样的值).
+    * :meth:`to_pairs`: **无损视角**, 按出现顺序给出全部 ``(key, value)``,
+      含重复. ``dumps()`` 走的就是这条.
     * :meth:`getlist`: 单个 key 的全部取值, 顺序同上.
 
     Note:
-        ``len(meta)`` 与 ``meta.keys()`` 按 ``Mapping`` 协议只算**不同** key,
-        要数全部条目请用 ``len(meta.to_pairs())``.
-
-    Note:
-        :meth:`items` 覆盖了 ``Mapping.items()``: 它返回全部条目而不是每个 key
-        一条. 这是本类唯一偏离 ``Mapping`` 直觉的地方, 也是 werkzeug
-        ``Headers`` 等先例的做法 —— 让"同名重复"在最常见的遍历写法里可见,
-        而不是被悄悄折叠掉.
+        ``Mapping`` 协议的每个方法都严格守 dict 语义, 无损读取只有
+        :meth:`to_pairs` / :meth:`getlist` 两个显式入口. 这样把 ``Metadata``
+        当普通 ``Mapping`` 消费的代码 (``for k, v in meta.items()``) 不会因为
+        重复项拿到同一个 key 两次. 要数全部条目用 ``len(meta.to_pairs())``.
 
     Note:
         ``meta == dict`` 比较**去重后**的 dict 视角 (保持升级前的写法可用);
@@ -146,19 +143,11 @@ class Metadata(MutableMapping[str, str]):
         """不同 key 的个数 (不是条目数, 见类文档)."""
         return len({key for key, _ in self._pairs})
 
-    def items(self) -> list[tuple[str, str]]:  # type: ignore[override]
-        """全部 ``(key, value)``, 按出现顺序, **含重复** (无损视角).
-
-        Note:
-            这是对 ``Mapping.items()`` 的有意覆盖, 见类文档. 需要 dict 语义时用
-            ``dict(meta)`` 或 ``((k, meta[k]) for k in meta)``.
-        """
-        return list(self._pairs)
-
     def to_pairs(self) -> list[tuple[str, str]]:
-        """无损导出: 全部 ``(key, value)`` 的副本, 含重复.
+        """无损导出: 全部 ``(key, value)`` 的副本, 按出现顺序, 含重复.
 
         与 :meth:`to_dict` 配对使用 —— 需要 JSON 友好又不想丢重复项时用它.
+        ``items()`` 是 ``Mapping`` 协议的 dict 视角, 每个 key 只有一条.
         """
         return list(self._pairs)
 
@@ -217,10 +206,8 @@ class Metadata(MutableMapping[str, str]):
         """逐条 :meth:`add` (不是 ``dict.update`` 那种覆盖语义).
 
         Args:
-            other: ``Mapping`` 走 dict 视角 —— 普通 ``dict`` 就是它的全部键值,
-                另一个 :class:`Metadata` 则是它的全部条目 (含重复, 因为本类的
-                :meth:`items` / :meth:`to_pairs` 就是无损视角);
-                ``(key, value)`` 序列原样追加.
+            other: 另一个 :class:`Metadata` 取它的全部条目 (含重复); 其它
+                ``Mapping`` 取它的键值; ``(key, value)`` 序列原样追加.
 
         Note:
             这是解析器累积 metadata 用的入口: 每读到一行 metatag 就 ``extend``,

@@ -3,9 +3,9 @@
 这个容器有三套读法, 用例按读法分组, 每组都钉住"哪一种是有损的、哪一种是保真的",
 免得以后有人顺手把其中一套改成另一套的语义:
 
-* dict 视角 (``meta["ti"]`` / ``dict(meta)`` / ``.keys()``): 同名取**最后**一次,
-  与 0.4.x 的裸 ``dict`` 行为一致。
-* 无损视角 (``items()`` / ``to_pairs()`` / ``getlist()``): 全部条目, 含重复。
+* dict 视角 (``Mapping`` 协议: ``meta["ti"]`` / ``dict(meta)`` / ``.keys()`` /
+  ``.items()``): 同名取**最后**一次, 与 0.4.x 的裸 ``dict`` 行为一致。
+* 无损视角 (``to_pairs()`` / ``getlist()``): 全部条目, 含重复。
 * 写入 (``add`` 追加 / ``set`` 替换): 保真路径与去重路径分开, 不靠参数开关。
 """
 
@@ -109,10 +109,20 @@ class TestDictView:
 
 
 class TestLosslessView:
-    """``items()`` / ``to_pairs()`` / ``getlist()`` 给出全部条目."""
+    """``to_pairs()`` / ``getlist()`` 给出全部条目; ``items()`` 守 Mapping 协议."""
 
-    def test_items_includes_duplicates(self) -> None:
-        assert _sample().items() == DUPLICATED
+    def test_items_follows_the_mapping_protocol(self) -> None:
+        """``items()`` 每个 key 一条, 与 ``dict(meta).items()`` 一致.
+
+        当普通 ``Mapping`` 消费的代码 (``for k, v in meta.items()``) 不应该
+        因为重复项拿到同一个 key 两次.
+        """
+        meta = _sample()
+        assert list(meta.items()) == [("ti", "B"), ("ar", "X")]
+        assert list(meta.items()) == list(dict(meta).items())
+
+    def test_to_pairs_includes_duplicates(self) -> None:
+        assert _sample().to_pairs() == DUPLICATED
 
     def test_to_pairs_returns_a_copy(self) -> None:
         meta = _sample()
