@@ -92,6 +92,7 @@ exclude_also = [
 [dependency-groups]
 dev = [
     "coverage>=7.10.7",
+    "hypothesis>=6.114.0",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.9",
