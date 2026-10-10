@@ -153,7 +153,8 @@ for word in line.content:
 Use the explicit methods for text lookup. `in` has different historical
 semantics across the four models (`LyricToken` / `BasicLyricLine` are substring,
 `LyricLine` is token equality, `Lyrics` is line equality), so `"xxx" in <model>`
-keeps its old behavior but emits a `DeprecationWarning`:
+keeps its old behavior but emits a `DeprecationWarning`; starting with 0.6.0 it
+raises `TypeError`:
 
 ```python
 from lemony_lrc_parser import Lyrics
@@ -485,20 +486,21 @@ meta = lyrics.metadata
 # dict view (lossy): the last value for a duplicated key, matching the old plain dict
 meta["ti"]  # 'B'
 dict(meta)  # {'ti': 'B'}
+list(meta.items())  # [('ti', 'B')]
 lyrics.to_dict()["metadata"]  # {'ti': 'B'}
 
 # lossless view: every entry, duplicates included
 meta.getlist("ti")  # ['A', 'B']
 meta.to_pairs()  # [('ti', 'A'), ('ti', 'B')]
-meta.items()  # same (items() deliberately yields all entries)
 
 # writing: add appends, set / meta[k] = v replaces (at the first position)
 meta.add("ti", "C")  # now A, B, C
 meta.set("ti", "D")  # collapses to a single D
 ```
 
-`dumps()` writes the lossless view, so duplicated tags round-trip. `len(meta)` and
-`meta.keys()` count **distinct** keys per the `Mapping` protocol; use
+`dumps()` writes the lossless view, so duplicated tags round-trip. The `Mapping`
+protocol methods (`keys()` / `values()` / `items()` / `len()`) all count
+**distinct** keys; `to_pairs()` and `getlist()` are the only lossless readers. Use
 `len(meta.to_pairs())` to count entries. Use `meta.to_pairs()` for a lossless
 export and `meta.to_dict()` when JSON-friendliness matters more.
 
@@ -515,7 +517,9 @@ appear *later*, and vice versa.
 You can also use the overloaded `>>` / `<<` operators to shift the lyrics.
 
 If applying the offset would make any timestamp negative,
-`TimestampUnderflowError` is raised for the caller to handle.
+`TimestampUnderflowError` is raised for the caller to handle. A timestamp past
+the largest one LRC can express (`[9999:59.999]`) makes `dumps()` raise
+`TimestampOverflowError`.
 
 #### Applying Offset
 
@@ -651,9 +655,9 @@ The library registers no console script; call it as
 `python -m lemony_lrc_parser` (the same shape as `python -m json.tool`):
 
 ```bash
-# validate LRC file data consistency
+# report what the parse dropped or ignored, then validate data consistency
 python -m lemony_lrc_parser validate song.lrc
-python -m lemony_lrc_parser validate --strict song.lrc    # exit code 1 when there are errors
+python -m lemony_lrc_parser validate --fail-on-error song.lrc    # exit code 1 when there are errors
 
 # global time offset (milliseconds)
 python -m lemony_lrc_parser offset --delta 500 song.lrc           # output to stdout
@@ -663,6 +667,14 @@ python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # output to
 python -m lemony_lrc_parser to-srt song.lrc
 python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
+
+`validate` first prints the events from the parse report (located by source line
+number, e.g. `line 3`), then the consistency issues (located by index into the
+parsed lyrics, e.g. `lyrics[2]`). Parse events in `STRICT_ERROR_CODES` and
+error-level validation issues both count as errors. `--fail-on-error` only
+affects the exit code; it is not the same thing as the API's
+`ParseOptions(strict=True)`, which raises during parsing. The old name `--strict`
+still works in 0.5.x and goes away in 0.6.0.
 
 ### Subtitle Conversion (SRT / WebVTT)
 

@@ -150,7 +150,7 @@ for word in line.content:
 
 按文本查找请使用显式方法: `in` 在四个模型上的历史语义各不相同
 (`LyricToken` / `BasicLyricLine` 是子串, `LyricLine` 是词元相等, `Lyrics` 是行相等),
-`"xxx" in <模型>` 保留旧行为但会发 `DeprecationWarning`:
+`"xxx" in <模型>` 保留旧行为但会发 `DeprecationWarning`, 0.6.0 起改为抛 `TypeError`:
 
 ```python
 from lemony_lrc_parser import Lyrics
@@ -443,23 +443,24 @@ import lemony_lrc_parser as llp
 lyrics = llp.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
 meta = lyrics.metadata
 
-# dict 视角 (有损): 同名取最后一次出现的值, 与旧版的裸 dict 行为一致
+# dict 视角 (有损): Mapping 协议, 同名取最后一次出现的值, 与旧版的裸 dict 一致
 meta["ti"]  # 'B'
 dict(meta)  # {'ti': 'B'}
+list(meta.items())  # [('ti', 'B')]
 lyrics.to_dict()["metadata"]  # {'ti': 'B'}
 
 # 无损视角: 全部条目, 含重复
 meta.getlist("ti")  # ['A', 'B']
 meta.to_pairs()  # [('ti', 'A'), ('ti', 'B')]
-meta.items()  # 同上 (items() 有意覆盖成"全部条目")
 
 # 写入: add 追加, set / meta[k] = v 替换 (位置取首次出现处)
 meta.add("ti", "C")  # 变成 A, B, C
 meta.set("ti", "D")  # 合并成一条 D
 ```
 
-`dumps()` 按无损视角写出, 所以重复 tag 也能往返. `len(meta)` 与 `meta.keys()`
-按 `Mapping` 协议只算**不同**的 key, 要数全部条目用 `len(meta.to_pairs())`.
+`dumps()` 按无损视角写出, 所以重复 tag 也能往返. `Mapping` 协议的方法 (`keys()` /
+`values()` / `items()` / `len()`) 都只算**不同**的 key, 无损读取只有 `to_pairs()` 与
+`getlist()` 两个入口; 要数全部条目用 `len(meta.to_pairs())`.
 需要无损导出时用 `meta.to_pairs()`, 需要 JSON 友好时用 `meta.to_dict()`.
 
 `Metadata` 不是 `dict` 子类, 所以 `isinstance(meta, dict)` 是 `False`,
@@ -474,6 +475,7 @@ meta.set("ti", "D")  # 合并成一条 D
 也可以使用重载的 `>>` / `<<` 运算对歌词进行偏移.
 
 如果应用 offset 会导致任意时间戳变为负数, 将抛出 `TimestampUnderflowError`, 由调用方自行处理.
+时间戳超过 LRC 能写出的上限 `[9999:59.999]` 时, `dumps()` 抛 `TimestampOverflowError`.
 
 #### 应用偏移
 
@@ -600,9 +602,9 @@ issues = lyrics.validate(options=ValidationOptions(strict=True))
 `python -m json.tool` 同样的形态):
 
 ```bash
-# 验证 LRC 文件数据一致性
+# 报告解析时丢弃 / 忽略的内容, 并验证数据一致性
 python -m lemony_lrc_parser validate song.lrc
-python -m lemony_lrc_parser validate --strict song.lrc    # 有 error 时退出码为 1
+python -m lemony_lrc_parser validate --fail-on-error song.lrc    # 有 error 时退出码为 1
 
 # 整体时间偏移 (毫秒)
 python -m lemony_lrc_parser offset --delta 500 song.lrc           # 输出到 stdout
@@ -612,6 +614,12 @@ python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # 输出到
 python -m lemony_lrc_parser to-srt song.lrc
 python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
+
+`validate` 先输出解析报告里的事件 (位置是源文件行号, 如 `line 3`), 再输出一致性校验
+的问题 (位置是解析后的行下标, 如 `lyrics[2]`). 属于 `STRICT_ERROR_CODES` 的解析事件
+与校验的 error 级问题都算 error. `--fail-on-error` 只影响退出码, 与 API 的
+`ParseOptions(strict=True)` (解析时当场抛异常) 不是一回事; 旧名 `--strict` 在
+0.5.x 里仍可用, 0.6.0 移除.
 
 ### 字幕格式转换 (SRT / WebVTT)
 

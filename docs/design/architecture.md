@@ -42,8 +42,10 @@
 `parse_raw_line()` 支持逐行喂入，此时重置由调用方负责。`LrcParser` 不在
 `__all__` 里，属于内部对象。
 
-`parse_line()` 内部发生的事件通过 `on_event` 回调交给 `LrcParser`，
-由它补上行号再写进报告。
+`parse_line()` 内部发生的事件以 `ParseEvent` 的形式通过 `on_event` 回调交给
+`LrcParser`。`parse_line()` 不知道源文件行号，所以事件的 `line_no` /
+`raw_line` 为空，由 `LrcParser` 用 `dataclasses.replace` 补上再写进报告。
+回调收对象而不是拆开的字段，以后给事件加字段不会破坏回调签名。
 
 ## 报告、校验与 strict 的关系
 
@@ -59,6 +61,13 @@
 strict 的判据只有一句：解析器不得不丢掉或忽略文件里的某个声明。
 `line-filtered` 不触发（那是调用方要求丢的）；metadata key 不合法、`offset`
 不可解析也不触发（不影响解析结果，归 `validate()`）。
+
+CLI 的 `validate` 把前后两者都输出：先是解析报告（位置是源文件行号），再是
+校验问题（位置是解析后的行下标）。`STRICT_ERROR_CODES` 里的事件和 error 级
+校验问题都算 error，`--fail-on-error` 据此决定退出码。它只管退出码，不改解析
+行为，所以没有沿用 "strict" 这个词。`validate` 期间在库的 logger 上挂一个
+`NullHandler`，避免同一批 warning 经 Python 的 last-resort handler 再打一遍；
+调用方自己配置的 handler 不受影响。
 
 ## 演进方向
 

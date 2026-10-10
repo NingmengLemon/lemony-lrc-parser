@@ -15,9 +15,13 @@ LRC 没有官方规范，下面每一条都是在"保真 / 易用 / 与其它实
 ## 时间
 
 - 内部精度是毫秒。输出 2 位尾数时有损截断（555ms 写成 `.55`，读回 550ms）。
-- 时间标签接受 1-6 位尾数、1-4 位分钟、可选小时；秒数越界（`[00:99.000]`）
-  按字面折算并告警。尾数 4-6 位按"秒的小数部分"截断到毫秒，而不是 SPL
-  字面读法的"毫秒数"，理由见 [spl.md](../research/spl.md#有意偏离)。
+- 时间标签接受 1-6 位尾数、1-4 位分钟；秒数越界（`[00:99.000]`）按字面折算
+  并告警。尾数 4-6 位按"秒的小数部分"截断到毫秒，而不是 SPL 字面读法的
+  "毫秒数"，理由见 [spl.md](../research/spl.md#有意偏离)。
+- 尾数前的分隔符可以是 `.` 也可以是 `:`，所以 `[01:02:03]` 读作 1 分 2.03 秒，
+  而不是 1 小时 2 分 3 秒；`[01:02:03.500]` 不是合法标签。见 roadmap PARSE-4。
+- 能写出的最大时间是 `[9999:59.999]`，更大的时间戳 `dumps()` 抛
+  `TimestampOverflowError`，而不是写出读不回来的标签。
 - 行尾时间可选，`LyricLine.end is None` 是常态而不是异常。`duration` 此时也是
   `None`。需要"持续到下一行开始"时用 `ParseOptions(fill_implicit_line_end=True)`；
   字幕导出会自己推断（下一行的 `start` 或 `SubtitleOptions.default_duration_ms`）。
@@ -90,14 +94,18 @@ LRC 没有官方规范，下面每一条都是在"保真 / 易用 / 与其它实
   不平衡时（`[ti: 50% ]off]`）整行按正文处理，不猜边界；写出这类 value 时告警
   但照常写出。不引入转义语法，理由见 [not-planned.md](not-planned.md)。
 - 容器是 `Metadata`：有序，同名可重复。三种读法口径固定：
-  - dict 视角（有损）：`meta["ti"]`、`get()`、`dict(meta)`、`to_dict()`、
-    `keys()`、`len()`，同名取最后一次出现。
-  - 无损视角：`items()`、`to_pairs()`、`getlist()`，按出现顺序给全部条目。
+  - dict 视角（有损）：整个 `Mapping` 协议，即 `meta["ti"]`、`get()`、
+    `keys()`、`values()`、`items()`、`len()`、`dict(meta)`、`to_dict()`，
+    每个 key 一条，同名取最后一次出现。
+  - 无损视角：`to_pairs()`、`getlist()`，按出现顺序给全部条目。
   - 写入：`add()` 追加，`set()` / `meta[k] = v` 替换（位置取首次出现处）。
-- 代价：`items()` 有意偏离 `Mapping.items()`，返回全部条目；`len(meta)` 与
-  `len(meta.to_pairs())` 不等。ty 对 `Mapping | Iterable[tuple]` 的 isinstance
-  收窄会算错，所以 `Metadata.extend` 用重载加 `object` 实现签名。
-  调研见 [research/metadata.md](../research/metadata.md)。
+- `items()` 守 `Mapping` 约定，而不是像 werkzeug `Headers` 那样返回全部条目：
+  把 `Metadata` 当普通 `Mapping` 消费的代码（`for k, v in meta.items()`）不该
+  因为重复项拿到同一个 key 两次。无损读取只走显式入口，与 httpx 的
+  `multi_items()` 同一取向。
+- 代价：`len(meta)` 与 `len(meta.to_pairs())` 不等。ty 对
+  `Mapping | Iterable[tuple]` 的 isinstance 收窄会算错，所以 `Metadata.extend`
+  用重载加 `object` 实现签名。调研见 [research/metadata.md](../research/metadata.md)。
 - `[offset:]` 不自动应用，符号见 [research/offset.md](../research/offset.md)。
 
 ## 相等性与 `in`
@@ -106,8 +114,8 @@ LRC 没有官方规范，下面每一条都是在"保真 / 易用 / 与其它实
   顺序都算数。与普通列表比较时只比行。这样 `loads(dumps(x)) == x` 才能当
   往返检查用。
 - `str in <模型>` 在四个模型上语义各不相同（子串 / 词元相等 / 行相等），
-  保留原行为但发 `DeprecationWarning`。文本查找用 `contains_text()` /
-  `find_text()` / `find_regex()`。
+  0.5.x 保留原行为但发 `DeprecationWarning`，0.6.0 起抛 `TypeError`。文本查找
+  用 `contains_text()` / `find_text()` / `find_regex()`。
 
 ## 往返保真度
 

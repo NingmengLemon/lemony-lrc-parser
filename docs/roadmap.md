@@ -8,7 +8,7 @@
 | --- | --- |
 | ARCH-1 | 合并逻辑拆到 `merge.py`，是 MERGE-1 的前置 |
 | ARCH-2 | `models.py` 不再接收新实现，新功能落到独立模块 |
-| TEST-1 | 引入 hypothesis 做性质测试 |
+| TEST-2 | 把 `test_roundtrip_matrix.py` 的固定种子随机语料迁到 hypothesis |
 
 ## 0.6.0：候选
 
@@ -16,6 +16,7 @@
 
 | 代号 | 内容 | 依赖 |
 | --- | --- | --- |
+| BREAK-1 | 移除 0.5.x 弃用的写法：`str in <模型>` 改为抛 `TypeError`，CLI 去掉 `--strict` | |
 | WRITE-1 | 写回时保留原文件风格 | |
 | MERGE-1 | 合并时按时间容差模糊匹配，并给出合并报告 | ARCH-1 |
 | QUERY-1 | 按时间范围取行 | |
@@ -32,6 +33,7 @@
 | EDIT-1 | 显式规范化 `normalize()` |
 | PARSE-2 | 可选保留源位置 |
 | PARSE-3 | `#` 开头的注释行 |
+| PARSE-4 | 带小时的时间标签 `[hh:mm:ss.fff]` |
 | QUERY-2 | 跨行正则搜索 |
 | QUERY-3 | 搜索结果带行号 |
 | MERGE-2 | 一次合并多份歌词 |
@@ -86,17 +88,19 @@ def combine_lyrics_with_report(
 各自的模块：合并进 `merge.py`，统计与特征进 `analysis.py`，规范化进
 `normalize.py`，差异比较进 `diff.py`。
 
-### TEST-1：性质测试
+### TEST-2：随机语料迁到 hypothesis
 
-解析器的边界情况多，适合用生成式测试兜底：
+`tests/test_roundtrip_matrix.py` 用固定种子的 `random` 生成 400 份语料，跑三条
+往返不变量。`tests/test_properties.py` 已经用 hypothesis 覆盖了同样的不变量，
+而且能自动缩小反例。迁完之后删掉 `_random_documents`，手写语料保留。
 
-- `parse_timetag(format_timetag(ms))` 在精度允许的范围内还原。
-- `loads(dumps(lyrics))` 语义等价。
-- `apply_delta(a).apply_delta(b)` 等价于 `apply_delta(a + b)`。
-- `combine` 不修改输入。
+### BREAK-1：移除 0.5.x 的弃用项
 
-hypothesis 只进 dev 依赖。现有 `tests/test_roundtrip_matrix.py` 的固定种子
-随机语料可以逐步迁过去。
+- `str in LyricToken / BasicLyricLine / LyricLine / Lyrics` 抛 `TypeError`，
+  提示改用 `contains_text()`。
+- CLI `validate --strict` 删除，只留 `--fail-on-error`。
+
+警告文本与 README 已经写明是 0.6.0。
 
 ### WRITE-1：保留原文件风格
 
@@ -232,6 +236,16 @@ class SourceLocation:
 提及）。现在这种行没有锚点时按孤儿行告警丢弃，有锚点时被挂成参考行，
 两种都不对。倾向的做法是识别为注释、整行忽略、不告警，但要和孤儿行 /
 参考行的规则一起定。
+
+### PARSE-4：带小时的时间标签
+
+社区整理把 `[hh:mm:ss.fff]` 列为在用写法，但本库读不了：尾数分隔符允许 `:`，
+于是 `[01:02:03]` 读作 1 分 2.03 秒，`[01:02:03.500]` 整行被当成孤儿行
+（[调研](research/timetags.md)）。语料里 0 例。
+
+要支持就得在三段式标签上做选择：`[a:b:c]` 是"分:秒:百分秒"还是"时:分:秒"。
+倾向的判据是"三段都齐全且末段带小数"才按小时读，`[a:b:c]` 维持现状，
+但要先补一份语料统计看 `[mm:ss:xx]` 的实际用量。
 
 ### QUERY-2 / QUERY-3：搜索扩展
 
