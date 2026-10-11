@@ -36,10 +36,11 @@ from .exceptions import (
     InvalidLyricsError,
     LyricsParserError,
     ProgrammingError,
+    TimestampOverflowError,
     TimestampUnderflowError,
 )
+from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
 from .models import (
-    COMMON_METADATA_KEYS,
     BasicLyricLine,
     LyricLine,
     LyricLineDict,
@@ -47,13 +48,21 @@ from .models import (
     LyricsDict,
     LyricToken,
     LyricTokenDict,
-    MetadataDict,
-    MetadataKey,
     ParseOptions,
     SerializationOptions,
     SubtitleOptions,
 )
-from .parser import parse_line, parse_lrc
+from .parser import parse_line, parse_lrc, parse_with_report
+from .report import (
+    DumpEvent,
+    DumpEventCode,
+    DumpReport,
+    ParseEvent,
+    ParseEventCode,
+    ParseReport,
+)
+from .serializer import dump_with_report
+from .style import DetectedLineEnding, LineEnding, detect_line_ending
 from .subtitle import dump_srt, dump_webvtt, parse_srt, parse_webvtt
 from .timetag import format_timetag, parse_timetag
 from .validation import (
@@ -71,16 +80,24 @@ __all__ = [
     "LyricTokenDict",
     "LyricLineDict",
     "LyricsDict",
+    "Metadata",
     "MetadataDict",
     "MetadataKey",
     "COMMON_METADATA_KEYS",
     "InvalidLyricsError",
     "LyricsParserError",
     "ProgrammingError",
+    "TimestampOverflowError",
     "TimestampUnderflowError",
     "ParseOptions",
     "SerializationOptions",
     "SubtitleOptions",
+    "DumpEvent",
+    "DumpEventCode",
+    "DumpReport",
+    "ParseEvent",
+    "ParseEventCode",
+    "ParseReport",
     "ValidationIssue",
     "ValidationOptions",
     "ValidationSeverity",
@@ -91,6 +108,11 @@ __all__ = [
     "load",
     "parse_line",
     "parse_lrc",
+    "parse_with_report",
+    "dump_with_report",
+    "detect_line_ending",
+    "LineEnding",
+    "DetectedLineEnding",
     "format_timetag",
     "parse_timetag",
     "dump_srt",

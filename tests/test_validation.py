@@ -189,7 +189,7 @@ class TestValidateLyricsIntegration:
         _assert_issue(issues, "invalid-metadata-key", severity="warning")
 
     def test_metadata_key_too_long(self) -> None:
-        """超过 16 字符的 key 无法被 parser 接受, 应被检测 (B4)."""
+        """超过 16 字符的 key 无法被 parser 接受, 应被检测."""
         lyrics = loads("[00:01.000]hello\n")
         lyrics.metadata["a" * 17] = "too-long"
         issues = lyrics.validate()
@@ -212,7 +212,7 @@ class TestValidateLyricsDirect:
     """直接调用 validate_lyrics 测试底层能力."""
 
     def test_token_before_line_start(self) -> None:
-        """token.start < line.start (B7)."""
+        """token.start < line.start."""
         from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
 
         lyrics = Lyrics()
@@ -232,7 +232,7 @@ class TestValidateLyricsDirect:
         )
 
     def test_token_after_line_end(self) -> None:
-        """token.end > line.end (B7)."""
+        """token.end > line.end."""
         from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
 
         lyrics = Lyrics()

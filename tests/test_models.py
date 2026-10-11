@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 
 import pytest
 
-from lemony_lrc_parser import COMMON_METADATA_KEYS, MetadataDict, MetadataKey
+from lemony_lrc_parser import (
+    COMMON_METADATA_KEYS,
+    MetadataDict,
+    MetadataKey,
+    ProgrammingError,
+    SerializationOptions,
+    SubtitleOptions,
+)
 from lemony_lrc_parser.models import BasicLyricLine, LyricLine, Lyrics, LyricToken
 from lemony_lrc_parser.regex import METATAG_KEY_REGEX, compile_regex
 
@@ -92,6 +100,26 @@ class TestLyricLineText:
         """测试空内容的 text 属性."""
         line = LyricLine(start=1000)
         assert line.text == ""
+
+    def test_duration_from_explicit_end(self) -> None:
+        assert LyricLine(start=1000, end=3000).duration == 2000
+
+    def test_duration_is_none_without_end(self) -> None:
+        """LRC 的行尾时间可选, 所以 None 是常态."""
+        assert LyricLine(start=1000).duration is None
+
+    def test_duration_of_parsed_line(self) -> None:
+        lyrics = Lyrics.loads("[00:01.000]a[00:03.000]\n[00:05.000]b\n")
+        assert [line.duration for line in lyrics] == [2000, None]
+
+    def test_duration_follows_offset(self) -> None:
+        """整体偏移把两端一起挪, 时长不变."""
+        lyrics = Lyrics.loads("[00:01.000]a[00:03.000]\n")
+        assert (lyrics >> 500)[0].duration == lyrics[0].duration == 2000
+
+    def test_duration_of_zero_length_line(self) -> None:
+        """手工构造的零长度区间给出 0 (解析器不会产出这种行)."""
+        assert LyricLine(start=1000, end=1000).duration == 0
 
     def test_contains_text_is_the_explicit_api(self) -> None:
         """文本查找走 contains_text(); `in` 的旧语义保留但会告警."""
@@ -220,6 +248,107 @@ class TestLyricsAdd:
         assert [line.start for line in main] == [1000, 9000]
 
 
+class TestSafeMutation:
+    """``add_line`` / ``sort_inplace`` / ``sorted``: 保持时间顺序的安全路径.
+
+    ``Lyrics`` 是 ``UserList``, 直接 ``append`` 不会排序; 而 ``lyrics.sort()`` 又因为
+    ``LyricLine`` 不可比较而抛 TypeError —— 这组方法填的就是这个空.
+    """
+
+    def test_add_line_keeps_order(self) -> None:
+        lyrics = Lyrics(metadata={"ti": "T"})
+        for start in (5000, 1000, 3000):
+            lyrics.add_line(_line(start, str(start)))
+
+        assert [line.start for line in lyrics] == [1000, 3000, 5000]
+        assert lyrics.metadata["ti"] == "T"
+
+    def test_add_line_without_sort_appends(self) -> None:
+        lyrics = Lyrics()
+        lyrics.add_line(_line(5000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+
+        assert [line.start for line in lyrics] == [5000, 1000]
+
+    def test_add_line_stores_a_reference(self) -> None:
+        """与 ``append`` 一致存引用, 不是拷贝 (类文档里写明的语义)."""
+        line = _line(1000, "a")
+        lyrics = Lyrics()
+        lyrics.add_line(line)
+
+        line.start = 2000
+
+        assert lyrics[0].start == 2000
+
+    @pytest.mark.parametrize("bad", ["text", 42, None, ["not a line"]])
+    def test_add_line_rejects_non_lines(self, bad: object) -> None:
+        with pytest.raises(TypeError, match="expects a LyricLine"):
+            Lyrics().add_line(bad)  # ty: ignore[invalid-argument-type]
+
+    def test_plain_list_sort_raises(self) -> None:
+        """文档里承诺的那个坑: ``UserList.sort`` 对 LyricLine 不可用."""
+        lyrics = Lyrics()
+        lyrics.add_line(_line(2000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+
+        with pytest.raises(TypeError):
+            lyrics.sort()  # ty: ignore[invalid-argument-type]
+
+    def test_sort_inplace_is_stable(self) -> None:
+        """同一时间戳的多行保持原有相对顺序 (对唱 / 重复副歌)."""
+        lyrics = Lyrics()
+        lyrics.add_line(_line(1000, "first"), sort=False)
+        lyrics.add_line(_line(1000, "second"), sort=False)
+        lyrics.add_line(_line(500, "earlier"), sort=False)
+
+        lyrics.sort_inplace()
+
+        assert [line.text for line in lyrics] == ["earlier", "first", "second"]
+
+    def test_sort_inplace_keeps_the_same_objects(self) -> None:
+        """原地排序不换对象, 只是换位置."""
+        first, second = _line(2000, "b"), _line(1000, "a")
+        lyrics = Lyrics()
+        lyrics.add_line(first, sort=False)
+        lyrics.add_line(second, sort=False)
+
+        lyrics.sort_inplace()
+
+        assert lyrics[0] is second
+        assert lyrics[1] is first
+
+    def test_sort_inplace_fixes_unsorted(self) -> None:
+        lyrics = Lyrics()
+        lyrics.add_line(_line(2000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+        assert [issue.code for issue in lyrics.validate()] == ["unsorted"]
+
+        lyrics.sort_inplace()
+
+        assert [issue.code for issue in lyrics.validate()] == []
+
+    def test_sorted_returns_an_independent_copy(self) -> None:
+        lyrics = Lyrics(metadata={"ti": "T"})
+        lyrics.add_line(_line(2000, "b"), sort=False)
+        lyrics.add_line(_line(1000, "a"), sort=False)
+
+        ordered = lyrics.sorted()
+
+        assert ordered is not lyrics
+        assert [line.start for line in ordered] == [1000, 2000]
+        assert [line.start for line in lyrics] == [2000, 1000]  # 原对象没动
+        assert ordered.metadata["ti"] == "T"
+        # 副本里的行也是拷贝 (与 copy() 一致)
+        assert ordered[0] is not lyrics[1]
+
+    def test_sorted_of_sorted_is_equal(self) -> None:
+        lyrics = Lyrics()
+        lyrics.add_line(_line(1000, "a"))
+        lyrics.add_line(_line(2000, "b"))
+
+        assert lyrics.sorted() == lyrics
+
+
 class TestLyricsStr:
     """测试 Lyrics 的 __str__ 方法."""
 
@@ -234,6 +363,68 @@ class TestLyricsStr:
         assert "Hello" in str_result
 
 
+class TestCompactRepr:
+    """``repr`` 是给调试看的紧凑形式, 与 ``str`` (= dumps) 分工明确."""
+
+    def test_token_repr(self) -> None:
+        assert repr(LyricToken("hello", start=1000, end=1500)) == (
+            "LyricToken('hello', start=1000, end=1500)"
+        )
+
+    def test_token_repr_with_unknown_times(self) -> None:
+        assert repr(LyricToken("hello")) == "LyricToken('hello', start=None, end=None)"
+
+    def test_line_repr_hides_tokens(self) -> None:
+        """逐字行的词元不铺开 —— 这正是这个 repr 存在的理由."""
+        line = Lyrics.loads("[00:00.000]<00:00.249>风<00:00.467>透[00:02.740]\n")[0]
+        assert len(line.content) == 2
+
+        text = repr(line)
+
+        assert text == "LyricLine(start=0, end=2740, text='风透')"
+        assert "LyricToken" not in text
+
+    def test_line_repr_mentions_reference_lines_only_when_present(self) -> None:
+        plain = Lyrics.loads("[00:01.000]a\n")[0]
+        assert repr(plain) == "LyricLine(start=1000, end=None, text='a')"
+
+        with_ref = Lyrics.loads("[00:01.000]a\n翻译\n[00:02.000]b\n")[0]
+        assert repr(with_ref) == "LyricLine(start=1000, end=None, text='a', refs=1)"
+
+    def test_lyrics_repr_hides_lines(self) -> None:
+        lyrics = Lyrics.loads("[ti: A]\n[00:01.000]a\n[00:02.000]b\n")
+
+        text = repr(lyrics)
+
+        assert text == "Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))"
+        assert "LyricLine" not in text
+        assert "\n" not in text
+
+    def test_lyrics_repr_keeps_duplicate_metadata(self) -> None:
+        """metadata 用 Metadata 自己的 repr, 重复项不会被折叠掉."""
+        lyrics = Lyrics.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+        assert repr(lyrics) == (
+            "Lyrics(lines=1, metadata=Metadata([('ti', 'A'), ('ti', 'B')]))"
+        )
+
+    def test_empty_lyrics_repr(self) -> None:
+        assert repr(Lyrics()) == "Lyrics(lines=0, metadata=Metadata({}))"
+
+    def test_str_still_dumps(self) -> None:
+        """紧凑的是 repr; str() 仍然等价于 dumps()."""
+        lyrics = Lyrics.loads("[ti: A]\n[00:01.000]a\n")
+        assert str(lyrics) == lyrics.dumps()
+        assert repr(lyrics) != str(lyrics)
+
+    def test_repr_of_a_real_document_stays_short(self) -> None:
+        """逐字 + 翻译的文档, repr 不该把终端刷满."""
+        lyrics = Lyrics.loads(
+            "[00:01.000]<00:01.100>a<00:01.200>b<00:01.300>c[00:02.000]\n翻译一\n翻译二\n"
+        )
+        assert len(repr(lyrics)) < 80
+        assert len(repr(lyrics[0])) < 80
+
+
 class TestLyricLineStartValidation:
     """测试 LyricLine.start 的运行时校验."""
 
@@ -246,7 +437,7 @@ class TestLyricLineStartValidation:
 
 
 class TestLyricsCombineDuplicateStarts:
-    """测试 B2: self 含重复 start 时合并不得丢行."""
+    """self 含重复 start 时合并不得丢行."""
 
     def test_add_preserves_duplicate_start_lines(self) -> None:
         """+ 运算符保留 self 中同 start 的多行, other 挂到首行.
@@ -400,6 +591,77 @@ class TestTextSearch:
             assert 1 not in token
 
 
+class TestRegexSearch:
+    """``find_regex`` / ``contains_regex``: 逐行正则查找."""
+
+    def _lyrics(self) -> Lyrics:
+        return Lyrics.loads(
+            "[00:01.000]Hello World\n[00:02.000]你好\n翻译 Love\n[00:03.000]no match\n"
+        )
+
+    def test_string_pattern_is_compiled(self) -> None:
+        assert [line.text for line in self._lyrics().find_regex("o W")] == [
+            "Hello World"
+        ]
+
+    def test_compiled_pattern(self) -> None:
+        lyrics = self._lyrics()
+        assert [line.text for line in lyrics.find_regex(re.compile(r"^Hello"))] == [
+            "Hello World"
+        ]
+
+    def test_reference_lines_included_by_default(self) -> None:
+        assert [line.text for line in self._lyrics().find_regex("Love")] == ["你好"]
+
+    def test_reference_lines_can_be_excluded(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("Love", include_reference_lines=False) == []
+
+    def test_case_insensitive_via_flags(self) -> None:
+        """忽略大小写不是单独的参数, 传 flags 即可 (免得参数越加越多)."""
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("hello") == []
+        assert [line.text for line in lyrics.find_regex(re.compile("hello", re.I))] == [
+            "Hello World"
+        ]
+
+    def test_escape_makes_it_literal(self) -> None:
+        lyrics = self._lyrics()
+        assert [line.text for line in lyrics.find_regex(re.escape("o W"))] == [
+            "Hello World"
+        ]
+        # 未转义时 '.' 是元字符, 匹配不到字面量
+        assert lyrics.find_regex(re.escape("o.W")) == []
+
+    def test_metacharacters_work(self) -> None:
+        assert [line.text for line in self._lyrics().find_regex(r"你.")] == ["你好"]
+
+    def test_no_match(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("zzz") == []
+        assert not lyrics.contains_regex("zzz")
+
+    def test_matching_is_line_scoped(self) -> None:
+        """逐行匹配, 不跨行: pattern 里的 \\n 永远匹配不到."""
+        lyrics = Lyrics.loads("[00:01.000]ab\n[00:02.000]cd\n")
+        assert lyrics.find_regex("b") != []
+        assert lyrics.find_regex(r"b\n") == []
+        assert lyrics.find_regex(r"ab[\s\S]*cd") == []
+
+    def test_returns_the_line_objects_themselves(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.find_regex("Hello")[0] is lyrics[0]
+
+    def test_contains_regex_mirrors_find_regex(self) -> None:
+        lyrics = self._lyrics()
+        assert lyrics.contains_regex("World")
+        assert lyrics.contains_regex("Love")  # 参考行
+        assert not lyrics.contains_regex("Love", include_reference_lines=False)
+
+    def test_empty_lyrics(self) -> None:
+        assert Lyrics().find_regex("anything") == []
+
+
 class TestMetadataTypingHints:
     """常见 metadata key 的类型提示 (仅提示, 不强制)."""
 
@@ -417,9 +679,132 @@ class TestMetadataTypingHints:
 
         assert tuple(get_args(MetadataKey)) == COMMON_METADATA_KEYS
 
-    def test_metadata_is_a_plain_dict_at_runtime(self) -> None:
+    def test_non_standard_keys_are_freely_usable(self) -> None:
         """非标准 key 依旧可以自由使用 (库不做校验)."""
         lyrics = Lyrics.loads("[tool: whatever]\n[00:01.000]x\n")
 
         assert lyrics.metadata == {"tool": "whatever"}
         assert lyrics.metadata["tool"] == "whatever"
+
+
+class TestLyricsEquality:
+    """两份 ``Lyrics`` 比行序列 + metadata; 与普通列表比只比行."""
+
+    def test_identical_lyrics_are_equal(self) -> None:
+        text = "[ti: A]\n[00:01.000]x\n"
+        assert Lyrics.loads(text) == Lyrics.loads(text)
+
+    def test_metadata_difference_makes_them_unequal(self) -> None:
+        """改前这里会判为相等 —— 拿 ``==`` 检查往返就是假阳性."""
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ti: B]\n[00:01.000]x\n")
+        assert left != right
+
+    def test_missing_metadata_makes_them_unequal(self) -> None:
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[00:01.000]x\n")
+        assert left != right
+
+    def test_metadata_order_matters(self) -> None:
+        """metadata 按全部条目比, 标签顺序也算数."""
+        left = Lyrics.loads("[ti: A]\n[ar: B]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ar: B]\n[ti: A]\n[00:01.000]x\n")
+        assert left != right
+
+    def test_line_difference_makes_them_unequal(self) -> None:
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ti: A]\n[00:01.000]y\n")
+        assert left != right
+
+    def test_roundtrip_equality_is_a_real_check(self) -> None:
+        lyrics = Lyrics.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+        assert Lyrics.loads(lyrics.dumps()) == lyrics
+
+    def test_slice_is_equal(self) -> None:
+        lyrics = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        assert lyrics[:] == lyrics
+
+    def test_plain_list_compares_lines_only(self) -> None:
+        """列表没有 metadata 可比, 所以这一支沿用 ``UserList`` 的语义.
+
+        于是会出现"两份 Lyrics 不相等, 但其中一份等于另一份的行列表"这种不对称,
+        这是刻意的: 与列表比较时无从谈起 metadata.
+        """
+        left = Lyrics.loads("[ti: A]\n[00:01.000]x\n")
+        right = Lyrics.loads("[ti: B]\n[00:01.000]x\n")
+        assert left != right
+        assert list(left) == list(right)
+        assert left == list(right)
+
+    def test_not_equal_to_unrelated_type(self) -> None:
+        assert Lyrics.loads("[00:01.000]x\n") != 42
+
+
+class TestOptionValidation:
+    """选项 dataclass 在构造时拒绝非法值, 而不是等到用的时候才炸."""
+
+    @pytest.mark.parametrize(
+        "field", ["line_tag_decimal_length", "word_tag_decimal_length"]
+    )
+    @pytest.mark.parametrize("value", [0, 7])
+    def test_tail_digits_out_of_range(self, field: str, value: int) -> None:
+        with pytest.raises(ProgrammingError, match=field):
+            SerializationOptions(**{field: value})  # ty: ignore[invalid-argument-type]
+
+    @pytest.mark.parametrize("value", [0, -1])
+    def test_non_positive_default_duration(self, value: int) -> None:
+        with pytest.raises(ProgrammingError, match="default_duration_ms"):
+            SubtitleOptions(default_duration_ms=value)
+
+
+class TestModelProtocols:
+    """``str()`` / ``len()`` / ``iter()`` 在各层模型上的口径."""
+
+    def test_str_is_the_text(self) -> None:
+        tokens = [LyricToken(content="a", start=0, end=1), LyricToken(content="b")]
+        assert str(tokens[0]) == "a"
+        assert str(BasicLyricLine(tokens)) == "ab"
+
+    def test_lyric_line_len_and_iter_follow_its_tokens(self) -> None:
+        tokens = [LyricToken(content="a"), LyricToken(content="b")]
+        line = LyricLine(start=0, content=BasicLyricLine(tokens))
+        assert len(line) == 2
+        assert list(line) == tokens
+
+
+class TestUnsupportedOperators:
+    """不支持的运算返回 ``NotImplemented``, 让 Python 自己抛 ``TypeError``."""
+
+    def test_add_non_lyrics(self) -> None:
+        lyrics = Lyrics([_line(0, "x")])
+        with pytest.raises(TypeError):
+            lyrics + [_line(1, "y")]  # ty: ignore[unsupported-operator]  # noqa: RUF005
+        with pytest.raises(TypeError):
+            [_line(1, "y")] + lyrics  # noqa: RUF005
+
+    def test_iadd_non_lyrics(self) -> None:
+        lyrics = Lyrics([_line(0, "x")])
+        with pytest.raises(TypeError):
+            lyrics += 1  # ty: ignore[unsupported-operator]
+
+    def test_multiplication_is_not_supported(self) -> None:
+        """``UserList`` 的重复拼接对歌词没有意义 (会造出同时间戳的重复行)."""
+        lyrics = Lyrics([_line(0, "x")])
+        with pytest.raises(TypeError):
+            lyrics * 2
+        with pytest.raises(TypeError):
+            2 * lyrics
+        with pytest.raises(TypeError):
+            lyrics *= 2
+
+    @pytest.mark.parametrize("ms", [1.5, "100"])
+    def test_shift_requires_int(self, ms: object) -> None:
+        lyrics = Lyrics([_line(1000, "x")])
+        with pytest.raises(TypeError):
+            lyrics << ms  # ty: ignore[unsupported-operator]
+        with pytest.raises(TypeError):
+            lyrics >> ms  # ty: ignore[unsupported-operator]
+
+    def test_combine_rejects_non_iterable(self) -> None:
+        with pytest.raises(TypeError, match="Iterable"):
+            Lyrics().combine(42)  # ty: ignore[invalid-argument-type]

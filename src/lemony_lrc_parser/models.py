@@ -16,12 +16,11 @@ import re
 import sys
 import warnings
 from collections import UserList
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
-    Literal,
     SupportsIndex,
     TextIO,
     TypedDict,
@@ -32,6 +31,8 @@ from typing_extensions import Self, override
 
 from ._utils import DC_SLOTS
 from .exceptions import ProgrammingError, TimestampUnderflowError
+from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
+from .style import LineEnding
 
 if TYPE_CHECKING:
     from .validation import ValidationIssue, ValidationOptions
@@ -52,52 +53,11 @@ __all__ = [
     "LyricTokenDict",
     "LyricLineDict",
     "LyricsDict",
+    "Metadata",
     "MetadataDict",
     "MetadataKey",
     "COMMON_METADATA_KEYS",
 ]
-
-
-#: LRC 里最常见的 ID 标签 key (标准集见 LRC 文档: ``ar`` / ``al`` / ``ti`` /
-#: ``au`` / ``length`` / ``by`` / ``re`` / ``ve`` / ``offset``).
-#:
-#: 仅作为**类型提示**与文档用途: ``Lyrics.metadata`` 运行时就是普通
-#: ``dict[str, str]``, 库不会校验、也不会拒绝其它 key (真实语料里常见
-#: ``ly`` / ``mu`` / ``total`` / ``tool`` 这类非标准 key).
-MetadataKey = Literal["ar", "al", "ti", "au", "length", "by", "re", "ve", "offset"]
-
-#: :data:`MetadataKey` 的运行时形态, 便于遍历 / 做模板.
-COMMON_METADATA_KEYS: tuple[MetadataKey, ...] = (
-    "ar",
-    "al",
-    "ti",
-    "au",
-    "length",
-    "by",
-    "re",
-    "ve",
-    "offset",
-)
-
-
-class MetadataDict(TypedDict, total=False):
-    """常见 ID 标签的类型提示 (``total=False``, 允许只出现其中几个).
-
-    Note:
-        这是给调用方**可选**使用的类型别名 (例如写自己的函数签名时用
-        ``def f(meta: MetadataDict)``), 库内部仍把 ``metadata`` 当普通
-        ``dict[str, str]``, 不做任何强制校验或补全.
-    """
-
-    ar: str
-    al: str
-    ti: str
-    au: str
-    length: str
-    by: str
-    re: str
-    ve: str
-    offset: str
 
 
 def _warn_ambiguous_contains(owner: str, method: str) -> None:
@@ -105,11 +65,13 @@ def _warn_ambiguous_contains(owner: str, method: str) -> None:
 
     只发告警, **不改变行为**: ``in`` 在这些模型上历史语义各不相同 (子串 /
     词元相等 / 行相等), 用户很容易误读, 因此引导到显式的
-    ``contains_text()`` / ``find_text()``.
+    ``contains_text()`` / ``find_text()``. 0.6.0 起 ``str in <模型>`` 抛
+    ``TypeError``.
     """
     warnings.warn(
-        f"`str in {owner}` 的语义有歧义 (子串? 词元相等? 行相等?); "
-        f"文本查找请改用 `{method}()`。行为保持不变, 但该用法将在后续版本移除。",
+        f"`str in {owner}` is ambiguous (substring? token equality? line "
+        f"equality?); use `{method}()` for text lookup. Behavior is unchanged "
+        f"for now; starting with 0.6.0 it raises TypeError.",
         DeprecationWarning,
         stacklevel=3,
     )
@@ -150,10 +112,19 @@ class ParseOptions:
             :meth:`__post_init__` 中被 :func:`re.compile` 编译, 之后用
             ``pattern.search`` 匹配行文本. 匹配到的行在解析时会被丢弃.
             ``None`` 表示不过滤. 若需精确子串匹配, 请使用 :func:`re.escape`.
+        strict: 严格模式. 若为 ``True``, 解析器不得不丢掉文件里的正文或逐字时间时,
+            当场抛 :class:`.exceptions.InvalidLyricsError` (带 ``line_no`` /
+            ``raw_line``). 触发的代码见 :data:`.report.STRICT_ERROR_CODES`;
+            ``line_filter`` 丢掉的行不算 (那是调用方自己要求的), 补不上的结束标记
+            也不算 (只丢一个时间点).
+            metadata key 与 ``offset`` 的问题也不走这里 —— 它们不影响解析结果,
+            归 :meth:`Lyrics.validate`. 默认 ``False``: 真实世界的 LRC 很野,
+            默认宽松才兼容.
     """
 
     fill_implicit_line_end: bool = False
     line_filter: str | re.Pattern[str] | None = None
+    strict: bool = False
 
     def __post_init__(self) -> None:
         """把字符串形式的 ``line_filter`` 统一编译为正则."""
@@ -168,13 +139,24 @@ class SerializationOptions:
     Attributes:
         with_metadata: 是否输出 metadata 段.
         use_bracket_for_byword_tag: 逐字标签使用 ``[...]`` 而非 ``<...>``. 在 foobar2000 等老式播放器上可能会有用.
-            **该选项不保证往返**: 若某行首个词元的开始时间与行首时间不同,
-            写出的 ``[start][word]`` 会被重新解析成两个行首标签, 整行拆成两行
-            (写出时会产生 warning).
+            **该选项不保证往返**: 若某行首个词元的开始时间与行首时间不同, 写出的
+            ``[start][word]正文`` 与重复行简写同形. 后面还有逐字或行尾标签时读回
+            一行, 行首多一个零文本词元 (记 debug); 否则读回两行、正文重复 (记
+            warning). 选了这个模式就是接受了这个上限, 写法不会替你改成尖括号.
         line_tag_decimal_length: 行标签毫秒位数 (默认 3), 使用更小的值会损失精度.
         word_tag_decimal_length: 逐字标签毫秒位数 (默认 3), 使用更小的值会损失精度.
         line_separator: 行间分隔字符串 (默认 ``"\\n"`` 表示行间插入空行).
-            设为 ``""`` 可省去空行.
+            设为 ``""`` 可省去空行. 其中的换行同样按 ``line_ending`` 写出.
+        line_ending: 行尾, ``"lf"`` (默认) 或 ``"crlf"``. 与平台无关: 同一份歌词在
+            任何系统上 ``dumps()`` 都得到同一个字符串. 要沿用源文件的风格, 用
+            :func:`~.style.detect_line_ending` 或 ``ParseReport.line_ending`` 探测后
+            显式传进来.
+
+            Note:
+                选 ``"crlf"`` 时, 写文件要用 ``newline=""`` 或二进制模式. Python 的
+                文本模式在 Windows 上会把每个 ``\\n`` 再转成 ``\\r\\n``, 结果是
+                ``\\r\\r\\n``. 反过来说, 默认的 ``"lf"`` 配文本模式写文件, 在
+                Windows 上得到的就是 CRLF.
     """
 
     with_metadata: bool = True
@@ -182,10 +164,16 @@ class SerializationOptions:
     line_tag_decimal_length: int = 3
     word_tag_decimal_length: int = 3
     line_separator: str = "\n"
+    line_ending: LineEnding = "lf"
 
     def __post_init__(self) -> None:
         """校验参数合法性."""
         from .timetag import MAX_TAIL_DIGITS, MIN_TAIL_DIGITS
+
+        if self.line_ending not in ("lf", "crlf"):
+            raise ProgrammingError(
+                f"line_ending must be 'lf' or 'crlf', got {self.line_ending!r}"
+            )
 
         for f in ("line_tag_decimal_length", "word_tag_decimal_length"):
             val = getattr(self, f)
@@ -260,11 +248,20 @@ class LyricToken:
     def copy(self) -> LyricToken:
         return LyricToken(content=self.content, start=self.start, end=self.end)
 
+    def __repr__(self) -> str:
+        """紧凑 repr: 正文按位置给, 省掉逐字行里重复出现的 ``content=``.
+
+        Note:
+            这是给调试看的, 不追求可 ``eval()`` (与 :class:`LyricLine` /
+            :class:`Lyrics` 的口径一致).
+        """
+        return f"LyricToken({self.content!r}, start={self.start!r}, end={self.end!r})"
+
     def to_dict(self) -> LyricTokenDict:
         return LyricTokenDict(content=self.content, start=self.start, end=self.end)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LyricToken:
+    def from_dict(cls, data: Mapping[str, Any]) -> LyricToken:
         return cls(
             content=data.get("content", ""),
             start=data["start"],
@@ -324,7 +321,7 @@ class BasicLyricLine(UserList[LyricToken]):
         return [token.to_dict() for token in self]
 
     @classmethod
-    def from_dict(cls, data: list[dict[str, Any]]) -> BasicLyricLine:
+    def from_dict(cls, data: Sequence[Mapping[str, Any]]) -> BasicLyricLine:
         return BasicLyricLine([LyricToken.from_dict(token_data) for token_data in data])
 
 
@@ -361,8 +358,33 @@ class LyricLine:
     def text(self) -> str:
         return self.content.text
 
+    @property
+    def duration(self) -> int | None:
+        """本行时长 (毫秒); ``end`` 未知时为 ``None``.
+
+        Note:
+            LRC 的行尾时间是可选的, 所以 ``None`` 是常态而不是异常. 需要"持续到
+            下一行开始"的语义时用 :class:`ParseOptions` 的
+            ``fill_implicit_line_end``, 或导出字幕时交给
+            :class:`SubtitleOptions` 推断 (见 :mod:`.subtitle`).
+        """
+        return None if self.end is None else self.end - self.start
+
     def __len__(self) -> int:
         return len(self.content)
+
+    def __repr__(self) -> str:
+        """紧凑 repr: 正文 + 时间范围, 不铺开逐字词元与参考行.
+
+        Note:
+            调试用, 不追求可 ``eval()``. 要逐字词元请看 ``line.content``, 要参考行
+            请看 ``line.reference_lines`` —— 铺开它们会让逐字行与带翻译的行变得极长
+            (这是这个 repr 存在的理由).
+        """
+        refs = f", refs={len(self.reference_lines)}" if self.reference_lines else ""
+        return (
+            f"LyricLine(start={self.start}, end={self.end}, text={self.text!r}{refs})"
+        )
 
     def __iter__(self) -> Iterator[LyricToken]:
         return iter(self.content)
@@ -413,7 +435,7 @@ class LyricLine:
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LyricLine:
+    def from_dict(cls, data: Mapping[str, Any]) -> LyricLine:
         return cls(
             start=data["start"],
             end=data.get("end"),
@@ -433,8 +455,12 @@ class Lyrics(UserList[LyricLine]):
     列表操作.
 
     Note:
-        相等性比较继承自 ``UserList``: 只比较行序列, **不含** ``metadata``
-        (两份仅 ``metadata`` 不同的 ``Lyrics`` 会被判为相等) .
+        相等性比较: 两份 :class:`Lyrics` 比**行序列 + metadata**; 与普通列表或
+        其它 ``UserList`` 比较时仍只比行 (它们没有 metadata) . 改前只比行, 于是
+        "仅 ``metadata`` 不同"的两份歌词会被判为相等 —— 拿 ``==`` 检查往返时
+        这是假阳性 (``loads(dumps(x)) == x`` 在 metadata 丢掉的情况下照样为真) .
+        metadata 的相等性沿用 :class:`~.metadata.Metadata` 的口径: 比全部条目,
+        因此同名 key 的重复项与标签顺序都算数.
 
     Note:
         拷贝语义与 ``list`` 有出入: 构造函数 (``Lyrics(lines)``) 与切片会
@@ -448,21 +474,54 @@ class Lyrics(UserList[LyricLine]):
         :class:`DeprecationWarning`.
 
     Attributes:
-        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) . 运行时是普通
-            ``dict[str, str]``; 常见 key 的类型提示见 :data:`MetadataKey` /
-            :class:`MetadataDict` (库不校验、也不限制 key) .
+        metadata: 元数据键值对 (如 ``ti``、``ar``、``offset`` 等) , 类型是
+            :class:`~.metadata.Metadata` —— 有序、**同名可重复**的映射, 而不是
+            裸 ``dict`` (``[ti: A]`` 与 ``[ti: B]`` 都会留下) . 常见 key 的类型
+            提示见 :data:`MetadataKey` / :class:`MetadataDict` (库不校验、也不
+            限制 key) .
     """
 
-    __slots__ = ("metadata",)
+    __slots__ = ("_metadata",)
 
     def __init__(
         self,
         lines: Iterable[LyricLine] | None = None,
         *,
-        metadata: dict[str, str] | None = None,
+        metadata: Mapping[str, str]
+        | Metadata
+        | Iterable[tuple[str, str]]
+        | None = None,
     ) -> None:
         super().__init__((i.copy() for i in lines) if lines is not None else None)
-        self.metadata: dict[str, str] = metadata.copy() if metadata is not None else {}
+        self.metadata = metadata if metadata is not None else Metadata()
+
+    @property
+    def metadata(self) -> Metadata:
+        """元数据 (见类文档的 Attributes)."""
+        return self._metadata
+
+    @metadata.setter
+    def metadata(
+        self,
+        value: Mapping[str, str] | Metadata | Iterable[tuple[str, str]],
+    ) -> None:
+        """赋值时统一转成 :class:`Metadata`.
+
+        保留 ``lyrics.metadata = {"ti": "x"}`` 这种既有写法 (0.4.x 里
+        ``metadata`` 就是普通属性, 直接赋 ``dict`` 很自然), 同时在类型不对时
+        立刻报错 —— 否则要等到 ``dumps()`` 才炸, 很难定位.
+
+        Raises:
+            ProgrammingError: ``value`` 既不是映射, 也不是 ``(key, value)`` 序列.
+        """
+        if isinstance(value, (str, bytes)) or not isinstance(
+            value, (Mapping, Iterable)
+        ):
+            raise ProgrammingError(
+                "Lyrics.metadata must be a Mapping or an iterable of (key, value) "
+                f"pairs, got {type(value).__name__}"
+            )
+        self._metadata: Metadata = Metadata(value)
 
     @overload
     def __getitem__(self, index: SupportsIndex) -> LyricLine: ...
@@ -510,6 +569,59 @@ class Lyrics(UserList[LyricLine]):
             if line.contains_text(needle, include_reference_lines=True)
         ]
 
+    def find_regex(
+        self,
+        pattern: str | re.Pattern[str],
+        *,
+        include_reference_lines: bool = True,
+    ) -> list[LyricLine]:
+        """返回所有"主行或参考行匹配 ``pattern``"的行.
+
+        需要正则、忽略大小写、或两者都要时用这个; 纯子串查找用
+        :meth:`find_text` 更直白.
+
+        Args:
+            pattern: 正则表达式. ``str`` 会被 :func:`re.compile` 编译 (与
+                :attr:`ParseOptions.line_filter` 同一取向: 统一按正则理解),
+                已编译的 ``re.Pattern`` 原样使用. 想要字面子串请用
+                :func:`re.escape` 包一层.
+            include_reference_lines: 是否连参考行 (翻译/音译) 一起搜. 默认
+                ``True``, 与 :meth:`find_text` 的口径一致.
+
+        Returns:
+            命中的行 (行对象本身, 不是文本), 按现有顺序; 未命中时为 ``[]``.
+
+        Note:
+            匹配是**逐行**做的, 不会跨行: ``pattern`` 里的 ``\\n`` 永远匹配不到
+            (LRC 的换行是行边界, 不是行内字符). 需要行号时用
+            ``enumerate(lyrics)`` 配合, 返回的列表不额外带位置信息.
+
+        Note:
+            忽略大小写不是单独的参数, 传 ``re.compile(..., re.IGNORECASE)`` 即可 ——
+            这样也避免了"同一个方法参数越加越多".
+        """
+        compiled = re.compile(pattern)
+        return [
+            line
+            for line in self
+            if compiled.search(line.text)
+            or (
+                include_reference_lines
+                and any(compiled.search(ref.text) for ref in line.reference_lines)
+            )
+        ]
+
+    def contains_regex(
+        self,
+        pattern: str | re.Pattern[str],
+        *,
+        include_reference_lines: bool = True,
+    ) -> bool:
+        """是否有任意一行匹配 ``pattern``; 参数语义见 :meth:`find_regex`."""
+        return bool(
+            self.find_regex(pattern, include_reference_lines=include_reference_lines)
+        )
+
     def __contains__(self, item: object) -> bool:
         """成员判定: 按**行相等**判定 (与 ``UserList`` 的历史行为一致).
 
@@ -521,6 +633,25 @@ class Lyrics(UserList[LyricLine]):
         if isinstance(item, str):
             _warn_ambiguous_contains("lyrics", "Lyrics.contains_text")
         return item in self.data
+
+    @override
+    def __eq__(self, other: object) -> bool:
+        """相等性: 两份 :class:`Lyrics` 比行序列 + metadata, 其它类型沿用 ``UserList``.
+
+        Note:
+            ``UserList`` 只看行序列, 于是"仅 metadata 不同"的两份歌词会被判为
+            相等; 这里把 metadata 一并纳入, ``loads(dumps(x)) == x`` 才真的能当
+            往返检查用. 与普通列表 / 其它 ``UserList`` 比较时仍只比行, 因为它们
+            没有 metadata 可比.
+
+        Note:
+            metadata 按 :class:`~.metadata.Metadata` 的规则比全部条目, 所以同名
+            key 的重复项与标签顺序都算数 (``[ti: A]`` + ``[ar: B]`` 与
+            ``[ar: B]`` + ``[ti: A]`` 不相等) .
+        """
+        if isinstance(other, Lyrics):
+            return self.data == other.data and self.metadata == other.metadata
+        return super().__eq__(other)
 
     @override
     def __add__(self, other: Lyrics) -> Lyrics:
@@ -598,13 +729,17 @@ class Lyrics(UserList[LyricLine]):
                 f"got {len(raw_items)} item(s) of type {kinds}"
             )
 
-        # metadata 以 self 为准, other 作为补充
+        # metadata 以 self 为准, other 作为补充. 按 key 判存在与否 (而不是
+        # 逐条 setdefault): self 里没有的 key 要把 other 的**全部**同名取值
+        # 都搬过来, 否则 other 里的重复项会在合并这一步被悄悄折叠.
         if isinstance(other, Lyrics):
-            for k, v in other.metadata.items():
-                self.metadata.setdefault(k, v)
+            for k in other.metadata:
+                if k not in self.metadata:
+                    for v in other.metadata.getlist(k):
+                        self.metadata.add(k, v)
 
         # self 中同一 start 可能存在多行 (手工构造 / from_srt 等来源),
-        # 全部保留, 不再用 dict 按 start 覆盖 (B2); other 的行按 start
+        # 全部保留, 不能用 dict 按 start 覆盖 (会丢行); other 的行按 start
         # 匹配时挂到该时间点**首次出现**的主行上, 与 parser 对重复
         # 时间戳的折叠语义一致.
         anchors: dict[int, LyricLine] = {}
@@ -658,12 +793,57 @@ class Lyrics(UserList[LyricLine]):
     def copy(self) -> Lyrics:
         return Lyrics(self, metadata=self.metadata)
 
+    def add_line(self, line: LyricLine, *, sort: bool = True) -> None:
+        """追加一行歌词, 默认顺手保持按 :attr:`~LyricLine.start` 有序.
+
+        :class:`Lyrics` 继承 ``UserList``, 直接 ``append`` / ``insert`` 不会排序也
+        不会校验 (见类文档), 这个方法给出"按时间顺序维护"的安全路径.
+
+        Args:
+            line: 要追加的行.
+            sort: 为 ``True`` (默认) 时追加完立刻 :meth:`sort_inplace`. 批量构建时
+                可以传 ``False`` 攒完再一次排序, 免得每加一行都排一遍.
+
+        Raises:
+            TypeError: ``line`` 不是 :class:`LyricLine`.
+
+        Note:
+            与 ``append`` 一样存**引用**而不是拷贝: 之后再改动 ``line`` 会直接影响
+            本对象. 要隔离请先 ``line.copy()``.
+        """
+        if not isinstance(line, LyricLine):
+            raise TypeError(f"add_line expects a LyricLine, got {type(line).__name__}")
+        self.data.append(line)
+        if sort:
+            self.sort_inplace()
+
+    def sort_inplace(self) -> None:
+        """按 :attr:`~LyricLine.start` **原地稳定**排序.
+
+        稳定性有意义: 同一时间戳的多行 (对唱、重复副歌) 保持原有相对顺序, 与解析器
+        折叠重复时间戳时的口径一致.
+
+        Note:
+            ``list.sort`` 要求元素可比较, 而 :class:`LyricLine` 是 dataclass 且没开
+            ``order``, 所以 ``lyrics.sort()`` 会抛 ``TypeError``; 按时间排序请用本
+            方法或 :meth:`sorted`.
+        """
+        self.data.sort(key=lambda line: line.start)
+
+    def sorted(self) -> Lyrics:
+        """返回按 :attr:`~LyricLine.start` 排好序的**副本**, 原对象不动."""
+        new = self.copy()
+        new.sort_inplace()
+        return new
+
     @classmethod
     def load(cls, fp: TextIO, *, options: ParseOptions | None = None) -> Lyrics:
         """从文件加载 LRC 内容.
 
         Args:
-            fp: LRC 文件指针.
+            fp: LRC 文件指针. 行尾是 LF 还是 CRLF 不影响解析结果; 要探测原文件的
+                行尾, 打开时传 ``newline=""`` 并改用 :func:`~.parser.parse_with_report`
+                (见 ``ParseReport.line_ending``).
             options: 解析选项.
         """
         return cls.loads(fp.read(), options=options)
@@ -672,7 +852,8 @@ class Lyrics(UserList[LyricLine]):
         """将当前对象写入文件.
 
         Args:
-            fp: LRC 文件指针.
+            fp: LRC 文件指针. ``options.line_ending="crlf"`` 时请以 ``newline=""``
+                打开, 否则 Windows 上会写成 ``\\r\\r\\n``.
             options: 序列化选项.
         """
         fp.write(self.dumps(options=options))
@@ -801,6 +982,16 @@ class Lyrics(UserList[LyricLine]):
     def __str__(self) -> str:
         return self.dumps()
 
+    def __repr__(self) -> str:
+        """紧凑 repr: 行数 + metadata, 不铺开全部行.
+
+        Note:
+            调试用, 不追求可 ``eval()``. 铺开行会让一份几百行的歌词把终端刷满, 所以
+            这里只给规模与 metadata (后者用 :class:`~.metadata.Metadata` 自己的
+            repr, 同名重复项不会被折叠掉).
+        """
+        return f"Lyrics(lines={len(self)}, metadata={self.metadata!r})"
+
     def validate(
         self,
         *,
@@ -830,15 +1021,22 @@ class Lyrics(UserList[LyricLine]):
         return issues
 
     def to_dict(self) -> LyricsDict:
+        """导出为普通 dict (metadata 走**有损**的 dict 视角).
+
+        Note:
+            ``metadata`` 里的同名重复项在 ``LyricsDict`` 里表达不了, 只保留最后
+            一次出现的值 (与 0.4.x 的裸 ``dict`` 行为一致). 要无损导出请用
+            ``lyrics.metadata.to_pairs()``.
+        """
         return LyricsDict(
-            metadata=self.metadata.copy(),
+            metadata=self.metadata.to_dict(),
             lines=[line.to_dict() for line in self],
         )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Lyrics:
+    def from_dict(cls, data: Mapping[str, Any]) -> Lyrics:
         metadata = data.get("metadata")
-        metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+        metadata = Metadata(metadata) if isinstance(metadata, Mapping) else Metadata()
         return cls(
             lines=[
                 LyricLine.from_dict(line_data) for line_data in data.get("lines", [])

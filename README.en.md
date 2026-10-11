@@ -1,0 +1,865 @@
+# Lemony LRC Parser
+
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/lemony-lrc-parser)](https://pypi.org/project/lemony-lrc-parser/)
+
+[简体中文](README.md) | **English**
+
+Lemon-flavored LRC Parser for Python.
+
+## Features
+
+- Parse standard LRC lyric files
+- Word-level lyric tags of Enhanced LRC / SPL
+- Metadata tags (duplicate keys are kept)
+- Folded time tags
+- Reference lines
+- Lyrics merging
+- Conversion to/from simple subtitle formats (SRT / WebVTT)
+- Time offset (`apply_delta` / `<<` / `>>` operators)
+- Dict serialization (`to_dict()` / `from_dict()`)
+- Deep-copy method (`.copy()`)
+- Configurable parse and serialization options
+- Data consistency validation API (`validate_lyrics` / `Lyrics.validate()`)
+- Text lookup (`contains_text()` / `find_text()` / `find_regex()`)
+- Round-trip fidelity invariant tests (`parser output always validates` /
+  `dumps converges in one round` / `line structure is stable`)
+- CLI tool (`python -m lemony_lrc_parser`)
+- Parse errors carry the line number and raw line
+  (`InvalidLyricsError.line_no` / `.raw_line`)
+- Full type annotations
+
+## Installation
+
+It's recommended to use [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv add lemony-lrc-parser
+```
+
+It's okay to use pip.
+
+```bash
+pip install lemony-lrc-parser
+```
+
+You can use the git repo as a source to catch the newest ~~bugs~~ features.
+
+```bash
+uv add https://github.com/NingmengLemon/lemony-lrc-parser.git
+```
+
+## Usage
+
+### Quick Start
+
+json, marshal or pickle -like usages
+
+```python
+import lemony_lrc_parser as llp
+
+lrc_text = """[ti: Never Gonna Give You Up]
+[ar: Rick Astley]
+
+[00:18.68]We're no strangers to love
+[00:22.65]You know the rules and so do I
+[00:27.07]A full commitment's what I'm thinking of
+[00:31.45]You wouldn't get this from any other guy
+"""
+
+# Parse
+lyrics = llp.loads(lrc_text)
+
+# Access metadata
+print(lyrics.metadata["ti"])  # "Never Gonna Give You Up"
+print(lyrics.metadata["ar"])  # "Rick Astley"
+
+# Iterate over lyric lines
+for line in lyrics:
+    print(f"{line.start}ms: {line.text}")
+
+# Serialize back to LRC format
+output = llp.dumps(lyrics)
+```
+
+### OOP Interface
+
+The `Lyrics` class provides an object-oriented entry point for parsing and
+serialization, which is the recommended interface:
+
+```python
+from lemony_lrc_parser import Lyrics
+
+lyrics = Lyrics.loads(lrc_text)
+
+# Lyrics is also a sequence container
+print(len(lyrics))  # number of lines
+print(lyrics[0].text)  # first line text
+print(lyrics[-1].text)
+
+# Slicing
+first_three = lyrics[0:3]
+
+# Serialize
+lrc_output = lyrics.dumps()
+
+# line duration in ms; None when the end time is unknown
+print(lyrics[0].duration)
+
+# __str__ is equivalent to dumps()
+print(lyrics)
+```
+
+`Lyrics` equality compares the **line sequence plus metadata**: two lyrics
+differing only in `[ti:]` are not equal, so
+`Lyrics.loads(lyrics.dumps()) == lyrics` works as a round-trip check. Compared
+against a plain list only the lines count (a list has no metadata). Metadata
+equality follows `Metadata`: every entry counts, so duplicated keys and tag
+order both matter.
+
+`repr()` is the compact form meant for debugging
+(`Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))`, no lines or tokens expanded);
+`str()` is still equivalent to `dumps()`.
+
+### Word-level Lyrics
+
+Parsing word-level (Enhanced LRC / SPL) lyrics:
+
+```python
+lrc_text = "[00:18.680]<00:18.810>We're<00:18.898> <00:19.077>no <00:19.248>strangers<00:19.768> <00:19.917>to <00:20.169>love[00:21.927]"
+
+lyrics = llp.loads(lrc_text)
+line = lyrics[0]
+
+for word in line.content:
+    print(f"  [{word.start} -> {word.end}] {word.content!r}")
+
+# [18810 -> 18898] "We're"
+# [18898 -> 19077] ' '
+# [19077 -> 19248] 'no '
+# [19248 -> 19768] 'strangers'
+# [19768 -> 19917] ' '
+# [19917 -> 20169] 'to '
+# [20169 -> 21927] 'love'
+
+# Line-level timing: line.start=18680, line.end=21927
+# (the trailing [00:21.927] is taken as the line end time and written back
+#  onto the last token's end)
+```
+
+### Search (contains_text / find_text / find_regex)
+
+Use the explicit methods for text lookup. `in` has different historical
+semantics across the four models (`LyricToken` / `BasicLyricLine` are substring,
+`LyricLine` is token equality, `Lyrics` is line equality), so `"xxx" in <model>`
+keeps its old behavior but emits a `DeprecationWarning`; starting with 0.6.0 it
+raises `TypeError`:
+
+```python
+from lemony_lrc_parser import Lyrics
+
+lyrics = Lyrics.loads(lrc_text)
+
+lyrics.contains_text("love")  # whether any line (incl. reference lines) has it
+matching = lyrics.find_text("love")  # list of matching line objects
+line = lyrics[0]
+line.contains_text("love")  # search the main line only
+line.contains_text("爱", include_reference_lines=True)  # search reference lines too
+```
+
+Substring matching is case-sensitive. For regex or case-insensitive search use
+`find_regex` / `contains_regex` (they search reference lines by default too):
+
+```python
+import re
+
+lyrics.find_regex(re.compile("love", re.IGNORECASE))  # case-insensitive
+lyrics.find_regex(r"^\[.+\]$")  # regex; a str is re.compile'd for you
+lyrics.contains_regex("love")  # boolean form
+```
+
+Regex matching is **line-scoped**: a `\n` in the pattern can never match (in LRC
+a newline is a line boundary). The lines themselves are returned; use
+`enumerate(lyrics)` when you need the index.
+
+### Reference Lines (Translation / Transliteration)
+
+In an LRC file, an untagged line immediately following a tagged line, or a line
+that shares the same timestamp as the main line, is parsed as a reference line,
+commonly used for translations or transliterations:
+
+```python
+lrc_text = """
+[00:18.68]We're no strangers to love
+[00:18.68]我们都是情场老手
+"""
+
+lyrics = llp.loads(lrc_text)
+
+line = lyrics[0]
+print(line.text)  # "We're no strangers to love"
+print(line.reference_lines[0][0].content)  # "我们都是情场老手"
+```
+
+### Combining Lyrics
+
+Merge two sets of lyrics (e.g. original and translation) by time tag:
+
+```python
+main = llp.loads("[00:01.00]Hello\n[00:02.00]World\n")
+translation = llp.loads("[00:01.00]你好\n[00:02.00]世界\n")
+
+# combine method: translation lines are attached to reference_lines at the same timestamp
+combined = main.combine(translation)
+
+# The + operator also works; note that + always uses other_as_refline_only=False,
+# i.e. lines from the other side whose timestamps do not match are kept as new lines,
+# not dropped
+combined = main + translation
+
+for line in combined:
+    print(line.text)  # main lyrics
+    for ref in line.reference_lines:
+        ref_text = "".join(w.content for w in ref)
+        print(f"  -> {ref_text}")  # reference lines
+
+# With other_as_refline_only=False, lines in the translation without a matching timestamp are kept as new lines
+combined = main.combine(translation, other_as_refline_only=False)
+```
+
+### Dict Serialization (to_dict / from_dict)
+
+All data models support dict serialization, convenient for JSON transport and
+API integration:
+
+```python
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import Lyrics
+
+lyrics = llp.loads("[00:01.00]Hello\n[00:02.00]World\n")
+
+# Lyrics → dict
+data = lyrics.to_dict()
+# {"metadata": {}, "lines": [{"start": 1000, ...}, ...]}
+
+# dict → Lyrics
+restored = Lyrics.from_dict(data)
+
+# You can also operate on a single line, its content, or a single token
+line = lyrics[0]
+line_dict = line.to_dict()
+token_dict = line.content[0].to_dict()
+```
+
+The `metadata` inside `to_dict()` is the **lossy** dict view (a duplicated key keeps
+only its last value); for a lossless export use `lyrics.metadata.to_pairs()`, see
+[Duplicate keys and the three views](#duplicate-keys-and-the-three-views).
+
+### Copy
+
+All data models provide a `.copy()` deep-copy method returning an independent
+copy:
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[00:01.00]Hello\n")
+
+# Deep copy
+clone = lyrics.copy()
+clone.metadata["ti"] = "New Title"
+
+# The original object is unaffected
+print(lyrics.metadata.get("ti"))  # None
+```
+
+### Safe Mutation
+
+`Lyrics` subclasses `UserList`, so a plain `append` / `insert` / item assignment
+neither sorts nor validates, and `lyrics.sort()` does not work (`LyricLine` is not
+orderable). Use these three when the time order matters:
+
+```python
+from lemony_lrc_parser import Lyrics, LyricLine
+
+lyrics = Lyrics()
+
+lyrics.add_line(line)  # append, keeping the list ordered by start (stores a reference)
+lyrics.add_line(line, sort=False)  # bulk building: accumulate, sort once at the end
+lyrics.sort_inplace()  # stable in-place sort by start
+ordered = lyrics.sorted()  # a sorted copy, the original is untouched
+```
+
+`sort_inplace()` is a **stable** sort: lines sharing a timestamp (duets, repeated
+choruses) keep their relative order.
+
+### Options
+
+#### Parsing Options
+
+```python
+import re
+from lemony_lrc_parser import Lyrics, ParseOptions
+
+lrc_text = "[00:01.000]Hello\n[00:05.000]World\n"
+
+lyrics = Lyrics.loads(
+    lrc_text,
+    options=ParseOptions(
+        fill_implicit_line_end=True,  # whether to fill implicit line end times
+        line_filter=r"纯音乐.*?请欣赏",  # blacklist filter (always treated as regex; str is auto-compiled)
+        # line_filter=re.compile(r"纯音乐.*?请欣赏"),  # a precompiled regex is also accepted
+    ),
+)
+
+# lyrics[0].end == lyrics[1].start == 5000
+```
+
+`line_filter` is a regular expression: a string is compiled with `re.compile`
+and then matched against each line's text with `pattern.search`; matching lines
+are dropped. For exact substring matching (rather than regex), wrap it with
+`re.escape(...)`, e.g. `line_filter=re.escape("a.c")`.
+
+Filtering is judged by the **main line** text only: reference lines (translation
+/ transliteration) sharing the main line's timestamp are dropped together with
+the main line, even if their own text does not match.
+
+`strict=True` turns on strict mode: whenever the parser would have to drop text
+or word timing from the file, it raises `InvalidLyricsError` on the spot
+(carrying `line_no` / `raw_line`):
+
+```python
+from lemony_lrc_parser import Lyrics, ParseOptions
+
+# anchorless lines, out-of-range or unordered word tags and discarded end-time
+# inferences all raise
+Lyrics.loads(lrc_text, options=ParseOptions(strict=True))
+```
+
+It defaults to `False` because real-world LRC is wild and lenient keeps it
+compatible. Three things deliberately never raise: lines dropped by `line_filter`
+(the caller asked for that); end markers with nothing to close (a timestamp-only
+line loses just one time point, and about a tenth of real files have one); and
+metadata key / `offset` problems (they do not affect the parse result;
+`validate()` reports those). The exact codes are in
+`STRICT_ERROR_CODES`, see [Parse Report](#parse-report).
+
+#### Serialization Options
+
+Control serialization behavior via `SerializationOptions`:
+
+```python
+from lemony_lrc_parser import Lyrics, SerializationOptions
+
+output = lyrics.dumps(
+    options=SerializationOptions(
+        with_metadata=True,  # whether to output the metadata section
+        use_bracket_for_byword_tag=False,  # word tags use [...] or <...> (default; True does not guarantee round-trip, see below)
+        line_tag_decimal_length=3,  # line tag millisecond digits (default 3)
+        word_tag_decimal_length=3,  # word tag millisecond digits (default 3)
+        line_separator="\n",  # inter-line separator (default "\n"; set to "" to omit blank lines)
+        line_ending="lf",  # "lf" (default) or "crlf", independent of the platform
+    ),
+)
+```
+
+#### Line Endings
+
+The line endings of `dumps()` depend only on `line_ending`, so the same lyrics give
+the same string on every OS. Parsing neither records nor carries over the source's
+line endings; to keep them, detect and pass them back explicitly:
+
+```python
+from pathlib import Path
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+path = Path("song.lrc")
+with path.open(encoding="utf-8-sig", newline="") as fp:  # newline="": no translation
+    lyrics, report = llp.parse_with_report(fp.read())
+
+ending = report.line_ending  # "lf" / "crlf" / "mixed" / None (no newline at all)
+options = SerializationOptions(line_ending="crlf" if ending == "crlf" else "lf")
+with path.open("w", encoding="utf-8", newline="") as fp:
+    fp.write(lyrics.dumps(options=options))
+```
+
+You can also detect without parsing: `llp.detect_line_ending(text)`. Two caveats:
+
+- Python's default text-mode reading (`open(path)`, `Path.read_text()`) turns
+  `\r\n` into `\n`, so detection always says `"lf"`. Pass `newline=""` when reading.
+- With `"crlf"`, write with `newline=""` too (or in binary mode). Text mode on
+  Windows turns every `\n` into `\r\n` again, giving `\r\r\n`. Conversely, the
+  default `"lf"` with default text mode already writes CRLF on Windows.
+
+#### Length of Decimal Part
+
+With the defaults `line_tag_decimal_length=3` and `word_tag_decimal_length=3`,
+output looks like `[00:01.000]` / `<00:01.050>`, preserving full millisecond
+precision. If set to `2`, the decimal part represents centiseconds (e.g.
+`[00:01.00]`), which is a **lossy truncation** (e.g. 555ms is truncated to 55 and
+parses back as 550ms); weigh this as needed (some older software only supports
+centiseconds).
+
+#### Round-trip Fidelity
+
+The output of `dumps()` should reconstruct the original object when re-parsed.
+The known exceptions are listed below: writes that are the cost of the options
+themselves are written out anyway, and writes LRC simply cannot express are
+skipped. Each one is logged and also shows up in the
+[dump report](#dump-report) (the last column is the event code).
+
+| Case | Text written | Result of re-parsing | Event |
+| --- | --- | --- | --- |
+| `use_bracket_for_byword_tag=True`, the first token is later than the line start, and no other tag follows | `[00:01.000][00:01.500]hello` | two lines, duplicated text (warning) | `bracket-first-tag-splits-line` |
+| Same, but a later word tag or a line-end tag follows | `[00:01.000][00:01.500]hello[00:03.000]` | one line with an extra empty leading token `''@1000..1500` (debug) | `bracket-first-tag-adds-token` |
+| A word tag outside the line's time span | the tag is not written (warning) | that time point is gone | `byword-out-of-range-omitted` |
+| Reference line without text (its word timing is dropped too) | not written (debug) | the reference line disappears | `textless-reference-skipped` |
+| Empty line with reference lines (the shape 0.4.0 and earlier produce) | an empty cue plus same-timestamp lyric lines (warning) | the first reference becomes the line's text | `empty-line-references` |
+| A metadata key or value that cannot round-trip | written anyway (warning) | see [Metadata Syntax](#metadata-syntax) | `metadata-*` |
+
+With square brackets, `[line start][first word]text` looks exactly like the
+repeated-line shorthand. The parser tells them apart by whether the text carries
+any other time tag and whether all tags are non-decreasing, so only the first case
+actually splits. In the second case text and timing survive; the first token just
+gets an empty gap in front of it.
+
+`dumps` output is a fixed point "after at most one round": `d2 = dumps(loads(d1))`
+and `d3 = dumps(loads(d2))` are guaranteed equal. Under the current
+implementation (including 20k random corpora and 6622 real files) the first round
+is already a fixed point.
+
+Additionally, if a line end time was inferred from word tags and contradicts the
+line start (`end <= start`), the inference is discarded (`line.end` set back to
+`None`) with a warning — the parser never produces a line that `validate()` would
+flag as an error.
+
+### About SPL
+
+[SPL (Salt Player Lyrics)](https://moriafly.com/standards/spl.html) is currently
+the only document that codifies the compatibility problems the LRC family has hit
+over the years, so this library uses it as the reference for LRC semantics. The
+per-clause conformance cases live in
+[`tests/test_spl_conformance.py`](tests/test_spl_conformance.py), and the corpus
+statistics and research process are in
+[`docs/research/spl.md`](docs/research/spl.md).
+
+Where the parser follows SPL exactly:
+
+- Timestamp number format (min 1-3 digits / sec 1-2 digits / ms 1-6 digits; fewer
+  than 3 ms digits means trailing `0`s are omitted, i.e. `[00:01.5]` is 1.5s and
+  `[00:01.02]` is 1.02s).
+- Explicit line ends: `[start]text[end]` within a line, plus standalone end-marker
+  lines `[end]`.
+- An empty-text line is a "pure end marker": it produces no lyric line and does
+  not participate in translation detection, only filling the previous line's `end`.
+  So `[00:20.82]` + `[00:20.82]lyrics` yields "the previous line ends at 20.82s"
+  plus "one normal lyric line", not "an empty line + its translation".
+- Folded-line shorthand `[t1][t2]text`; same-timestamp translation detection (need
+  not be adjacent) and the omitted-timestamp form (multiple lines).
+- Both word-tag forms `[...]` and `<...>`, plus the "delayed first word"
+  `[line tag]<first-word tag>text` added in the 2026-09-19 revision.
+- Word tags must be increasing and fall within `[line start, line end]`;
+  out-of-range or unordered tags are ignored (text on both sides is merged, no
+  characters lost) with a warning.
+
+Intentional deviations / areas the standard does not cover:
+
+- 4-digit minutes (`[1234:00.000]`) are accepted more leniently than the standard;
+  sec ≥ 60 is folded by literal value with a warning.
+- When ms is written with 4-6 digits, it is truncated to milliseconds as the
+  "fractional part of a second" (`[00:01.450000]` → 1450ms), rather than read as
+  the literal 450000 ms per the standard. The standard is internally ambiguous
+  about these two readings; 4-6 digits occur 0 times in the real corpus.
+- Whitespace-only after a tag counts as text (see round-trip fidelity above); the
+  standard only says "no text content follows".
+- `[line tag][first-word tag]text` is read as a "delayed first word" single line
+  when the whole line's tags are non-decreasing and the body still contains other
+  time tags (e.g. `[00:05.650][00:05.730]徘[00:06.130]徊[00:06.450]`; the standard's
+  "limitations" section reads it as a repeated line); `[t1][t2]text` with no other
+  time tag in the body is still read as the folded repeated-line shorthand, i.e.
+  two lines. In the real corpus, 199 lines use this form, 197 of which have
+  the two tags only 0.1-1.3s apart.
+- A line with only angle-bracket tags (e.g. `<00:01.000><00:02.000>`) is kept
+  as an empty-text line to carry an empty subtitle cue; `dumps` writes it back
+  in the same form.
+- Implicit line ends are not filled by default (`end=None` means "unknown"); use
+  `ParseOptions(fill_implicit_line_end=True)` for SPL's "lasts until the next line
+  starts" semantics; subtitle export defaults to that semantics.
+
+### Metadata Syntax
+
+`[key: value]` counts as metadata only when the **whole line** consists of that
+form: a `[key: value]` in the middle of body text does not swallow the line (e.g.
+`Return [to: sender] now` is still a lyric or reference line).
+
+Brackets inside a value must be **balanced**:
+
+```python
+import lemony_lrc_parser as llp
+
+llp.loads("[al: Album [Deluxe]]\n[00:01.000]x\n").metadata
+# Metadata({'al': 'Album [Deluxe]'})   ← preserved as-is (boundary = the matching ])
+```
+
+Unbalanced forms (e.g. `[ti: 50% ]off]`, `[ti: a [b]`) have no determinable value
+boundary, so the whole line is treated as ordinary body text, and writing such a
+value also warns.
+
+Type hints for common keys are in `MetadataKey` / `MetadataDict` /
+`COMMON_METADATA_KEYS` — these are hints only: the library does not restrict which
+keys exist (the real corpus commonly contains `ly`, `mu`, `total`, `tool`), and
+only `validate()` checks key format against `[A-Za-z][A-Za-z0-9]{0,15}`.
+
+#### Duplicate keys and the three views
+
+A key may legally appear more than once (`[ti: A]` and `[ti: B]` are both
+kept), so `lyrics.metadata` is a `Metadata` rather than a plain `dict`:
+ordered, repeatable, with three explicitly separated views instead of a flag
+that switches semantics.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+meta = lyrics.metadata
+
+# dict view (lossy): the last value for a duplicated key, matching the old plain dict
+meta["ti"]  # 'B'
+dict(meta)  # {'ti': 'B'}
+list(meta.items())  # [('ti', 'B')]
+lyrics.to_dict()["metadata"]  # {'ti': 'B'}
+
+# lossless view: every entry, duplicates included
+meta.getlist("ti")  # ['A', 'B']
+meta.to_pairs()  # [('ti', 'A'), ('ti', 'B')]
+
+# writing: add appends, set / meta[k] = v replaces (at the first position)
+meta.add("ti", "C")  # now A, B, C
+meta.set("ti", "D")  # collapses to a single D
+```
+
+`dumps()` writes the lossless view, so duplicated tags round-trip. The `Mapping`
+protocol methods (`keys()` / `values()` / `items()` / `len()`) all count
+**distinct** keys; `to_pairs()` and `getlist()` are the only lossless readers. Use
+`len(meta.to_pairs())` to count entries. Use `meta.to_pairs()` for a lossless
+export and `meta.to_dict()` when JSON-friendliness matters more.
+
+`Metadata` is not a `dict` subclass, so `isinstance(meta, dict)` is `False` and
+`json.dumps(meta)` needs to become `json.dumps(meta.to_dict())` (or just
+`json.dumps(lyrics.to_dict())`).
+
+### Offset
+
+Use `Lyrics.apply_delta(ms)` to apply a time offset; `ms` is *added directly* to
+every tag's timestamp, which means passing a *positive* offset makes the lyrics
+appear *later*, and vice versa.
+
+You can also use the overloaded `>>` / `<<` operators to shift the lyrics.
+
+If applying the offset would make any timestamp negative,
+`TimestampUnderflowError` is raised for the caller to handle. A timestamp past
+the largest one LRC can express (`[9999:59.999]`) makes `dumps()` raise
+`TimestampOverflowError`.
+
+#### Applying Offset
+
+Apply an offset to the timestamps via `Lyrics.apply_delta(ms)`, returning a new
+object:
+
+```python
+from lemony_lrc_parser import Lyrics
+
+lyrics = Lyrics.loads(lrc_text)
+
+# positive → lyrics appear later (equivalent to lyrics >> 500)
+shifted = lyrics.apply_delta(500)
+
+# negative → lyrics appear earlier (equivalent to lyrics << 500)
+shifted = lyrics.apply_delta(-500)
+
+# using the << / >> operators
+shifted = lyrics >> 500  # later by 500ms
+shifted = lyrics << 500  # earlier by 500ms
+
+# shifted has offset timestamps; the original lyrics is unaffected
+```
+
+To offset timestamps before serializing, call `apply_delta()` first and serialize
+the returned copy. If your offset comes from the lyric file metadata, you may also
+need to manually clean up the offset value in `lyrics.metadata`.
+
+#### Sign difference with LRC offset metadata
+
+LRC has no standardized sign semantics, but:
+
+- LRC's `[offset: +N]`, per community docs and mainstream implementations, means
+  "shift the lyrics **earlier** by N ms", i.e. timestamp `-= N`
+  ([research](docs/research/offset.md));
+- this library's `apply_delta(+ms)` is "timestamp `+= ms`", i.e. lyrics **later**.
+
+So the correct way to apply an offset from metadata is to negate it:
+
+```python
+from lemony_lrc_parser import Lyrics
+
+lyrics = Lyrics.loads("[offset: 500]\n[00:10.000]hello\n")
+shifted = lyrics.apply_delta(-int(lyrics.metadata["offset"]))
+print(shifted[0].start)  # 9500 — earlier by 500ms
+```
+
+The library does **not** apply the offset automatically (explicit is better than
+implicit); the caller has to handle it.
+
+You can also quickly check the time range via `min_timestamp` / `max_timestamp`:
+
+```python
+from lemony_lrc_parser.offset import min_timestamp, max_timestamp
+
+lyrics = Lyrics.loads(lrc_text)
+print(min_timestamp(lyrics))  # minimum timestamp (ms), None if there are none
+print(max_timestamp(lyrics))  # maximum timestamp (ms), None if there are none
+```
+
+### Parse Report
+
+Besides `parse_lrc` there is `parse_with_report`: it returns the lyrics plus a
+structured report of what the parse dropped or ignored. It complements
+`validate()` — the report audits the parse, validation checks the resulting data.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics, report = llp.parse_with_report("[00:01.000]a\n\norphan\n[00:02.000]\n")
+
+if report:  # the report of a clean file is empty
+    for event in report:
+        print(f"[{event.code}] line {event.line_no}: {event.message}")
+
+report.dropped_lines  # lines that never made it into the result
+report.of_code("byword-unordered")  # filter by event code
+report.reference_lines_attached, report.end_markers_applied  # normal work, counts
+report.end_markers_redundant  # end markers restating an existing end, counted too
+```
+
+Event codes: `orphaned-line`, `line-filtered`, `byword-before-line-start`,
+`byword-after-line-end`, `byword-unordered`, `end-marker-ignored`,
+`inferred-end-discarded`.
+
+Only events worth knowing about are reported; normal work (attaching reference
+lines, closing a line with an end marker, a redundant end marker restating an
+existing end) only bumps the three counters above, so a clean file yields an
+empty `report` (`bool(report)` is `False`). The message of `end-marker-ignored`
+says why: no lyric line before it, not after the previous line's start, or the
+previous line already ends at another time. Logging is
+unchanged: the word-tag warnings keep their old format, the report just adds the
+line number.
+
+`STRICT_ERROR_CODES` is the subset that raises under strict mode (without
+`line-filtered` and `end-marker-ignored`); see `strict` under
+[Parsing Options](#parsing-options).
+
+#### From reading logs to reading the report
+
+The library's logs narrate per-line internals and get noisy in batch jobs, so
+consumers often silence them entirely; but then "what did this input lose" goes
+dark too. The report carries the same information as data you can summarize when
+you need it:
+
+```python
+import logging
+from collections import Counter
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser.report import STRICT_ERROR_CODES
+
+# before: either put up with the noise, or silence it and see nothing
+logging.getLogger("lemony_lrc_parser").setLevel(logging.ERROR)
+
+# after: logs stay silent, problems come from the report on demand
+lyrics, report = llp.parse_with_report(
+    "[00:01.000]a<00:00.500>b\n\norphan\n[00:02.000]c\n"
+)
+
+Counter(event.code for event in report)
+# Counter({'byword-before-line-start': 1, 'orphaned-line': 1})
+
+for event in report:
+    if event.code in STRICT_ERROR_CODES:  # text or word timing was dropped
+        print(f"line {event.line_no}: [{event.code}] {event.raw_line!r}")
+# line 1: [byword-before-line-start] '[00:01.000]a<00:00.500>b'
+# line 3: [orphaned-line] 'orphan'
+```
+
+`line_no` is the source line number and `raw_line` the original text, so they can
+go straight into an audit file next to your output.
+
+### Dump Report
+
+`dump_with_report` is the writing-side counterpart: the text is identical to
+`dumps()`, plus a report of the cases in the [round-trip fidelity](#round-trip-fidelity)
+table. Positions are the index into `lyrics` (`line_index`) and into the line's
+reference lines (`reference_index`); metadata events carry `metadata_key`.
+
+```python
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+lyrics = llp.loads(
+    "[00:01.000]<00:01.500>Feel <00:02.000>it[00:03.000]\n[00:04.000]<00:04.500>gone\n"
+)
+text, report = llp.dump_with_report(
+    lyrics, options=SerializationOptions(use_bracket_for_byword_tag=True)
+)
+for event in report:
+    print(f"lyrics[{event.line_index}]: [{event.code}]")
+# lyrics[0]: [bracket-first-tag-adds-token]
+# lyrics[1]: [bracket-first-tag-splits-line]
+
+report.lossy  # the ones that do not read back as written; here only lyrics[1]
+```
+
+Event codes: `bracket-first-tag-splits-line`, `bracket-first-tag-adds-token`,
+`byword-out-of-range-omitted`, `textless-reference-skipped`, `empty-line-references`,
+`metadata-key-unparsable`, `metadata-value-unbalanced`, `metadata-value-newline`.
+`report.lossy` is all of them except `bracket-first-tag-adds-token`, which changes
+the token structure but keeps every piece of text and timing. Lyrics that can be
+written losslessly yield an empty report.
+
+### Validation
+
+Use `lyrics.validate()` to check the data consistency of the lyrics:
+
+```python
+from lemony_lrc_parser import Lyrics, ValidationOptions
+
+lyrics = Lyrics.loads(lrc_text)
+
+# returns a list of issues
+issues = lyrics.validate()
+for issue in issues:
+    print(f"[{issue.severity}] {issue.code}: {issue.message}")
+
+# strict mode: raise InvalidLyricsError on error-level issues
+issues = lyrics.validate(options=ValidationOptions(strict=True))
+```
+
+Checks include:
+
+- whether lyric lines are sorted by time ascending (`unsorted`)
+- whether duplicate timestamps exist (`duplicate-start`)
+- whether a line end is later than its start (`end-not-after-start`)
+- whether word token times are monotonically increasing (`token-nonmonotonic`)
+- whether a word token's own interval is valid (`token-end-not-after-start`)
+- whether a word token is within its line's time range (`token-before-line-start`
+  / `token-after-line-end`)
+- metadata key format validity (`invalid-metadata-key`)
+- whether the `offset` metadata parses as an integer (`offset-not-int`)
+
+Division of labor between `error` and `warning`: data written by the parser never
+contains any `error`-level issue (see the invariant tests in
+`tests/test_roundtrip_matrix.py`), so an `error` usually means the caller manually
+constructed a self-contradictory object.
+
+### CLI Usage
+
+The library registers no console script; call it as
+`python -m lemony_lrc_parser` (the same shape as `python -m json.tool`):
+
+```bash
+# report what the parse dropped or ignored, then validate data consistency
+python -m lemony_lrc_parser validate song.lrc
+python -m lemony_lrc_parser validate --fail-on-error song.lrc    # exit code 1 when there are errors
+
+# global time offset (milliseconds)
+python -m lemony_lrc_parser offset --delta 500 song.lrc           # output to stdout
+python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # output to a file
+python -m lemony_lrc_parser offset --delta 500 --line-ending crlf song.lrc  # pick line endings
+
+# convert to subtitle formats
+python -m lemony_lrc_parser to-srt song.lrc
+python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
+```
+
+The CLI reads and writes without newline translation. `offset` keeps the input's
+line endings by default (`--line-ending keep`), falling back to LF when the input
+mixes them or has none; `lf` / `crlf` force one.
+
+`validate` first prints the events from the parse report (located by source line
+number, e.g. `line 3`), then the consistency issues (located by index into the
+parsed lyrics, e.g. `lyrics[2]`). Parse events in `STRICT_ERROR_CODES` and
+error-level validation issues both count as errors. `--fail-on-error` only
+affects the exit code; it is not the same thing as the API's
+`ParseOptions(strict=True)`, which raises during parsing. The old name `--strict`
+still works in 0.5.x and goes away in 0.6.0.
+
+### Subtitle Conversion (SRT / WebVTT)
+
+`Lyrics` can convert to/from common simple subtitle formats, convenient for using
+lyrics as video subtitles or importing existing subtitles as lyrics:
+
+```python
+from lemony_lrc_parser import Lyrics, SubtitleOptions
+
+lyrics = Lyrics.loads("[00:01.000]Hello\n[00:03.000]World\n")
+
+# LRC → SRT / WebVTT
+srt_text = lyrics.to_srt()
+vtt_text = lyrics.to_webvtt()
+
+# SRT / WebVTT → LRC
+lyrics2 = Lyrics.from_srt(srt_text)
+lyrics3 = Lyrics.from_webvtt(vtt_text)
+
+# top-level convenience functions also work
+import lemony_lrc_parser as llp
+
+srt_text = llp.dump_srt(lyrics)
+vtt_text = llp.dump_webvtt(lyrics)
+lyrics2 = llp.parse_srt(srt_text)
+lyrics3 = llp.parse_webvtt(vtt_text)
+```
+
+Subtitles are keyed by `[start, end]` time intervals, which differs semantically
+from LRC; conversion behavior is controlled via `SubtitleOptions`:
+
+```python
+options = SubtitleOptions(
+    fill_end_from_next=True,  # when a line end is missing, fill from the next line's start
+    default_duration_ms=5000,  # default duration when it can't be inferred (also used to fix invalid intervals)
+    include_reference_lines=True,  # whether to output reference lines (translation/transliteration) as extra cue text
+)
+
+srt_text = lyrics.to_srt(options=options)
+```
+
+Conversion notes:
+
+- LRC word tags and metadata are not written into subtitles (flattened/dropped).
+- On export, if a line lacks `end`, it is filled from the next line's `start` or
+  from `default_duration_ms` in turn; invalid intervals where `end <= start` are
+  also fixed.
+- A subtitle cue can contain multiple text lines: on export the main line comes
+  first, reference lines after; on parse the first cue line is the main line and
+  the rest are reference lines.
+- Parsing automatically skips the WebVTT `WEBVTT` header and `NOTE` / `STYLE` /
+  `REGION` blocks.
+
+## References
+
+- [CHANGELOG](CHANGELOG.md) — version history.
+- [Development docs](docs/README.md) (Chinese): [roadmap](docs/roadmap.md) ·
+  [semantics](docs/design/semantics.md) ·
+  [research & corpus data](docs/research/)
+- [LRC Wikipedia](https://en.wikipedia.org/wiki/LRC_%28file_format%29)
+- [SPL Specification](https://moriafly.com/standards/spl.html)
+
+## UwU?
+
+UwU!
+
+## License
+
+MIT License

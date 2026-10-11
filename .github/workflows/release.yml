@@ -1,16 +1,16 @@
 name: Release
 
-# 触发方式：版本号滚动（pyproject.toml 的 version 变化）→ 在当前 commit 上打 tag
-# 并创建 GitHub Release。重复推送同一个版本号不会重复发布（tag 已存在即跳过）。
+# 触发方式：版本号滚动（pyproject.toml 的 version 变化）→ 上传 PyPI，再在当前
+# commit 上打 tag 并创建 GitHub Release。重复推送同一个版本号不会重复发布
+# （tag 已存在即跳过）。
 #
-# - 预发布版本（PEP 440 的 aN / bN / rcN，如 0.5.0b1）自动标记为 prerelease。
+# - 预发布版本（PEP 440 的 aN / bN / rcN，如 0.5.0b1）自动标记为 prerelease；
+#   PyPI 上 pip 默认也不会选中预发布版本。
 # - Release 正文取自 CHANGELOG.md 里对应版本的段落；版本号滚动了却没有对应段落
-#   （或段落是空的）会让这一步直接失败，而不是发一个正文空白的 Release。
-# - sdist / wheel 会作为附件上传，并做一次内容检查（tools/check_sdist.py）。
-#
-# 想再往前一步（自动发布到 PyPI）时，推荐用 PyPI Trusted Publishing：
-# 在 job 上加 `permissions: id-token: write` 并追加一步
-# `uv publish --trusted-publishing always`，无需在仓库里存 token。
+#   （或段落是空的）会让作业在上传之前就失败。
+# - sdist / wheel 先做内容检查（tools/check_sdist.py），再上传 PyPI 并作为
+#   Release 附件。
+# - PyPI 用 Trusted Publishing（OIDC），仓库里不存 token。
 
 on:
   push:
@@ -27,6 +27,11 @@ jobs:
   release:
     name: 打 tag 并发 Release
     runs-on: ubuntu-latest
+    # 与 PyPI 上登记的 trusted publisher 一致 (仓库 + release.yml + 环境 pypi).
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,6 +107,13 @@ jobs:
           PY
           echo "--- release body ---"
           head -n 20 release-body.md
+
+      # 先传 PyPI 再打 tag: tag 是"已发布"的判据, 若先打 tag 而上传失败,
+      # 重新推送会因 tag 已存在而跳过, 包就永远上不去了.
+      # --check-url 让重跑时跳过 PyPI 上已有的文件, 不会因"文件已存在"失败.
+      - name: 上传 PyPI (Trusted Publishing)
+        if: steps.check.outputs.exists == 'false'
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/
 
       - name: 创建 tag 与 GitHub Release
         if: steps.check.outputs.exists == 'false'

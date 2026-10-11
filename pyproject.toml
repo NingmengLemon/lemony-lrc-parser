@@ -1,13 +1,13 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.4.1"
+version = "0.5.0"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."
 readme = "README.md"
 keywords = ["LRC", "lyrics", "parser", "serializer", "SPL", "Enhanced LRC"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -36,9 +36,6 @@ dependencies = [
     "typing-extensions>=4.14.0; python_version >= '3.15'",
 ]
 
-[project.scripts]
-lemonyrics = "lemony_lrc_parser.cli:main"
-
 [project.urls]
 Homepage = "https://github.com/NingmengLemon/lemony-lrc-parser"
 Repository = "https://github.com/NingmengLemon/lemony-lrc-parser.git"
@@ -57,6 +54,7 @@ include = [
     "/tools",
     "/docs",
     "/README.md",
+    "/README.en.md",
     "/CHANGELOG.md",
     "/LICENSE",
     "/pyproject.toml",
@@ -94,6 +92,7 @@ exclude_also = [
 [dependency-groups]
 dev = [
     "coverage>=7.10.7",
+    "hypothesis>=6.114.0",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.9",

@@ -7,11 +7,371 @@
 > 历史版本条目按 `Added` / `Changed` / `Fixed` / `Removed` / `Docs` / `Tooling`
 > 分类. 版本号与 git tag 一一对应 (`v0.4.0`), 由 CI 在版本号滚动时自动打 tag 并
 > 创建 GitHub Release (预发布版本 `-aN` / `-bN` / `-rcN` 会标记为 prerelease).
-> 功能规划见 [`docs/roadmap.md`](docs/roadmap.md), 设计与取舍见
-> [`docs/design.md`](docs/design.md), 调研与语料数据见
-> [`docs/research.md`](docs/research.md).
+> 功能规划见 [`docs/roadmap.md`](docs/roadmap.md), 其余开发文档的索引见
+> [`docs/README.md`](docs/README.md).
 
 ## [Unreleased]
+
+## [0.5.0] — 2026-10-11
+
+结构化的读写报告、可重复的 metadata、严格模式与行尾控制. 与 0.5.0rc1 的代码相同.
+从 0.4.x 升级先看下面的「从 0.4.x 迁移」; 各项的来龙去脉在后面 rc1 到 b1 的条目里.
+
+### 从 0.4.x 迁移
+
+会当场报错的改动:
+
+- `lyrics.metadata` 不再是 `dict`, 而是 `Metadata` (有序、同名可重复).
+  `isinstance(meta, dict)` 为 `False`, `json.dumps(lyrics.metadata)` 抛
+  `TypeError`; 改用 `json.dumps(lyrics.metadata.to_dict())`, 或者直接
+  `json.dumps(lyrics.to_dict())`. 读写的常用写法不变: `meta["ti"]`、`.get()`、
+  `.items()`、`dict(meta)`、`== dict`、`lyrics.metadata = {...}`, 同名取最后一次
+  出现的值, 与 0.4.x 一致. 要拿全部条目 (含重复) 用 `to_pairs()` / `getlist()`.
+- `lemonyrics` 命令移除, 改用 `python -m lemony_lrc_parser`.
+- 超过 `[9999:59.999]` 的时间戳, `dumps()` 抛 `TimestampOverflowError`. 0.4.x 会
+  写出解析器读不回来的 5 位分钟标签.
+
+不报错但结果会变的改动:
+
+- `Lyrics == Lyrics` 也比较 metadata. 只有 metadata 不同的两份歌词不再相等.
+- `python -m lemony_lrc_parser validate` 先输出解析报告 (孤儿行、被忽略的逐字标记
+  等, 位置写成源文件行号 `line N`), 再输出校验问题 (位置写成 `lyrics[N]`, 0.4.x
+  里同样写成 `line N`). 解析报告里会丢正文的事件算 error, 所以带孤儿行的文件在
+  `--fail-on-error` 下会以退出码 1 返回, 0.4.x 返回 0.
+- `validate --strict` 改名 `--fail-on-error`. 旧名仍可用并提示改名, 0.6.0 移除.
+- CLI 读写都不做换行转换. 在 Windows 上 `to-srt` / `to-webvtt` 写 LF (0.4.x 经
+  文本模式写成 CRLF), `offset` 默认沿用输入文件的行尾.
+- 尖括号写的空 cue (`<00:02.000>`) 不再把后面的行挂成自己的翻译. 0.4.x 用户很少
+  遇到: 真实文件里几乎没有这种写法, 它来自本库自己的输出.
+
+即将移除:
+
+- `"xxx" in <模型>` (`LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics`) 的
+  `DeprecationWarning` 写明 0.6.0 起抛 `TypeError`. 按文本查找用
+  `contains_text()` / `find_text()` / `find_regex()`.
+
+### 新功能一览
+
+- 解析报告 `parse_with_report()` 与序列化报告 `dump_with_report()`: 把"读入或写出
+  时丢了什么"从日志变成数据. 前者的位置是源文件行号, 后者是行下标. README「解析
+  报告」「序列化报告」两节有示例.
+- 严格模式 `ParseOptions(strict=True)`: 解析时会丢掉正文或逐字时间就当场抛
+  `InvalidLyricsError`. 补不上的结束标记不算.
+- 行尾 `SerializationOptions(line_ending="lf" | "crlf")`, 默认 `"lf"`, 输出与平台
+  无关; 源文件的行尾用 `detect_line_ending()` 或 `ParseReport.line_ending` 探测,
+  不自动沿用.
+- 安全变更 `add_line()` / `sort_inplace()` / `sorted()`, 正则搜索 `find_regex()` /
+  `contains_regex()`, `LyricLine.duration`, 紧凑的调试 repr.
+- CLI `offset --line-ending {keep,lf,crlf}`.
+
+## [0.5.0rc1] — 2026-10-11
+
+0.5.0 的候选版本. 公开接口从这一版起冻结, 到 0.5.0 之间只修 bug. 相对 0.5.0b3 有
+一处不兼容: `strict=True` 接受的文件变多了 (见下).
+
+### Changed
+
+- **相对 b3 不兼容**: `ParseOptions(strict=True)` 不再因结束标记报错,
+  `end-marker-ignored` 移出 `STRICT_ERROR_CODES`. 结束标记 (只有时间戳的行) 不带
+  正文, 补不上时丢的只是一个时间点, 不符合 strict "丢掉文件里的正文或逐字时间"的
+  判据. 依据: 本地曲库 6646 份里 strict 拒绝 672 份 (10%), 原因全部是这一个代码;
+  改后 0 份.
+- 与上一行已有结尾重合的结束标记 (行尾已经是这个时刻, 或同一个标记连写几遍) 不再记
+  `end-marker-ignored`, 改计入新的 `ParseReport.end_markers_redundant`. 这是最多的
+  一类 (190 个文件、1285 个), 于是这些文件的报告变空. 剩下的 `end-marker-ignored`
+  在消息里写明原因: 前面没有歌词行、不晚于上一行的开头, 或上一行已在别的时刻结束.
+
+### Fixed
+
+- **尖括号空 cue 会把后面的歌词挂成自己的翻译**. 整行只有尖括号标签的行
+  (`<00:02.000>`) 保留为空正文行, 但它仍会成为参考行锚点与同时间戳行的宿主: 紧跟
+  其后的无标签行, 或与它同时间戳的歌词, 被挂成空行的参考行, `line.text` 里看不到.
+  现在空 cue 不移动锚点; 同时间戳的歌词取代它; 落在已有歌词时间点上的空 cue 被
+  丢弃. 方括号的空正文行是结束标记, 不受影响. 真实曲库里没有这种 cue, 它们来自
+  本库自己的输出 (`dumps()` 写空正文行、`from_srt()` 读空 cue).
+
+### Added
+
+- 序列化事件 `empty-line-references` (有损): 带参考行的空正文行写出后, 读回时第一条
+  参考行会成为这一行的正文. 这正是 0.4.0 及更早把"空行 + 同时间戳歌词"读出来的
+  形状, 用旧版本解析出的对象再写出时会遇到.
+
+### Docs
+
+- `docs/research/blank-lines.md`: 空正文行在各家实现 (FFmpeg、mpv、AMLL、
+  Subtitle Edit、LDDC 等) 与其它字幕格式里的读法, 以及连续空行的语料统计.
+  `semantics.md` 把空正文行拆成"是否保留为一行"与"能不能当锚点"两个决定.
+- roadmap 新增 PARSE-5: 可选把空正文行保留为空行.
+
+## [0.5.0b3] — 2026-10-11
+
+写出一侧补齐: 序列化报告、行尾风格, 以及按真实后果分级的方括号首词元告警. 相对
+0.5.0b2 没有不兼容的接口改动; 默认输出不变.
+
+### Added
+
+- `dump_with_report(lyrics, *, options=None) -> (str, DumpReport)`: 写出那一侧的
+  结构化报告, 与 `parse_with_report` 对称. 文本与 `dumps()` 一字不差; 报告列出无法
+  无损写出或会改变结构的处理 (`DumpEvent`, 位置是 `line_index` / `reference_index`
+  / `metadata_key`). 事件代码见 `report.py` 的 `DumpEventCode`:
+  `bracket-first-tag-splits-line` / `bracket-first-tag-adds-token` /
+  `byword-out-of-range-omitted` / `textless-reference-skipped` /
+  `metadata-key-unparsable` / `metadata-value-unbalanced` / `metadata-value-newline`.
+  `DumpReport.lossy` 取 `LOSSY_DUMP_CODES` 里的那些, 即除
+  `bracket-first-tag-adds-token` 外的全部. 每个事件同时照旧打日志, 所以把库的日志
+  静音的消费方 (例如 karakara) 也能拿到同样的信息.
+
+- **行尾风格** (WRITE-1 的一部分): `SerializationOptions(line_ending="lf" | "crlf")`,
+  默认 `"lf"`, 默认输出不变. 写出的行尾只由它决定, 与平台无关. 另有
+  `detect_line_ending(text)` 与 `ParseReport.line_ending`, 取值 `"lf"` / `"crlf"` /
+  `"mixed"` / `None` (没有换行). 解析只探测、不沿用, 要保留源文件的行尾得显式传回
+  `line_ending`. 两点注意 (README「行尾」一节有完整示例):
+  - 用默认文本模式读文件时 `\r\n` 已经被 Python 转成 `\n`, 探测只会得到 `"lf"`;
+    读的时候传 `newline=""`.
+  - `"crlf"` 配默认文本模式写文件, 在 Windows 上会写成 `\r\r\n`; 写的时候也传
+    `newline=""`.
+
+  不提供"跟随操作系统": 文本模式写文件本来就在做这件事, 库再做一遍就是上面的
+  `\r\r\n`. 依据: 本地曲库 6633 份 `.lrc` 全部是 CRLF, 此前写回一律变成 LF.
+
+- **CLI**: `offset` 新增 `--line-ending {keep,lf,crlf}`, 默认 `keep` 沿用输入文件的
+  行尾 (混用或没有换行时用 LF). 为此 CLI 读写文件与 stdout 都不再做换行转换.
+  在 Windows 上这改变了两处输出: `offset` 处理 LF 文件时此前会经文本模式写成
+  CRLF, 现在保持 LF; `to-srt` / `to-webvtt` 此前写 CRLF, 现在写 LF.
+
+### Fixed
+
+- **落在行时间范围之外的逐字标记在写出时被静默省略**. 省略本身是对的 (解析端按 SPL
+  会忽略它, 写出来也读不回来), 但此前没有任何日志, 只有事先跑过 `validate()` 的人
+  才知道 (`token-before-line-start` / `token-after-line-end`). 现在每行记一条
+  warning, 并进序列化报告 (`byword-out-of-range-omitted`).
+
+### Changed
+
+- **`use_bracket_for_byword_tag=True` 的首词元告警按真实后果分级**. 首词元晚于行首时
+  写出的 `[行首][首字]正文` 与重复行简写同形, 但解析端只在"后面没有别的时间标签,
+  或整行出现递减"时才真的拆成两行. 此前两种情形都发同一条 warning, 说"会拆成两
+  行"; 而行尾显式的逐字行 (最常见的产物形态) 读回来仍是一行, 只是行首多一个零文本
+  词元. 现在:
+  - 真会拆行: warning, 措辞改为"会被读成第二个行标签, 正文重复";
+  - 不会拆行: debug, 说明"读回一行, 行首多一个空词元, 正文与时间不丢".
+
+  判据与解析器 2b 分支相同 (`serializer._bracket_first_tag_splits`), 并由
+  `tests/test_properties.py` 用真实的重新解析结果核对. 参考行同样适用. 依据: 下游
+  消费方一首歌 55 行的产物刷出 35 条这条 warning, 全部属于不会拆行的那一种.
+
+### Docs
+
+- README「往返保真度」表把这条写法拆成两行, 分别给出读回结果.
+- README「解析报告」一节新增"从看日志改成读报告"的前后对照. 示例由
+  `tests/test_readme_examples.py` 执行并核对输出, 中英两份都查.
+- 0.4.1 段补一条升级提示: 空正文行改读作结束标记会让按行遍历的消费方看到行下标前移,
+  影响面远大于标题里的 420 处.
+
+## [0.5.0b2] — 2026-10-10
+
+正式版之前把 0.5.0 新加的公开接口定型. 下面三处相对 0.5.0b1 不兼容, 从 0.4.x
+直接升级不受影响 (0.4.x 里没有这些接口, 或者这里恢复的正是 0.4.x 的行为).
+
+### Changed
+
+- **相对 b1 不兼容**: `Metadata.items()` 改回 `Mapping` 协议的 dict 视角,
+  每个 key 一条, 取最后一次出现的值. b1 里它返回全部条目, 于是把 `Metadata` 当
+  普通 `Mapping` 消费的代码 (`for k, v in meta.items()`) 会拿到同一个 key 两次.
+  无损读取只走 `to_pairs()` / `getlist()`. 与 0.4.x 的 `dict.items()` 一致.
+- **相对 b1 不兼容**: `parse_line(on_event=...)` 的回调改为收一个 `ParseEvent`
+  (`line_no` / `raw_line` 为 `None`), 不再收 `(code, message)` 两个参数. 以后给
+  事件加字段不会再破坏回调签名.
+- **CLI**: `validate` 现在先输出解析报告里的事件 (孤儿行、被忽略的逐字标记等,
+  位置是源文件行号 `line N`), 再输出校验问题 (位置是解析后的行下标
+  `lyrics[N]`, 之前同样写成 `line N`, 容易与源文件行号混淆). 严格模式会拒绝的
+  解析事件算 error. 同一批 warning 不再经 Python 的 last-resort handler 重复打印.
+- **CLI**: `validate --strict` 改名 `--fail-on-error`. 它只决定退出码, 与 API 的
+  `ParseOptions(strict=True)` (解析时当场抛异常) 同名不同义. `--strict` 在 0.5.x
+  里仍可用并提示改名, 0.6.0 移除.
+- `str in <模型>` 的 `DeprecationWarning` 写明 0.6.0 起抛 `TypeError`.
+- `LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics` 的 `from_dict()` 参数
+  类型放宽为 `Mapping` / `Sequence`, 于是 `Lyrics.from_dict(lyrics.to_dict())`
+  能通过类型检查 (此前 `TypedDict` 不能赋给 `dict[str, Any]`).
+
+### Fixed
+
+- 超过 `[9999:59.999]` 的时间戳在 `dumps()` 时抛新的 `TimestampOverflowError`
+  (`LyricsParserError` 子类). 此前会写出 5 位分钟的标签, 解析器读不回来, 那一行
+  下次解析时被当成孤儿行丢掉.
+
+### Docs
+
+- `docs/research/timetags.md` 更正: `[hh:mm:ss.fff]` 不被支持, `[01:02:03]` 读作
+  1 分 2.03 秒. 支持带小时的标签记为 roadmap PARSE-4.
+
+### Tooling
+
+- 新增 hypothesis 性质测试 `tests/test_properties.py`: 时间标签往返、结构化歌词的
+  `dumps` / `loads` 往返与不动点、`to_dict` 往返、任意拼接输入下的校验与收敛、
+  `apply_delta` 可加性、`combine` 不改输入且不丢主行、`Metadata` 两种视角的一致性.
+  上面的时间戳上溢就是它找到的. hypothesis 只进 dev 依赖 (3.9 上解析到 6.141.1,
+  3.10+ 用最新版).
+
+## [0.5.0b1] — 2026-10-09
+
+0.5.0 的第一个预发布. 有三处破坏性改动, 升级前请看下面的「从 0.4.x 迁移」.
+
+### 从 0.4.x 迁移
+
+- `lyrics.metadata` 不再是 `dict`: `isinstance(meta, dict)` 为 `False`,
+  `json.dumps(lyrics.metadata)` 会抛 `TypeError`, 改用
+  `json.dumps(lyrics.metadata.to_dict())` 或 `json.dumps(lyrics.to_dict())`.
+  `meta["ti"]` / `.get()` / `dict(meta)` / `== dict` / 赋值 `dict` 照旧可用.
+- `Lyrics == Lyrics` 现在也比较 metadata, 只有 metadata 不同的两份歌词不再相等.
+- `lemonyrics` 命令没有了, 改用 `python -m lemony_lrc_parser`.
+
+### Added
+
+- `parse_with_report(lrc, *, options=None) -> (Lyrics, ParseReport)`: 在
+  `parse_lrc` 的结果之外给出结构化解析报告 (`report.py` 的 `ParseReport` /
+  `ParseEvent`), 把"哪些行被丢弃 / 哪些逐字标记被忽略 / 哪条行尾推断被丢弃"从日志
+  变成可编程检查的数据. 与 `validate()` 互补: 报告审计解析过程, 校验检查结果数据.
+
+  报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾) 只进
+  `reference_lines_attached` / `end_markers_applied` 两个计数, 因此干净文件的报告
+  是空的 (`bool(report)` 为 `False`). 事件代码 (`orphaned-line` / `line-filtered` /
+  `byword-before-line-start` / `byword-after-line-end` / `byword-unordered` /
+  `end-marker-ignored` / `inferred-end-discarded`) 与 `ValidationIssue` 同属一套
+  kebab-case 命名, 后续 strict 模式直接复用.
+
+- `parse_line(..., on_event=...)`: 新增关键字参数, 让调用方拿到发生在 `parse_line`
+  内部的"逐字标记被忽略"事件 (回调收 `(code, message)`, 行号由调用方自己补).
+  不传时行为与之前完全一致 (仍然只打日志), 因此这是纯增量.
+
+- `ParseOptions(strict=True)`: 严格模式. 解析器不再"丢掉 / 忽略掉"文件里
+  的任何声明, 而是当场抛 `InvalidLyricsError` (带 `line_no` / `raw_line`), 便于
+  "宁可失败也不要悄悄改数据"的场景. 触发集合是 `report.py` 的
+  `STRICT_ERROR_CODES`, 即 `orphaned-line` / `byword-before-line-start` /
+  `byword-after-line-end` / `byword-unordered` / `end-marker-ignored` /
+  `inferred-end-discarded`; 事件先入报告再抛, 所以接住异常后仍能从
+  `LrcParser.report` 读到"到这里为止发生了什么".
+
+  两类刻意不触发: `line-filtered` (那是调用方自己要求丢的), 以及 metadata key 与
+  `offset` 的问题 (它们不影响解析结果, 归 `validate()` 报告). 默认 `False` ——
+  真实世界的 LRC 很野, 默认宽松才兼容.
+
+- `LyricLine.duration` 属性: 行时长, `None if end is None else
+  end - start`. LRC 的行尾时间本来就可选, 所以 `None` 是常态而非异常; 需要
+  "持续到下一行开始"的语义请用 `ParseOptions(fill_implicit_line_end=True)` 或
+  字幕导出.
+
+- 紧凑调试 repr: `LyricToken` / `LyricLine` / `Lyrics` 的 repr 收成一行,
+  不再铺开逐字词元、参考行与整份行列表 —— 逐字行与带翻译的行此前一条 repr 就能刷满
+  终端.
+
+  ```text
+  LyricToken('hello', start=1000, end=1500)
+  LyricLine(start=1000, end=3000, text='hello', refs=1)     # refs 只在有参考行时出现
+  Lyrics(lines=42, metadata=Metadata({'ti': 'A'}))          # 重复项不被折叠
+  ```
+
+  与 "`str()` 等价于 `dumps()`" 的分工不变: repr 只服务调试, 不追求可 `eval()`.
+
+- 安全变更方法: `Lyrics.add_line(line, *, sort=True)` 追加并保持按
+  `start` 有序, `sort_inplace()` 原地**稳定**排序 (同一时间戳的多行保持相对顺序),
+  `sorted()` 返回排好序的副本. 填的是这个空: `Lyrics` 是 `UserList`, 直接 `append`
+  不排序; 而 `lyrics.sort()` 因为 `LyricLine` 不可比较而抛 `TypeError`.
+  `add_line` 与 `append` 一样存引用, 并顺手校验类型.
+
+- 逐行正则搜索: `Lyrics.find_regex(pattern, *,
+  include_reference_lines=True)` 与 `contains_regex(...)`, `str` 会被 `re.compile`
+  (与 `ParseOptions.line_filter` 同一取向), 默认也搜参考行. 忽略大小写交给
+  `re.compile(..., re.IGNORECASE)`.
+
+  Note: 没有再加 `search(text, *, case_sensitive=...)` —— `find_text()` 已经覆盖
+  子串查找, 再包一层只是近乎重复的入口. 匹配是**逐行**的, `pattern` 里的 `\n`
+  永远匹配不到 (跨行搜索与结果定位见 `docs/roadmap.md` 的 QUERY-2 / QUERY-3).
+
+### Changed
+
+- **破坏性**: `Lyrics.metadata` 由 `dict[str, str]` 换成新的 `Metadata`
+  (有序、同名可重复的映射), 于是 `[ti: A]` 与 `[ti: B]` 这类重复 tag 不再被静默
+  丢掉 —— 改前只有最后一个能活下来, 而 LRC 里同名 key 重复出现是合法的 (真实
+  文件里少见但存在, 例如同一份文件既写 `[ti: 标题]` 又写 `[ti: 标题 (Live)]`).
+  容器形态取自 werkzeug `Headers` / `httpx.Headers` 那类"同名可重复"容器的
+  第三条路 (有序 + dict 式读取 + 全量枚举), 调研见 `docs/research/metadata.md`.
+
+  三套读法各有明确口径, 不靠参数开关切换:
+
+  - **有损的 dict 视角**: `meta["ti"]` / `meta.get()` / `dict(meta)` /
+    `to_dict()` / `keys()` / `len()` —— 同名 key 取**最后**一次出现的值, 与
+    0.4.x 的裸 `dict` 一致, 所以既有代码读到的值不变.
+  - **无损视角**: `items()` / `to_pairs()` / `getlist()` —— 按出现顺序给出全部
+    条目, 含重复. `dumps()` 走的就是这条, 于是重复 tag 也能往返.
+  - **写入**: `add()` 追加 (保真), `set()` / `meta[k] = v` 替换 (去重, 位置取
+    首次出现处).
+
+  兼容性: `== dict`、`dict(meta)`、`meta["ti"]`、`meta.get()`、`.update()`、
+  `meta["ti"] = v` 以及 `lyrics.metadata = {...}` 都继续可用 (赋 `dict` 会被
+  自动转成 `Metadata`, 类型不对则当场 `ProgrammingError`, 而不是等到 `dumps()`
+  才炸). 两处需要留意: `len(meta)` 与 `keys()` 按 `Mapping` 协议只算**不同**
+  key, 要数全部条目用 `len(meta.to_pairs())`; `items()` 有意覆盖成"全部条目"
+  语义 (先例同上), 需要 dict 语义时用 `dict(meta)`.
+
+  破坏性的一面: `Metadata` **不是** `dict` 子类, 因此 `isinstance(meta, dict)`
+  变成 `False`, `json.dumps(lyrics.metadata)` 会抛 `TypeError` —— 两者都是当场
+  报错而不是静默出错, 但确实要改: 用 `json.dumps(lyrics.metadata.to_dict())`,
+  或者直接 `json.dumps(lyrics.to_dict())` (后者本来就更完整).
+
+- `Metadata` / `MetadataKey` / `MetadataDict` / `COMMON_METADATA_KEYS` 迁到新的
+  `metadata.py`; 顶层 `lemony_lrc_parser` 与 `lemony_lrc_parser.models` 都照旧
+  导出, 既有 import 路径不受影响. 无损导出用 `lyrics.metadata.to_pairs()`
+  (`Lyrics.to_dict()` 保持"有损但方便"的定位不变).
+
+- **破坏性**: `Lyrics` 的相等性改为比较**行序列 + metadata**. 改前继承
+  `UserList` 的语义只比行, 于是"仅 metadata 不同"的两份歌词被判为相等 ——
+  `Lyrics.loads(lyrics.dumps()) == lyrics` 在 metadata 丢掉的情况下照样为真,
+  拿 `==` 检查往返是假阳性 (roundtrip 测试此前只能把 metadata 单独断言一遍).
+  与普通列表 / 其它 `UserList` 比较时仍只比行 (它们没有 metadata 可比);
+  metadata 沿用 `Metadata` 的口径比全部条目, 所以同名 key 的重复项与标签顺序
+  都算数 (`[ti: A]` + `[ar: B]` 不等于 `[ar: B]` + `[ti: A]`).
+
+- 内部重构: `parse_lrc` 的解析状态收进新的 `LrcParser` 实例 —— metadata /
+  行池 / 参考行锚点 / 结束标记的收尾目标不再摊在局部变量里, 三个会改行池的 helper
+  (注册行、写显式行尾、结束标记收尾) 变成方法, 不再靠参数传递. `parse_lrc` 退化成
+  薄包装, 对外行为不变 (把新旧逐行处理体去掉 `self.` / 参数前缀 / 折行后逐字符比对,
+  两者完全相同). `LrcParser` 是内部对象, 不在顶层导出; `parse_raw_line` 支持逐步
+  喂行, 后续的解析报告 / source map 有了挂载点.
+
+### Removed
+
+- **破坏性**: 移除 `lemonyrics` console script, CLI 改为只用
+  `python -m lemony_lrc_parser` 调用 (与 `python -m json.tool` 同样的形态).
+  `pyproject.toml` 的 `[project.scripts]` 整块删掉; argparse 的 `prog` 随之显式
+  写成 `python -m lemony_lrc_parser`, 否则走 `-m` 时 usage 里会出现
+  `__main__.py`. 已经装过旧版本的环境升级后 `lemonyrics` 会 command not found,
+  脚本 / 文档里引用它的地方需要改写成 `python -m lemony_lrc_parser`.
+
+### Docs
+
+- **README 拆成中英双份**: `README.md` 为简体中文, 新增 `README.en.md` 为英文, 两份
+  顶部互链; 示例歌词按语种各自取材 (中文版用中文 / 日文曲目, 英文版用英文曲目),
+  其余结构与结论一一对应. `pyproject.toml` 的 sdist `include` 与
+  `tools/check_sdist.py` 的必检项同步补上 `README.en.md`.
+- README 的 SPL 小节改名「关于 SPL」, `CHANGELOG` / `docs/roadmap.md` /
+  `docs/risks.md` 里对它的引用一并更新 (原来的 `README.md#与-spl-的一致性` 锚点
+  在改名后已失效).
+- 修正 README 里两处与实现不符的表述: `[行标签][首字标签]文本` 只在"整行标签
+  非递减且正文里还有其它时间标签"时才按"首字延迟"读成一行, 否则仍是重复行简写;
+  往返保真度的有损写法有两类 (选项自身的代价照常写出 + warning, 无法用 LRC 表达的
+  跳过 + debug 日志), 而不是"唯一的一类".
+- 新增 `.markdownlint-cli2.jsonc`, 把仓库内 Markdown 纳入 markdownlint 检查
+  (`MD013` 只约束正文段落, `MD024` 只查同级重名, 以适应中文排版与 Keep a
+  Changelog 的重复小节标题); 顺带修掉它报出的排版问题 (标题 / 列表前后空行、
+  代码块语言、过长的正文行).
+
+- **开发文档重组**: `docs/` 改成按问题分层的结构 —— `docs/README.md` 是索引,
+  `roadmap.md` 只列未完成条目, `design/` 放架构 / 语义取舍 / 不计划项,
+  `research/` 按主题拆开调研与语料数据. 原来的 `design.md` / `risks.md` /
+  `research.md` / `feature-ideas.md` 删除, 内容并入新结构. 条目代号统一改成
+  `主题-序号` (如 `WRITE-1`), 只给未完成项编号; 已落地功能在代码与测试里的
+  旧代号引用改成描述性文字.
 
 ### Tooling
 
@@ -35,14 +395,18 @@
 - CI 里 `lowest` 作业的注释补上实测数据: tox 4.30.3 在 py<3.11 上要求
   `typing-extensions>=4.14.1`, 所以 3.9 那一档的"最低依赖"解析到的是 4.14.1 而不是
   本库声明的 4.4.0 —— 精确下限由 `lowest-typing-extensions` 作业钉版本验证.
+- **CI 加入 Python 3.15** (目前是 rc 版), 包括 `typing-extensions==4.14.0`
+  下限那一档.
+- **发布流程接上 PyPI**: 版本号滚动时, Release 作业在打 tag 之后用 Trusted
+  Publishing (OIDC) 上传 sdist / wheel, 仓库里不存 token.
 
 ## [0.4.1] — 2026-09-23
 
 按 [SPL 标准](https://moriafly.com/standards/spl.html)（Salt Player Lyrics，
 最近修订 2026-09-19）逐条对照之后的一轮语义修正。SPL 是目前唯一把 LRC 家族多年
 踩到的兼容性问题写成条文的文档；对照结果与 6 处有意偏离见
-[README「与 SPL 的一致性」](README.md#与-spl-的一致性) 与
-[`docs/research.md`](docs/research.md#spl-对照2026-09-19-修订版)，逐条用例在
+[README「关于 SPL」](README.md#关于-spl) 与
+[`docs/research/spl.md`](docs/research/spl.md)，逐条用例在
 `tests/test_spl_conformance.py`。
 
 > 语料回归：**全量 6622 份 .lrc**（58.6 万非空行）。空正文行 28836 条，其中 420 处
@@ -51,6 +415,13 @@
 > 另有 2 万份随机语料：三条往返不变量全过，且 `dumps` 首轮即为不动点
 > （改前有 135/20000 需要第二轮）。
 
+**升级提示（按行遍历的消费方）**：下面"空正文行读作结束标记"这一条会改变大量真实
+文件的解析结构，不只是那 420 处。只有时间戳、没有正文的行不再产生一条空歌词行，
+而是给上一行补 `end`，于是行数减少、该行之后的所有行下标整体前移、上一行的
+`end` 从 `None` 变成具体时间。一个下游消费方在 6639 份真实文件上实测，0.4.0b3 到
+0.4.1 有 3549 份（53.5%）解析结构变化，其中 3512 份是这一条造成的；0.4.1 到
+0.5.0b2 是 0 份。依赖行下标或"空行即清屏"的代码升级前请对照检查。
+
 ### Fixed
 
 - **空正文行按 SPL 读作"纯结束标记", 不再产生空歌词行** (真 bug, 语料里 420 处).
@@ -58,7 +429,7 @@
   歌词, 也不参与翻译识别", 而且这种标记**常与下一句歌词使用相同的时间戳**.
   0.4.0 为它造了一条空正文行, 于是:
 
-  ```
+  ```text
   [00:20.82]
   [00:20.82]フィクション
   [00:20.82]
@@ -126,7 +497,7 @@
   统计、逐条差异对照表, 以及"毫秒 4-6 位"这条标准自身歧义的两种读法.
 - `docs/design.md` 的"待决策"第 1、2 条 (空正文行语义、没有正文的参考行) 按 SPL
   收敛; `docs/risks.md` 第 4 条更新为现有的递增判据, 新增第 11 条 (与 SPL 的差异
-  可能被当成 bug 报告); `docs/roadmap.md` 记入 `NEW-SPL-CONFORM`.
+  可能被当成 bug 报告).
 
 ## [0.4.0] — 2026-09-21
 
@@ -141,24 +512,24 @@
 > 行首重复标签 0 次. 另外, 因行首标签与词元矛盾需要归位的行 **0** 行、
 > 完全为空的参考行 **0** 条、value 含方括号的 metadata **0** 条 ——
 > 这三处修复对这份语料是纯防御性/纯新增能力, 不改变任何真实文件的解析结果.
-> 明细见 [`docs/research.md`](docs/research.md) 的"真实语料基线".
+> 明细见 [`docs/research/corpus.md`](docs/research/corpus.md).
 
 ### Fixed
 
-- **行首标签与首个词元矛盾时按首个词元归位, 不再丢弃整行** (A2).
+- **行首标签与首个词元矛盾时按首个词元归位, 不再丢弃整行**.
   `[00:30.000]<00:10.000>hi` 这样的行此前整行被丢弃, 紧随其后的翻译/音译行也
   因失去锚点一起消失; 现在行落在 `10000ms` (首个词元时间), 只丢标签本身.
   多个标签归位到同一时间点时只注册一次, 不会自我复制成参考行.
   (0.4.1 起改为按 SPL 忽略越界标记, 见上.)
 
-- **解析器不再产出 `end <= start` 的行** (第一轮审查 A1).
+- **解析器不再产出 `end <= start` 的行**.
   行尾时间由最后一个词元"推断"而来; 若推断结果不晚于行首 (行尾标签与行首标签
   相同, 如 `[00:01.000]text[00:01.000]`), 现在丢弃该推断 (置回 `None`) 并记
   warning. 此前这类行会被 `validate()` 判为 error, 于是
   `lemonyrics validate --strict` 会拒绝解析器自己写出的文件.
   词元自身的 `start` / `end` 原样保留, 不丢数据.
 
-- **metadata 的整行判定不再被正则回溯绕过** (A3).
+- **metadata 的整行判定不再被正则回溯绕过**.
   `[ti: song]extra[ar: x]` 曾被整体当成 metadata (守卫里的 `.*?` 把 `extra` 吸进
   value), 而提取阶段 (`finditer`) 又给出另一组结果, 于是中间的正文被静默吞掉.
   判定与提取现在共用同一个扫描器, 不可能再给出不同答案.
@@ -233,8 +604,7 @@
   与"与 LRC `[offset:...]` 的符号差异"两节 (后者说明 `apply_delta(-offset)` 的
   原因, 并指向调研).
 - 文档按"问题类型"重组: `docs/feature-ideas.md` 变成索引,
-  正文拆成 [`roadmap.md`](docs/roadmap.md) / [`design.md`](docs/design.md) /
-  [`risks.md`](docs/risks.md) / [`research.md`](docs/research.md);
+  正文拆成 `roadmap.md` / `design.md` / `risks.md` / `research.md`;
   历史版本迁到本文件; 去掉手写目录 (交给编辑器导航).
 - 新增调研: metadata 的 `]` 处理与转义可行性、同名 key 与 HTTP 头容器设计的对照、
   `offset` 正负语义 (含一次真实实现的符号修正案)、时间标签的宽松形式.
@@ -259,6 +629,7 @@
 ## [0.4.0b3] — 2026-07-25
 
 ### Added
+
 - 数据一致性验证子系统 `validation.py`: `ValidationIssue` / `ValidationOptions` /
   `ValidationSeverity` / `validate_lyrics()`, 以及 `Lyrics.validate()`
   (`strict=True` 时遇 error 抛 `InvalidLyricsError`). 检查排序、重复 `start`、
@@ -268,12 +639,14 @@
 - `InvalidLyricsError.line_no` / `.raw_line`: 解析错误与 warning 日志都带行号.
 
 ### Fixed
+
 - 歧义行首标签 (`[00:05.000][00:30.000]<00:10.000>hi`) 不再把锚点指向未注册的
   时间点.
 
 ## [0.4.0b2] — 2026-07-21
 
 ### Added
+
 - SRT / WebVTT 互转: `Lyrics.to_srt()` / `from_srt()` / `to_webvtt()` /
   `from_webvtt()`, 顶层 `dump_srt` / `parse_srt` / `dump_webvtt` / `parse_webvtt`,
   以及 `SubtitleOptions`.
@@ -281,15 +654,18 @@
   `BasicLyricLine` / `LyricToken`; `copy()` 系列方法.
 
 ### Changed
+
 - **破坏性**: `Lyrics` 改为纯 `UserList[LyricLine]` 容器 (移除 `lyrics.lines`
   兼容层), 运算符语义随之调整.
 
 ## [0.4.0b0] — 2026-07-01
 
 ### Added
+
 - `ParseOptions.line_filter`: 按正则丢弃匹配的行 (str 形式自动 `re.compile`).
 
 ### Changed
+
 - **破坏性**: `LyricLine.start` 收敛为必需的 `int`, 无时间戳行不再进入正常行模型.
 - **破坏性**: `Lyrics` / `LyricLine` / `BasicLyricLine` / `LyricToken` 的序列化
   与容器语义重设计 (基于 `UserList`).
@@ -297,46 +673,59 @@
   折算并 warning).
 
 ### Fixed
+
 - 序列化时保留词元结束时间戳, 不再写出重复的时间标签.
 - `combine()` 对非法入参 (单个 `LyricLine` / `str`) 显式抛 `TypeError`.
 
 ## [0.3.1] — 2026-05-13
 
 ### Added
+
 - `SerializationOptions.line_separator` / `line_tag_decimal_length` /
   `word_tag_decimal_length` / `use_bracket_for_byword_tag`.
 
 ### Fixed
+
 - 序列化时不再产生重复时间标签; metadata 处理细化.
 
 ## [0.3.0] — 2026-05-09
 
 ### Changed
+
 - **破坏性**: `LyricWord` 更名为 `LyricToken`; 时间偏移 API 重设计
   (`apply_delta()` / `<<` / `>>`).
 
 ## [0.3.0a1] — 2026-05-08
 
 ### Changed
+
 - 公共 API 分层入口 (`Lyrics` 方法 + 顶层 `loads` / `dumps` / `load` / `dump`),
   新增时间标签工具 `parse_timetag` / `format_timetag`.
 
 ## [0.3.0a0] — 2026-05-08
 
 ### Added
+
 - 首次发布到 PyPI 的预发布版本 (解析 / 序列化 / 参考行 / 逐字标签的基础实现).
 
 ## [0.2.1] — 2026-04-11
 
 ### Fixed
+
 - 修正 `pyproject.toml` 元数据与类型标注.
 
 ## [0.2.0] — 2026-04-10
 
 ### Added
+
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0
+[0.5.0rc1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...v0.5.0rc1
+[0.5.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...v0.5.0b3
+[0.5.0b2]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...v0.5.0b2
+[0.5.0b1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0b1
 [0.4.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b3...v0.4.0
 [0.4.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/0.4.0b2...0.4.0b3

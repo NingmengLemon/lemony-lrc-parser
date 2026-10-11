@@ -1,129 +1,134 @@
-# Roadmap（路线图与候选功能）
+# Roadmap
 
-本文件只谈**还没做**的事：优先级路线图、候选功能与设计改进、以及暂缓/观望项。
-条目 ID（`F-*` / `NEW-*` / `MF-*` / `MY-*`）保持不变，代码注释与 CHANGELOG 均引用它们。
+只列未完成的条目。代号规则见 [docs/README.md](README.md#约定)。
+
+## 0.5.x：收尾
+
+| 代号 | 内容 |
+| --- | --- |
+| ARCH-1 | 合并逻辑拆到 `merge.py`，是 MERGE-1 的前置 |
+| ARCH-2 | `models.py` 不再接收新实现，新功能落到独立模块 |
+| TEST-2 | 把 `test_roundtrip_matrix.py` 的固定种子随机语料迁到 hypothesis |
+
+## 0.6.0：候选
+
+按价值排序。
+
+| 代号 | 内容 | 依赖 |
+| --- | --- | --- |
+| BREAK-1 | 移除 0.5.x 弃用的写法：`str in <模型>` 改为抛 `TypeError`，CLI 去掉 `--strict` | |
+| WRITE-1 | 写回时保留原文件风格 | |
+| MERGE-1 | 合并时按时间容差模糊匹配，并给出合并报告 | ARCH-1 |
+| QUERY-1 | 按时间范围取行 | |
+| META-1 | 读取 `[offset:]` 并显式应用的 helper | |
+| PARSE-1 | 报告"非递减但差值过大"的行标签歧义 | |
+
+## 有需求再做
+
+| 代号 | 内容 |
+| --- | --- |
+| ANALYZE-1 | 统计信息 `LyricsStats` |
+| ANALYZE-2 | 格式特征检测 `LyricsFeatures` |
+| ANALYZE-3 | 两份歌词的差异比较，附 CLI 子命令 |
+| EDIT-1 | 显式规范化 `normalize()` |
+| PARSE-2 | 可选保留源位置 |
+| PARSE-3 | `#` 开头的注释行 |
+| PARSE-4 | 带小时的时间标签 `[hh:mm:ss.fff]` |
+| PARSE-5 | 可选把空正文行保留为空行（默认仍读作结束标记） |
+| QUERY-2 | 跨行正则搜索 |
+| QUERY-3 | 搜索结果带行号 |
+| MERGE-2 | 一次合并多份歌词 |
+| META-2 | metadata 值的类型化读取 |
+| META-3 | 可配置的 metadata key 规则 |
+| IO-1 | 按路径读写 |
+| EXPORT-1 | 导出 ASS |
+
+## 观望
+
+- Walaoke 对唱前缀（`M:` / `F:` / `D:`）：现实中很少见。
+- `[#...]` 形式的 metadata 注释：`Metadata` 容器已经能装任意 key，门槛只在
+  解析规则；没有明确需求前不放宽。
+- warning 与 logging 的整体审计：不宜过度打扰用户。
 
 ---
 
-## 优先级路线图
+## 条目详情
 
-### P0 / 高优先级：建议优先做
+### ARCH-1：拆出 `merge.py`
 
-| ID | 主题 | 类型 | 价值 | 状态 |
-| --- | --- | --- | --- | --- |
-| F-VALIDATE | 数据一致性验证 API | 质量 / DX | 高 | ✅ v0.4.0b3 |
-| NEW-ERROR-LINE | 解析错误包含行号与原始行 | 可诊断性 | 高 | ✅ v0.4.0b3 |
-| NEW-CLI | CLI 入口 | 工具化 | 高 | ✅ v0.4.0b3 |
-| B7 | 逐字时间戳与行时间范围一致性校验 | 正确性 | 高 | ✅ v0.4.0b3 |
-| NEW-ROUNDTRIP | Roundtrip Fidelity 测试矩阵 | 回归保障 | 高 | ✅ 0.4.0 |
-| NEW-SPL-CONFORM | SPL 标准逐条对照与一致性测试 | 正确性 | 高 | ✅ 0.4.0（差异清单见 README / risks.md#11） |
+`combine()` 现在很简单，但 MERGE-1 要加容差匹配、未匹配报告、模糊匹配审计，
+它会变成一个合并引擎。先把现有逻辑原样搬进 `merge.py`：
 
-### P1 / 中优先级：稳定核心后推进
+```python
+@dataclass(frozen=True)
+class MergeOptions:
+    other_as_refline_only: bool = True
+    tolerance_ms: int = 0
 
-| ID | 主题 | 类型 | 价值 | 备注 |
-| --- | --- | --- | --- | --- |
-| NEW-PRESERVE-STYLE | 写回时保留原文件风格 | 保真性 | 中高 | CRLF / 尾数位数 / 空行风格；100% 语料写回后与源文件不同 |
-| F-STRICT | 解析严格模式 | 可控性 | 中高 | 最好建立在 `validate()` 与行号错误之上 |
-| F-RANGE | 时间范围查询 | API | 中 | 对播放器、剪辑、字幕片段提取有用 |
-| F-MUTATE | 安全变更方法 | API | 中 | 降低用户直接操作 list 破坏排序的概率 |
-| NEW-SEARCH | 全文搜索 | API | 中 | `find_text()` 已覆盖子串；正则 / 跨行 / 结果定位待做 |
-| MF-FUZZY | 合并歌词时模糊匹配 | 实用增强 | 中 | 翻译歌词时间轴常有轻微偏差 |
-| F-REPR | 自定义紧凑 repr | DX | 中 | 调试体验改善明显 |
-| NEW-PARSE-REPORT | 解析报告对象 | 可诊断性 | 中 | 把"丢了哪些行 / 为什么丢"从日志变成可读数据 |
 
-### P2 / 低优先级：有需求再做
+@dataclass(frozen=True)
+class MergeReport:
+    exact_matches: int
+    fuzzy_matches: int
+    unmatched_main: tuple[int, ...]
+    unmatched_other: tuple[int, ...]
 
-| ID | 主题 | 类型 | 价值 | 备注 |
-| --- | --- | --- | --- | --- |
-| F-META-MULTI | metadata 改成有序 multimap | API | 中高 | 破坏性变更，计划随 0.5.0；先做调研见 research.md |
-| F-DURATION | `LyricLine.duration` 属性 | API | 低中 | 简单但要定义 `end is None` 的语义 |
-| F-CONTAINS | `Lyrics.__contains__` 增强 | API | — | ✅ 0.4.0 以 `contains_text()` / `find_text()` 落地（不扩大 `in`） |
-| F-COMBINE-ALL | 批量合并 | API | 低 | 语义清晰但链式合并已可覆盖 |
-| NEW-STATS | `Lyrics.stats` | 信息辅助 | 低中 | 可基于 `validate()` / 格式检测共同实现 |
-| NEW-DETECT | LRC 格式自动检测 | 信息辅助 | 低 | “SPL 是否单独算格式”需要谨慎 |
-| F-META-TYPE | metadata 值类型辅助 | API | 低 | 可做成轻量 helper（`MetadataKey` / `MetadataDict` 已提供类型提示） |
-| F-META-KEY | metadata key 可配置 | 兼容性 | 低 | 可能扩大歧义 |
-| MF-COMMENT-LINE | `#` 开头的注释行 | 兼容性 | 低 | 部分实现支持（AMLL 文档提及）；与现有"孤儿行"策略需要协调 |
-| F-EXPORT-OTHER | ASS 等其他字幕格式导出 | 格式扩展 | 低 | ASS 支持复杂样式，可能超出当前库定位 |
-| F-LOGGING | warning / logging 审计 | 体验 | 低 | 不宜过度打扰用户 |
 
----
-## 候选功能与设计改进
+def combine_lyrics(main, other, *, options: MergeOptions) -> Lyrics: ...
+def combine_lyrics_with_report(
+    main, other, *, options
+) -> tuple[Lyrics, MergeReport]: ...
+```
 
-### 已落地 (设计稿已迁出)
+`Lyrics.combine()` 与 `+` 保留为默认策略的入口。这一步本身不改行为。
 
-下面这些条目已经实现, 设计讨论与回归细节见
-[CHANGELOG.md](../CHANGELOG.md) 里 0.4.0 一节; 这里不再保留设计稿, 以免
-出现"文档描述与代码不同步"的第二事实来源:
+### ARCH-2：`models.py` 减重
 
-- `F-VALIDATE` → `validation.py` (`validate_lyrics` / `Lyrics.validate`)。
-- `NEW-ERROR-LINE` → `InvalidLyricsError.line_no` / `.raw_line`。
-- `NEW-CLI` → `lemonyrics` / `python -m lemony_lrc_parser`。
-- `B7` → `_check_line_tokens()` 的词元越界与单调性检查。
-- `NEW-ROUNDTRIP` → `tests/test_roundtrip_matrix.py` (三条不变量 + 随机语料)。
-- `NEW-SPL-CONFORM` → `tests/test_spl_conformance.py` + README「与 SPL 的一致性」
-  + `docs/research.md` 的「SPL 对照」; 空正文行语义与越界逐字标记按 SPL 收敛,
-  剩下的 6 处有意偏离记在 `risks.md#11`。
-- `F-CONTAINS` → `contains_text()` / `find_text()` 显式 API + `in` 的
-  `DeprecationWarning` (结论: 不扩大 `in` 的语义)。
+`models.py` 约 1000 行。`Lyrics` 作为聚合入口是有意的（见
+[architecture.md](design/architecture.md)），但入口方法只做委托，实现放进
+各自的模块：合并进 `merge.py`，统计与特征进 `analysis.py`，规范化进
+`normalize.py`，差异比较进 `diff.py`。
 
-### NEW-PRESERVE-STYLE：写回时保留原文件风格
+### TEST-2：随机语料迁到 hypothesis
 
-动机（真实语料审计）：6536 份 `.lrc` 里 **100%** 写回后与源文件不同 —— 行尾从
-CRLF 变成 LF、2 位尾数（占全部时间标签的 6.7%）被补成 3 位、行间空行按
-`line_separator` 重排。解析端完全正确，问题在"重写别人的曲库"这一使用场景。
+`tests/test_roundtrip_matrix.py` 用固定种子的 `random` 生成 400 份语料，跑三条
+往返不变量。`tests/test_properties.py` 已经用 hypothesis 覆盖了同样的不变量，
+而且能自动缩小反例。迁完之后删掉 `_random_documents`，手写语料保留。
 
-建议：
+### BREAK-1：移除 0.5.x 的弃用项
 
-- `SerializationOptions` 增加 `line_ending`（`"auto"` / `"lf"` / `"crlf"`）。
-- 增加按"原文件探测到的风格"写回的入口，例如
-  `Lyrics.loads(text).dumps(style=StyleDetection.from_text(text))`；
-  或提供 `detect_style(text) -> DocumentStyle` 独立函数（NEW-DETECT 的一部分）。
-- 尾数位数保持按行 / 按词探测（同一文件里 2 位与 3 位混用很常见）。
-- 仍要允许显式覆盖，避免"想统一格式却改不动"。
+- `str in LyricToken / BasicLyricLine / LyricLine / Lyrics` 抛 `TypeError`，
+  提示改用 `contains_text()`。
+- CLI `validate --strict` 删除，只留 `--fail-on-error`。
 
-### NEW-PARSE-REPORT：解析报告对象
+警告文本与 README 已经写明是 0.6.0。
 
-动机：目前"某行被丢弃 / 被降级为参考行 / 逐字标记被忽略"只体现在日志里，调用方拿不到
-结构化数据（真实语料里存在孤儿行、越界被忽略的逐字标记等形态）。
+### WRITE-1：保留原文件风格
 
-建议：
+真实语料里 100% 的文件写回后与原文件字节不同（[数据](research/corpus.md)）：
+2 位尾数被补成 3 位，行间空行按 `line_separator` 重排，末尾换行统一补上。
+解析没有问题，问题在"改写别人曲库"这个场景。行尾已经可以保留（探测后显式传
+`line_ending`，见 [semantics.md](design/semantics.md#往返保真度)），剩下这几项。
 
-- `parse_lrc(text, options=...)` 之外提供 `parse_with_report(text) -> (Lyrics, ParseReport)`，
-  或让 `ParseOptions.collect_report = True`。
-- `ParseReport` 提供：被丢弃的行（原文 + 行号 + 原因）、被忽略的越界 / 乱序逐字标记、
-  被当作参考行挂载的行数、被空标记收尾的行、metadata 提取结果等。
-- 与 `F-STRICT` 天然互补：报告是"事后审计"，strict 是"当场拒绝"。
+做法沿用行尾的模式：只探测、不沿用，探测结果由调用方显式传回。
 
-### MF-COMMENT-LINE：`#` 开头的注释行
+- 提供 `detect_style(text) -> DocumentStyle`，在 `detect_line_ending` 之外再探测
+  尾数位数、空行风格、末尾有无换行，可以直接转成 `SerializationOptions`。
+- 尾数位数按行或按词元探测，同一文件里 2 位与 3 位混用很常见。
+- 显式参数始终可以覆盖探测结果。
 
-AMLL 的格式文档提到"部分实现允许 `#` 前缀的注释行"（见 References）。当前行为是：
-`#` 行没有时间标签也没有锚点时按孤儿行告警丢弃，有锚点时会被挂成参考行 ——
-两者都不理想。若要做，需要与"孤儿行 / 参考行"策略一起定：建议把 `#` 行识别为
-注释并整行忽略（不进参考行、不发告警）。
+### MERGE-1：模糊合并
 
-### F-STRICT：解析严格模式
+翻译歌词的时间轴常与原文差几十到几百毫秒，按 `start` 精确匹配会漏。
 
-建议在 `ParseOptions` 增加 `strict: bool = False`。
+匹配顺序：先精确匹配；剩下的 other 行在未匹配的主行里找
+`abs(delta) <= tolerance_ms` 的最近一行；每个主行最多被模糊匹配一次。
 
-严格模式可将以下情况从 warning / 忽略升级为异常：
+风险：重复副歌、短句、rap 密集段落里，时间接近不代表内容对应。所以默认
+`tolerance_ms=0`，结果必须可审计（`MergeReport`），CLI 的合并命令要输出
+统计。`+` 运算符的行为不变。
 
-- 孤立无时间戳行。
-- 非单调逐字时间标签。
-- 行首重复时间标签与逐字标签组合造成歧义。
-- metadata key 不合法。
-- 重复且冲突的 metadata。
-- 不可解析的 `offset` metadata。
-
-设计建议：
-
-- strict mode 不应改变数据模型，只改变错误处理策略。
-- strict mode 最好与结构化 `ValidationIssue` 共用错误代码。
-- README 中应明确默认宽松，以兼容真实世界的 LRC。
-
-### F-RANGE：时间范围查询
-
-建议新增：
+### QUERY-1：时间范围查询
 
 ```python
 def lines_in_range(
@@ -135,143 +140,50 @@ def lines_in_range(
 ) -> list[LyricLine]: ...
 ```
 
-语义：
+`overlap` 是与目标区间有交集，`contained` 是完全落在区间内，`start` 只看
+`line.start`。要先定下来的是 `end is None` 的行怎么算：可以用下一行的
+`start` 推断，也可以只按 `start` 判断。规模上直接遍历就够，不需要二分。
 
-- `overlap`：行时间区间与目标区间有交集。
-- `contained`：行完全落在目标区间内。
-- `start`：只看 `line.start` 是否在范围内。
-
-注意点：
-
-- `line.end is None` 时如何判断 overlap 需要定义，可用下一行开始时间推断，也可只按 `start` 处理。
-- 如果列表始终有序，未来可考虑二分优化；当前规模下直接遍历足够。
-
-### F-MUTATE：安全变更方法
-
-`Lyrics` 继承自 `UserList`，用户可以直接 `append` / `insert` / `__setitem__`，这会绕过排序与验证。
-
-建议新增轻量方法：
+### META-1：offset helper
 
 ```python
-def add_line(self, line: LyricLine, *, sort: bool = True) -> None: ...
-def sorted(self) -> Lyrics: ...
-def sort_inplace(self) -> None: ...
+def metadata_offset_ms(self) -> int | None: ...  # 解析失败返回 None
+def apply_metadata_offset(self) -> Lyrics: ...  # 等价于 apply_delta(-offset)
 ```
 
-不建议强行禁止 list 操作，否则会破坏 `UserList` 的直觉。文档中说明：需要保持时间顺序时优先使用安全方法。
+LRC 的 `[offset: +N]` 是"歌词提前 N 毫秒"，而 `apply_delta(+N)` 是推后，
+两者符号相反（[调研](research/offset.md)）。helper 的价值就是替用户把这个
+负号写对。仍然不自动应用：有的播放器完全忽略 offset，要不要应用由调用方定。
+符号约定已经有测试：`tests/test_offset.py::TestLrcOffsetConvention`。
 
-### MF-FUZZY：合并歌词时模糊匹配
+### PARSE-1：行标签歧义提示
 
-现实中翻译歌词经常与原文存在几十到几百毫秒偏差，完全按 `start` 匹配会漏合并。
+`[t1][t2]文本<...>` 在 t1、t2 非递减时读成"行标签 + 首字延迟"的一行
+（[取舍](design/semantics.md#多个行首标签加逐字标记)）。语料里有 2 行两标签
+相差 15 秒以上，按这个规则会被读成"首字延迟 15 秒"，实际更像重复行。
 
-建议 API：
+做法：差值超过阈值时发一个 `ParseEvent`（例如 `ambiguous-line-tags`），
+不改变解析结果。是否进入 `STRICT_ERROR_CODES` 需要单独决定：它不是"丢掉了
+声明"，按现有判据不该进。
 
-```python
-def combine(
-    self,
-    other: Lyrics | Iterable[LyricLine],
-    *,
-    other_as_refline_only: bool = True,
-    tolerance_ms: int = 0,
-) -> Lyrics: ...
-```
+### PARSE-5：保留空正文行
 
-匹配策略：
+播放器生态多数把只有时间标签的行读成空行，在滚动列表里占一格
+（[调研](research/blank-lines.md)）；本库读作结束标记。给需要前一种读法的消费方
+一个选项，例如 `ParseOptions(keep_blank_lines=True)`，默认关闭。规则：
 
-1. 先做精确 `start` 匹配。
-2. 对未匹配的 other 行，在未匹配主行中寻找 `abs(start_delta) <= tolerance_ms` 的最近行。
-3. 同一主行只能被模糊匹配一次，避免多行挤到同一时间点。
+- 照常给上一行补 `end`，之后再决定要不要保留成一行。
+- 与下一句同时间戳的空行只当结束标记，不产生行。
+- 时间戳与上一个空行完全相同的去重（语料里 914 段连续空行的时间戳全相同）。
+- 其余的保留为空正文行，不当锚点、不当宿主、不当参考行，与现有的尖括号空 cue
+  一致。
 
-风险：
+要先定的：写回用尖括号（现有的空 cue 写法，能往返）还是方括号（读回时会再走结束
+标记分支）；与 `fill_implicit_line_end`、字幕导出、`combine` 的交互。语料里能证明
+需要它的写法很少（递增的连续空行基本是间奏里的空时间戳，不是挤出可视范围的表演
+写法），有明确的消费方需求再做。
 
-- 重复副歌、短间隔歌词容易误匹配。
-- 需要返回或暴露未匹配行信息，否则用户很难检查结果。
-
-建议先做独立方法或选项，不改变现有 `+` 运算符默认行为。
-
-### NEW-SEARCH：全文搜索
-
-建议新增：
-
-```python
-def search(
-    self,
-    text: str,
-    *,
-    include_reference_lines: bool = True,
-    case_sensitive: bool = True,
-) -> list[LyricLine]: ...
-```
-
-实现简单，用户价值明确。若后续支持正则，可再加 `search_regex()`，不要让一个方法参数过多。
-
-### ~~F-DICT-JSON~~（不计划）
-
-结论（维护者决定）：**不做 `to_json()` / `from_json()`**。`to_dict()` / `from_dict()`
-已经足够，产出的 dict 交给调用方自行 `json.dumps(..., ensure_ascii=False)`；
-再包一层只会把"JSON schema 是否稳定"变成库的兼容负担（见
-[risks.md](risks.md#6-json-schema-一旦公开可能形成兼容负担)）。
-`F-META-MULTI` 落地时，`to_dict()` 仍保持"有损但方便"的出口。
-
-### F-META-MULTI：metadata 改成有序 multimap（破坏性，目标 0.5.0）
-
-- **动机**：`dict[str, str]` 会静默丢掉同名 key 的先前值（`[ti: A]` + `[ti: B]` →
-  只剩 `B`），且无法保留注释/重复项。
-- **调研**（见 [research.md](research.md#重复-key-与类-headers容器设计)）：
-  HTTP 头这套"同名可重复"的成熟容器**都不是裸 list**，而是
-  "有序 + dict 式读取 + 全量枚举"：werkzeug `Headers`（`getlist()` / `add()` /
-  `set()`，迭代产出全部 `(key, value)`）、`httpx.Headers`（`get_list()` /
-  `multi_items()`）、`multidict.CIMultiDict`（`getall()`）。
-- **建议做法**：
-
-  ```python
-  class Metadata(Mapping[str, str]):  # 保持 dict 式读取
-      def getlist(self, key: str) -> list[str]: ...
-      def add(self, key: str, value: str) -> None: ...  # 追加 (保留重复)
-      def set(self, key: str, value: str) -> None: ...  # 替换 (去重)
-      def items(self) -> list[tuple[str, str]]: ...  # 全部, 含重复
-  ```
-
-  同时：`to_dict()`（有损，后者覆盖）保持不变，新增 `to_pairs()` 做无损导出；
-  `from_dict()` 继续接受 dict / `MetadataDict`。
-- **迁移**：0.5.0 里 `Lyrics.metadata` 换成 `Metadata`，但保持
-  `== dict`、`dict(lyrics.metadata)`、`meta["ti"]`、`meta.get()`、`.update()` 等
-  既有写法可用，并在 0.4.x 的 changelog 里提前公告。
-
-### F-REPR：自定义紧凑 repr
-
-当前默认 repr 对嵌套歌词较冗长。建议：
-
-```python
-LyricToken("hello", start=1000, end=1500)
-LyricLine(start=1000, end=3000, text="hello...", refs=1)
-Lyrics(lines=42, metadata={"ti": "...", "ar": "..."})
-```
-
-注意：repr 应用于调试，不应追求可 `eval()`。
-
-### F-DURATION：`LyricLine.duration` 属性
-
-建议实现：
-
-```python
-@property
-def duration(self) -> int | None:
-    return None if self.end is None else self.end - self.start
-```
-
-由于 `start` 已经不允许为 `None`，无需再检查。
-
-### ~~F-CONTAINS~~ (已落地)
-
-结论与最初设想不同: 不扩大 `in` 的语义, 而是提供显式 API ——
-`Lyrics.contains_text()` / `Lyrics.find_text()` /
-`LyricLine.contains_text(include_reference_lines=...)`, 同时让 `str in <模型>`
-保留旧行为并发 `DeprecationWarning`。详见 CHANGELOG。
-
-### NEW-STATS：统计信息属性
-
-可新增 `LyricsStats`：
+### ANALYZE-1 / ANALYZE-2：统计与特征
 
 ```python
 @dataclass(frozen=True)
@@ -280,21 +192,10 @@ class LyricsStats:
     tokens: int
     references: int
     total_duration_ms: int | None
-    avg_line_duration_ms: float | None
     has_byword: bool
-    has_reference_lines: bool
     metadata_keys: tuple[str, ...]
-```
 
-建议先实现为 property 动态计算，不缓存，避免用户修改歌词后缓存失效。
 
-### NEW-DETECT：LRC 格式自动检测
-
-建议谨慎处理，不要过度分类。
-
-更实用的检测结果可能是 flags，而不是单一 enum：
-
-```python
 @dataclass(frozen=True)
 class LyricsFeatures:
     has_metadata: bool
@@ -304,57 +205,20 @@ class LyricsFeatures:
     has_folded_timestamps: bool
 ```
 
-原因：真实 LRC 往往是混合特征，“Simple / Enhanced / SPL” 单一分类并不稳。
+统计每次动态计算，不缓存，避免用户改了歌词后缓存失效。格式检测给 flags
+而不是单一枚举：真实文件往往混合多种特征，"Simple / Enhanced / SPL" 的
+单一分类不稳。ANALYZE-2 的探测逻辑与 WRITE-1 的 `detect_style` 可以共用。
 
-### F-META-TYPE：metadata 值类型辅助
-
-建议轻量实现：
-
-```python
-def get_metadata_int(self, key: str, default: int | None = None) -> int | None: ...
-def get_metadata_float(
-    self, key: str, default: float | None = None
-) -> float | None: ...
-```
-
-注意不要自动应用 `offset`，保持显式原则。
-
-### F-META-KEY：metadata key 更宽松 / 可配置
-
-当前 metadata key 限制较保守。可选方案：
-
-- 保持默认不变。
-- `ParseOptions.meta_key_pattern` 允许用户传入自定义正则。
-- strict mode 下继续使用默认规范。
-
-风险：metadata 与歌词正文中的 `[xxx:yyy]` 更容易误判，需要配合“行首时间标签优先”的现有逻辑继续保护。
-
----
-## 我的新增想法
-
-### MY-SOURCE-MAP：保留源位置信息（可选）
-
-为调试和 CLI 输出考虑，可选保留每行来源：
+### ANALYZE-3：差异比较
 
 ```python
-@dataclass(frozen=True)
-class SourceLocation:
-    line_no: int
-    column: int | None = None
-    raw_line: str | None = None
+def diff(self, other: Lyrics, *, tolerance_ms: int = 0) -> list[LyricsDiff]: ...
 ```
 
-不建议直接塞进默认 `LyricLine`，避免污染轻量模型。可以通过 `ParseOptions(preserve_source_location=True)` 开启，并存到 side table 或扩展字段。
+报告多出 / 缺失的行、文本差异、时间偏差、metadata 差异、参考行差异。
+对调试往返和比较不同来源的歌词有用，CLI 对应 `diff a.lrc b.lrc`。
 
-价值：
-
-- `validate()` 输出可定位到原文件行。
-- CLI 可以打印更友好的错误。
-- 模糊合并后可报告来源。
-
-### MY-NORMALIZE：规范化 API
-
-新增显式规范化方法：
+### EDIT-1：规范化
 
 ```python
 def normalize(
@@ -367,88 +231,73 @@ def normalize(
 ) -> Lyrics: ...
 ```
 
-定位：不在 parser 中偷偷修数据，而是用户主动调用。
+定位是用户主动调用，解析器本身不偷偷修数据。风险是它容易长成大杂烩，
+选项要少，每个语义要单一。
 
-可做的事：
-
-- 排序。
-- 删除空参考行。
-- 合并重复时间点。
-- 补行尾时间。
-- 清理空 token。
-
-风险：normalize 容易变成“大杂烩”，必须保持选项少且语义明确。
-
-### MY-DIFF：歌词差异比较工具
-
-对调试 roundtrip、比较不同来源歌词很有用：
+### PARSE-2：源位置
 
 ```python
-def diff(self, other: Lyrics, *, tolerance_ms: int = 0) -> list[LyricsDiff]: ...
+@dataclass(frozen=True)
+class SourceLocation:
+    line_no: int
+    column: int | None = None
+    raw_line: str | None = None
 ```
 
-可报告：
+用 `ParseOptions(preserve_source_location=True)` 开启，存在 side table 里，
+不塞进默认的 `LyricLine`。`LrcParser` 已经是它的挂载点。用途：`validate()`
+定位到原文件行、CLI 错误信息、模糊合并的来源报告、QUERY-3。
 
-- 多出的行 / 缺失的行。
-- 文本不同。
-- 时间偏差。
-- metadata 差异。
-- reference line 差异。
+### PARSE-3：注释行
 
-这也能服务测试与 CLI：`python -m lemony_lrc_parser diff a.lrc b.lrc`。
+部分实现允许 `#` 开头的注释行（[AMLL 文档](https://amll.dev/en/guides/lyric/formats)
+提及）。现在这种行没有锚点时按孤儿行告警丢弃，有锚点时被挂成参考行，
+两种都不对。倾向的做法是识别为注释、整行忽略、不告警，但要和孤儿行 /
+参考行的规则一起定。
 
-### MY-OFFSET-METADATA-HELPER：读取但不自动应用 offset
+### PARSE-4：带小时的时间标签
 
-不建议 `apply_delta()` 自动清理 metadata.offset，但可以提供显式 helper：
+社区整理把 `[hh:mm:ss.fff]` 列为在用写法，但本库读不了：尾数分隔符允许 `:`，
+于是 `[01:02:03]` 读作 1 分 2.03 秒，`[01:02:03.500]` 整行被当成孤儿行
+（[调研](research/timetags.md)）。语料里 0 例。
 
-```python
-def metadata_offset_ms(self) -> int | None: ...  # 解析 [offset:...], 非法时 None
-def apply_metadata_offset(self) -> Lyrics: ...  # 等价于 apply_delta(-offset)
-```
+要支持就得在三段式标签上做选择：`[a:b:c]` 是"分:秒:百分秒"还是"时:分:秒"。
+倾向的判据是"三段都齐全且末段带小数"才按小时读，`[a:b:c]` 维持现状，
+但要先补一份语料统计看 `[mm:ss:xx]` 的实际用量。
 
-这样既保持"显式优于隐式"，又降低用户自己解析 `[offset:...]` 的重复成本。
+### QUERY-2 / QUERY-3：搜索扩展
 
-**符号必须写清楚**（调研见 [research.md](research.md#offset-标签的正负语义)）：
-LRC 的 `[offset: +N]` 表示"歌词整体提前 N 毫秒"，即时间戳 `-= N`；而本库的
-`apply_delta(+ms)` 是"时间戳 `+= ms`"（更晚），**两者符号相反**。所以：
+`find_regex` 是逐行匹配，`pattern` 里的 `\n` 永远匹配不到。跨行搜索要先
+定义"跨几行、命中算哪一行"。结果带行号要等 PARSE-2，现在可以自己
+`enumerate(lyrics)`。
 
-```python
-shifted = lyrics.apply_delta(-int(lyrics.metadata.get("offset", 0)))
-```
+### MERGE-2：批量合并
 
-这条换算已经写成测试（`tests/test_offset.py::TestLrcOffsetConvention`），
-即使不做 helper，用户也不会踩错符号。另外注意有播放器**完全忽略** offset，
-所以"要不要应用"应该由调用方决定。
+语义清楚，但链式 `combine` 已经能覆盖，等 ARCH-1 之后顺手做。
 
-### MY-ENCODING-HELPER：面向文件路径的便利读取
+### META-2：类型化读取
 
-当前文件 I/O 接收 `TextIO`，这很 Pythonic。CLI 或普通用户可能更想要：
+`get_int(key)` / `get_float(key)` 一类的轻量 helper。不能借机自动应用
+`offset`。
+
+### META-3：可配置的 metadata key
+
+默认规则（字母开头、最多 16 位字母数字）不变，`ParseOptions.meta_key_pattern`
+允许传自定义正则。风险是 metadata 与正文里的 `[xxx:yyy]` 更容易混淆，要靠
+"行首时间标签优先"的现有逻辑继续保护。`serializer.py` 写出时对不合规 key
+的告警不预设这一条的结论。
+
+### IO-1：路径读写
 
 ```python
 Lyrics.from_path(path, encoding="utf-8-sig")
 lyrics.to_path(path, encoding="utf-8")
 ```
 
-建议低优先级，因为路径 I/O 会引入 encoding、newline、覆盖策略等额外决策；但对 CLI 内部实现有帮助。
+现有 I/O 接收 `TextIO`。路径接口会牵扯 encoding、newline、覆盖策略。newline 的
+答案已经有了：读写都用 `newline=""`，行尾交给 `line_ending`（与 CLI 一致）。
 
-### MY-PROPERTY-BASED-TESTS：性质测试
+### EXPORT-1：ASS 导出
 
-解析器涉及大量边界情况，建议引入 property-based tests（如生成合法时间戳、随机 token、随机 metadata）：
-
-- `parse_timetag(format_timetag(ms))` 在精度允许范围内成立。
-- `loads(dumps(lyrics))` 语义等价。
-- `apply_delta(a).apply_delta(b)` 等价于 `apply_delta(a+b)`。
-- `combine` 不修改输入对象。
-
-这类测试特别适合防止未来重构破坏边界行为。
-
----
-## 极低优先级 / 观望
-
-- **[MF-DUET] Walaoke 对唱扩展**
-
-  支持 `M:` / `F:` / `D:` 前缀标记男 / 女 / 合唱。现实中非常少见，暂不建议投入。
-
-- **[MF-COMMENT] 元数据注释 `[#...]`**
-
-  与当前 `dict[str, str]` metadata 模型冲突，且现实使用率低。除非出现明确用户需求，否则不建议支持。
+ASS 带样式、定位、特效，完整支持会超出本库定位。要做就只导出纯文本，不承诺
+样式往返。届时 `subtitle.py` 再拆成包。

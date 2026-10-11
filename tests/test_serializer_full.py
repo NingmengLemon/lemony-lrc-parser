@@ -321,7 +321,7 @@ class TestDumpLrcNewOptions:
 
 
 class TestDumpLrcMetadataRoundtripWarnings:
-    """测试 B4: 无法往返的 metadata 项写出时产生 warning, 但仍照常写出."""
+    """无法往返的 metadata 项写出时产生 warning, 但仍照常写出."""
 
     def test_warns_on_non_roundtrippable_key(
         self, caplog: pytest.LogCaptureFixture

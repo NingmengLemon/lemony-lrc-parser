@@ -6,8 +6,8 @@ import re
 
 import pytest
 
-from lemony_lrc_parser import BasicLyricLine, Lyrics
-from lemony_lrc_parser.parser import parse_line, parse_lrc
+from lemony_lrc_parser import BasicLyricLine, Lyrics, ParseOptions
+from lemony_lrc_parser.parser import LrcParser, parse_line, parse_lrc
 
 
 class TestParseLrcMetadata:
@@ -48,7 +48,7 @@ class TestParseLrcMetadata:
         assert lyrics.metadata.get("ar") == "Artist"
 
     def test_mid_text_metatag_does_not_swallow_line(self) -> None:
-        """正文中间的 [key: value] 不应把整行吞成 metadata (B3)."""
+        """正文中间的 [key: value] 不应把整行吞成 metadata."""
         lrc = "[00:01.000]main\nReturn [to: sender] now\n"
         lyrics = parse_lrc(lrc)
         assert "to" not in lyrics.metadata
@@ -318,16 +318,16 @@ class TestParseLrcOutOfRangeBywordTags:
 
     def test_no_clamping_of_registered_tags(self) -> None:
         """越界过滤已在 parse_line 完成, 注册阶段不再改标签值."""
-        from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
-        from lemony_lrc_parser.parser import _register_line_at_tags
+        from lemony_lrc_parser.models import BasicLyricLine, LyricToken
+        from lemony_lrc_parser.parser import LrcParser
 
         content = BasicLyricLine([LyricToken(content="hi", start=10000)])
-        pool: dict[int, LyricLine] = {}
+        parser = LrcParser()
 
-        registered = _register_line_at_tags(pool, content, [30000, 40000])
+        registered = parser._register_line_at_tags(content, [30000, 40000])
 
         assert registered == [30000, 40000]
-        assert sorted(pool) == [30000, 40000]
+        assert sorted(parser.line_pool) == [30000, 40000]
 
     def test_folded_line_keeps_both_occurrences(self) -> None:
         """折叠标签 + 逐字标签: 出现递减 → 按 SPL 当重复行, 两次都在."""
@@ -520,11 +520,73 @@ class TestParseLrcEmptyLines:
         ]
 
     def test_whitespace_only_body_is_still_content(self) -> None:
-        """标签之后只剩空白仍算正文 (A5a), 不是结束标记."""
+        """标签之后只剩空白仍算正文, 不是结束标记."""
         lyrics = parse_lrc("[00:01.000]a\n[00:05.000]  \n")
         assert [(line.start, line.text) for line in lyrics] == [
             (1000, "a"),
             (5000, "  "),
+        ]
+
+
+class TestEmptyCueIsNeverAnAnchor:
+    """尖括号写的空 cue (``<00:02.000>``) 保留为空正文行, 但不参与翻译识别.
+
+    方括号的空正文行是结束标记, 本来就不进行池; 尖括号的空 cue 进行池, 所以它
+    得单独守住三条: 不当无标签行的锚点、不当同时间戳歌词的宿主、不当别人的参考行.
+    """
+
+    @staticmethod
+    def _view(lrc: str) -> list[tuple[int, str, list[str]]]:
+        return [
+            (line.start, line.text, [r.text for r in line.reference_lines])
+            for line in parse_lrc(lrc)
+        ]
+
+    def test_untagged_line_after_cue_attaches_to_previous_lyric(self) -> None:
+        assert self._view("[00:01.000]a\n<00:02.000>\n译\n[00:03.000]b\n") == [
+            (1000, "a", ["译"]),
+            (2000, "", []),
+            (3000, "b", []),
+        ]
+
+    def test_lyric_sharing_the_cue_timestamp_replaces_it(self) -> None:
+        """同一时刻不能既空又有字: 歌词为准, 而不是挂成空行的翻译."""
+        assert self._view("<00:02.000>\n[00:02.000]text\n[00:02.000]译\n") == [
+            (2000, "text", ["译"]),
+        ]
+
+    def test_cue_after_lyric_at_same_timestamp_is_dropped(self) -> None:
+        assert self._view("[00:02.000]text\n<00:02.000>\n") == [(2000, "text", [])]
+
+    def test_lone_cue_is_kept(self) -> None:
+        assert self._view("[00:01.000]a\n<00:02.000>\n[00:03.000]b\n") == [
+            (1000, "a", []),
+            (2000, "", []),
+            (3000, "b", []),
+        ]
+
+    def test_files_written_by_0_3_read_correctly(self) -> None:
+        """llp 0.3.x 把上游的 ``[t-1ms]`` 空行与 ``[t]`` 歌词截成同一个 2 位时间戳写出.
+
+        取自真实文件 (网易云歌词经 0.3.1 写出). 在 0.4.0 之前, 这一段读回来是一条
+        空行带两条翻译, 原文被挂成翻译.
+        """
+        lrc = (
+            "[00:38.03]通り魔が攫ってくれるのをひたすら待ってる\n"
+            "[00:38.03]一个劲地等待着路过的恶魔能将我带走\n"
+            "\n"
+            "[00:43.36]\n"
+            "[00:43.36]打ち明けてしまったら\n"
+            "[00:43.36]\n"
+            "[00:43.36]如果一旦坦白\n"
+        )
+        assert self._view(lrc) == [
+            (
+                38030,
+                "通り魔が攫ってくれるのをひたすら待ってる",
+                ["一个劲地等待着路过的恶魔能将我带走"],
+            ),
+            (43360, "打ち明けてしまったら", ["如果一旦坦白"]),
         ]
 
 
@@ -568,7 +630,7 @@ class TestParseLineEdgeCases:
 
 
 class TestParseLrcWordTagOnlyLine:
-    """测试 B1: 仅含逐字标签 (尖括号) 的行应被解析为歌词行而非参考行."""
+    """仅含逐字标签 (尖括号) 的行应被解析为歌词行而非参考行."""
 
     def test_word_tag_only_line_as_lyric(self) -> None:
         """行首为尖括号逐字标签时, 以第一个词元 start 作为 line.start."""
@@ -884,3 +946,80 @@ class TestParseLrcErrorLineInfo:
         assert "orphaned lyric line" in caplog.text
         # 新格式包含 "Line N:" 前缀
         assert "Line 3:" in caplog.text
+
+
+class TestLrcParserObject:
+    """``LrcParser``: 解析状态挂在实例上, 支持整份解析与逐步喂行."""
+
+    SAMPLE = "[ti: T]\n[00:01.000]a\n[00:02.000]b\n"
+
+    def test_parse_matches_parse_lrc(self) -> None:
+        assert LrcParser().parse(self.SAMPLE) == parse_lrc(self.SAMPLE)
+
+    def test_incremental_matches_batch(self) -> None:
+        """自己逐行喂再 finalize, 结果应与整份解析一致."""
+        parser = LrcParser()
+        for line_no, raw_line in enumerate(self.SAMPLE.splitlines(), start=1):
+            parser.parse_raw_line(line_no, raw_line)
+        assert parser.finalize() == parse_lrc(self.SAMPLE)
+
+    def test_parse_is_reusable(self) -> None:
+        """``parse`` 会先 reset, 所以同一个实例可以解析多份文本."""
+        parser = LrcParser()
+        first = parser.parse(self.SAMPLE)
+        second = parser.parse("[ti: U]\n[00:05.000]z\n")
+        assert second == parse_lrc("[ti: U]\n[00:05.000]z\n")
+        assert first == parse_lrc(self.SAMPLE)  # 第一份的结果不受影响
+        assert second.metadata["ti"] == "U"
+
+    def test_reset_clears_state_but_keeps_options(self) -> None:
+        options = ParseOptions(fill_implicit_line_end=True)
+        parser = LrcParser(options)
+        parser.parse(self.SAMPLE)
+        assert parser.line_pool and parser.metadata
+
+        parser.reset()
+
+        assert parser.line_pool == {}
+        assert parser.metadata == {}
+        assert parser.last_tag is None
+        assert parser.last_text_tags == []
+        assert parser.options is options
+
+    def test_metadata_line_only_touches_metadata(self) -> None:
+        parser = LrcParser()
+        parser.parse_raw_line(1, "[ti: T]")
+        assert parser.metadata == {"ti": "T"}
+        assert parser.line_pool == {}
+
+    def test_finalize_without_parse_is_empty(self) -> None:
+        lyrics = LrcParser().finalize()
+        assert len(lyrics) == 0
+        assert lyrics.metadata == {}
+
+    def test_options_are_honoured(self) -> None:
+        lrc = "[00:01.000]a\n[00:02.000]b\n"
+        filled = LrcParser(ParseOptions(fill_implicit_line_end=True)).parse(lrc)
+        assert [line.end for line in filled] == [2000, None]
+
+    def test_line_filter_is_honoured(self) -> None:
+        lrc = "[00:01.000]keep\n[00:02.000]drop me\n"
+        filtered = LrcParser(ParseOptions(line_filter="drop")).parse(lrc)
+        assert [line.text for line in filtered] == ["keep"]
+
+    def test_error_carries_line_no_when_fed_manually(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """逐步喂行时抛出的 InvalidLyricsError 同样补好 line_no / raw_line."""
+        import lemony_lrc_parser.parser as parser_mod
+        from lemony_lrc_parser.exceptions import InvalidLyricsError
+
+        def _fail(line: str, **kwargs: object) -> None:
+            raise InvalidLyricsError("simulated")
+
+        monkeypatch.setattr(parser_mod, "parse_line", _fail)
+        parser = LrcParser()
+        with pytest.raises(InvalidLyricsError) as exc_info:
+            parser.parse_raw_line(7, "[00:01.000]x")
+        assert exc_info.value.line_no == 7
+        assert exc_info.value.raw_line == "[00:01.000]x"

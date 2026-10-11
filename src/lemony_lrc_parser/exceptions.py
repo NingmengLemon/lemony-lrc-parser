@@ -40,6 +40,14 @@ class TimestampUnderflowError(LyricsParserError):
     """时间戳下溢: 出现了负的时间戳 (通常由过大的负向偏移导致)."""
 
 
+class TimestampOverflowError(LyricsParserError):
+    """时间戳上溢: 超出 LRC 时间标签能表达的范围 (分钟最多 4 位).
+
+    写出这样的标签只会得到解析器读不回来的文本, 那一行会在下次解析时被当成
+    孤儿行丢掉, 所以序列化时直接报错.
+    """
+
+
 class ProgrammingError(Exception):
     """库使用者的编程错误 (如传入非法的选项参数).
 

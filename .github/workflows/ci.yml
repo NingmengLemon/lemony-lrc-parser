@@ -14,10 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # 3.15 尚未正式发布, 因此不放进矩阵; 本地 tox 的 env_list 里仍保留它,
-      # 等解释器可用后再加进来.
+      # 3.15 还是 rc 版; uv 在没有正式版时会解析到最新的预发布解释器.
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -54,12 +53,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 每一档都对应 pyproject 里声明的下限 (实测见 docs/research.md).
-        # 3.15 的解释器可用后, 追加 {python-version: "3.15", typing-extensions: "4.14.0"}.
+        # 每一档都对应 pyproject 里声明的下限 (实测见 docs/research/typing-extensions.md).
         include:
           - { python-version: "3.9", typing-extensions: "4.4.0" }
           - { python-version: "3.12", typing-extensions: "4.6.0" }
           - { python-version: "3.14", typing-extensions: "4.6.0" }
+          - { python-version: "3.15", typing-extensions: "4.14.0" }
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -74,7 +73,7 @@ jobs:
       - run: uv run --no-sync pytest
 
   lint:
-    name: ruff / ty
+    name: ruff / ty / markdownlint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,6 +85,13 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run ty check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Markdown 排版闸门, 配置见仓库根目录的 .markdownlint-cli2.jsonc.
+      # markdownlint-cli2 把 markdownlint 钉成精确版本 (0.23.0 → markdownlint
+      # 0.41.0), 所以写死版本号就能保证 CI 与本地规则一致; 升级时同步改这里.
+      - run: npx --yes markdownlint-cli2@0.23.0
 
   sdist:
     name: sdist 内容检查

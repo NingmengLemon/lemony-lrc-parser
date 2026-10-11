@@ -174,7 +174,7 @@ class TestShiftOperators:
 class TestLrcOffsetConvention:
     """LRC 的 ``[offset:...]`` 与 ``apply_delta()`` 的**符号相反**.
 
-    调研见 ``docs/research.md`` 的「offset 标签的正负语义」: 社区文档
+    调研见 ``docs/research/offset.md``: 社区文档
     (Wikipedia / MobileRead) 与实现 (Lyricify ``StartTime -= offset``) 都认定
     ``offset: +N`` = "歌词整体提前 N 毫秒", 即时间戳 ``-= N``; 而本库的
     ``apply_delta(+ms)`` 是"时间戳 ``+= ms``"(更晚). 因此从 metadata 应用

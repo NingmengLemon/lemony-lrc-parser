@@ -1,4 +1,4 @@
-"""往返保真度 (roundtrip fidelity) 测试矩阵 —— NEW-ROUNDTRIP.
+"""往返保真度 (roundtrip fidelity) 测试矩阵.
 
 本模块断言的是三条**不变量**, 而不是逐条硬编码输出:
 
@@ -15,7 +15,7 @@
 纯空白正文、重复/乱序标签), 因此只能当作问题的**上界**, 不代表真实文件里的
 发生率.
 
-已知有损场景 (不算 bug, 见各用例的 docstring 与 ``docs/feature-ideas.md``):
+已知有损场景 (不算 bug, 见各用例的 docstring 与 ``docs/design/``):
 纯空白行、空正文 + 显式区间、方括号形式的逐字标签, 这三类不纳入不变量 3.
 """
 
@@ -65,6 +65,11 @@ WELL_FORMED_CORPUS: list[str] = [
     "[ti: A] [ar: B]\n[00:01.000]x\n",
     "[ti:]\n[00:01.000]x\n",
     "[ti: value with : colon]\n[00:01.000]x\n",
+    # 同名 key 可重复: 全部条目都要往返, 不能只留最后一个.
+    # 这两条同时是不变量 3 之外的额外闸门 —— metadata 比较用的是
+    # Metadata.__eq__, 它比的是全部条目, 所以丢掉重复项会当场失败.
+    "[ti: A]\n[ti: B]\n[00:01.000]x\n",
+    "[ti: A][ti: B]\n[00:01.000]x\n",
     # 宽松时间标签
     "[0:1]x\n",
     "[1234:59.999]x\n[1234:59.999]y\n",
@@ -73,7 +78,7 @@ WELL_FORMED_CORPUS: list[str] = [
 
 #: 已知有损 / 病态语料: 只要求不变量 1 / 2 (以及第一次解析不崩).
 DEGENERATE_CORPUS: list[str] = [
-    # 行首标签晚于首个词元 → 整行按既有策略丢弃 (B1)
+    # 行首标签晚于首个词元 → 越界的逐字标记被忽略 (SPL)
     "[00:30.000]<00:10.000>hi\n翻译行\n",
     "[00:10.000]<00:05.000>text\n",
     # 行首是纯文本, 词元时间早于行标签 → end 归一化为 None
@@ -320,7 +325,7 @@ class TestKnownLossyBehaviors:
                 )
             )
         assert dumped == "[00:01.000][00:01.500]hello\n"
-        assert "split this line into two" in caplog.text
+        assert "duplicate this line's text" in caplog.text
 
         reparsed = Lyrics.loads(dumped)
         assert [line.text for line in reparsed] == ["hello", "hello"]
@@ -328,11 +333,57 @@ class TestKnownLossyBehaviors:
         # 默认 (尖括号) 写法没有这个问题
         assert Lyrics.loads(lyrics.dumps(options=DUMPS_OPTS)) == lyrics
 
+    def test_bracket_byword_tag_with_line_end_keeps_one_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """有行尾标签时同一写法读回一行, 只多一个零文本词元, 因此不告警.
+
+        这是 karakara 的产物形态 (行尾总是显式的): 一首歌里每一行都命中, 若仍按
+        "会拆行"告警, 日志会被并未发生的后果刷满.
+        """
+        lyrics = Lyrics.loads("[00:01.000]<00:01.500>hello[00:03.000]")
+        with caplog.at_level(logging.DEBUG, logger="lemony_lrc_parser.serializer"):
+            dumped = lyrics.dumps(
+                options=SerializationOptions(use_bracket_for_byword_tag=True)
+            )
+        assert dumped == "[00:01.000][00:01.500]hello[00:03.000]\n"
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert "adds an empty leading token" in caplog.text
+
+        reparsed = Lyrics.loads(dumped)
+        assert [(line.start, line.end, line.text) for line in reparsed] == [
+            (1000, 3000, "hello")
+        ]
+        assert [(t.content, t.start, t.end) for t in reparsed[0].content] == [
+            ("", 1000, 1500),
+            ("hello", 1500, 3000),
+        ]
+
+    def test_bracket_byword_tag_with_unordered_tokens_still_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """后面的标签出现递减时, 解析器按重复行简写展开, 所以即使有行尾也要告警."""
+        from lemony_lrc_parser import BasicLyricLine, LyricLine, LyricToken
+
+        tokens = [
+            LyricToken(content="a", start=2000, end=2500),
+            LyricToken(content="b", start=1500, end=3000),
+        ]
+        lyrics = Lyrics(
+            [LyricLine(start=1000, end=3000, content=BasicLyricLine(tokens))]
+        )
+        with caplog.at_level(logging.WARNING, logger="lemony_lrc_parser.serializer"):
+            dumped = lyrics.dumps(
+                options=SerializationOptions(use_bracket_for_byword_tag=True)
+            )
+        assert "duplicate this line's text" in caplog.text
+        assert len(Lyrics.loads(dumped)) == 2
+
     def test_early_byword_tag_is_ignored_line_tag_wins(self) -> None:
         """越界逐字标签被忽略, 行标签为准 (SPL); 本行与翻译行都不丢.
 
-        这曾经是"整行丢弃 + 后续翻译行变孤儿"(B1 旧行为), 也曾经是"把整行挪到
-        首词元时间"(A2 旧行为); 现在按 SPL 丢弃越界的标记本身.
+        不是"整行丢弃 + 后续翻译行变孤儿", 也不是"把整行挪到首词元时间":
+        按 SPL 丢弃越界的标记本身.
         """
         lyrics = Lyrics.loads("[00:30.000]<00:10.000>hi\n翻译行\n")
         assert [(line.start, line.end, line.text) for line in lyrics] == [
@@ -349,7 +400,7 @@ class TestKnownLossyBehaviors:
 
 
 class TestInferredEndIsNeverDegenerate:
-    """A1 回归: 解析器不得产出 ``end <= start`` (那是 validate 眼里的 error)."""
+    """回归: 解析器不得产出 ``end <= start`` (那是 validate 眼里的 error)."""
 
     @pytest.mark.parametrize(
         "doc",
@@ -396,7 +447,7 @@ class TestInferredEndIsNeverDegenerate:
     def test_cli_validate_accepts_what_the_parser_produces(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """解析器写出的文件, CLI ``validate --strict`` 不应因 error 而失败.
+        """解析器写出的文件, CLI ``validate --fail-on-error`` 不应因 error 而失败.
 
         越界逐字标签按 SPL 忽略之后, 解析器不再产出自相矛盾的词元时间, 因此这里
         既要求没有 ``[ERROR]``, 也要求没有 ``token-before-line-start`` 之类的
@@ -407,7 +458,7 @@ class TestInferredEndIsNeverDegenerate:
             Lyrics.loads("[00:10.000]a<00:05.000>b<00:06.000>").dumps(),
             encoding="utf-8",
         )
-        rc = main(["validate", "--strict", str(path)])
+        rc = main(["validate", "--fail-on-error", str(path)])
         captured = capsys.readouterr()
         assert rc == 0, captured.err
         assert "[ERROR]" not in captured.err
@@ -415,7 +466,7 @@ class TestInferredEndIsNeverDegenerate:
 
 
 class TestWhitespaceContentRoundtrip:
-    """A5a 回归: 标签之后的纯空白算正文, 不能被解析成空占位行."""
+    """回归: 标签之后的纯空白算正文, 不能被解析成空占位行."""
 
     @pytest.mark.parametrize(
         "doc, expected_text",

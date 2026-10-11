@@ -4,35 +4,33 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://img.shields.io/pypi/v/lemony-lrc-parser)](https://pypi.org/project/lemony-lrc-parser/)
 
+**简体中文** | [English](README.en.md)
+
 柠檬味的 Python LRC 歌词解析器.
 
-Lemon-flavored LRC Parser for Python.
-
-## Features
+## 特性
 
 - 解析标准 LRC 歌词文件
 - 支持 EnhancedLRC / SPL 的逐字歌词标签
-- 支持 metadata 标签
+- 支持 metadata 标签 (同名 key 可重复, 不丢重复项)
 - 支持折叠时间标签
-- 支持参照行
+- 支持参考行
 - 支持歌词合并
 - 与简单字幕格式 (SRT / WebVTT) 互转
 - 时间偏移 (`apply_delta` / `<<` / `>>` 运算符)
 - 字典序列化 (`to_dict()` / `from_dict()`)
-- 深拷贝方法链 (`.copy()`)
+- 深拷贝方法 (`.copy()`)
 - 可配置解析与序列化选项
 - 数据一致性验证 API (`validate_lyrics` / `Lyrics.validate()`)
-- 文本查找 (`contains_text()` / `find_text()`)
+- 文本查找 (`contains_text()` / `find_text()` / `find_regex()`)
 - 往返保真度不变量测试 (`解析结果必过校验` / `dumps 一轮收敛` / `行结构稳定`)
-- CLI 命令行工具 (`lemonyrics` / `python -m lemony_lrc_parser`)
+- CLI 命令行工具 (`python -m lemony_lrc_parser`)
 - 解析错误附带行号与原始行 (`InvalidLyricsError.line_no` / `.raw_line`)
 - 完整的类型注解
 
-## Installation
+## 安装
 
 推荐使用 [uv](https://docs.astral.sh/uv/).
-
-It's recommended to use [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv add lemony-lrc-parser
@@ -40,51 +38,40 @@ uv add lemony-lrc-parser
 
 用 pip 也行.
 
-It's okay to use pip.
-
 ```bash
 pip install lemony-lrc-parser
 ```
 
 可以使用 git 仓库来源来第一时间体验到最新最热的 ~~bug~~ feature.
 
-You can use git repo as a source to catch the newest ~~bugs~~ features.
-
 ```bash
 uv add https://github.com/NingmengLemon/lemony-lrc-parser.git
 ```
 
-## Usage
+## 用法
 
-### Quick Start
+### 快速开始
 
-json, marshal or pickle -like usages
+用法参考 json, marshal, pickle 等库
 
 ```python
 import lemony_lrc_parser as llp
 
-lrc_text = """[ti: Never Gonna Give You Up]
-[ar: Rick Astley]
+lrc_text = """[ti: 凉雨]
+[ar: COP,洛天依]
 
-[00:18.684]We're no strangers to love
-[00:18.684]我们都是情场老手
-
-[00:22.657]You know the rules and so do I
-[00:22.657]你和我都知道爱情的规则
-
-[00:27.070]A full commitment's what I'm thinking of
-[00:27.070]我在想的正是一份实打实的承诺
-
-[00:31.459]You wouldn't get this from any other guy
-[00:31.459]你从其他人那里得不到的
+[00:00.000]风透过人潮渐渐停歇的下雨天
+[00:02.740]将平凡的故事翻到末页
+[00:05.290]并未留下浓重的墨点
+[00:08.150]在字里行间流连
 """
 
 # 解析
 lyrics = llp.loads(lrc_text)
 
 # 访问 metadata
-print(lyrics.metadata["ti"])  # "Never Gonna Give You Up"
-print(lyrics.metadata["ar"])  # "Rick Astley"
+print(lyrics.metadata["ti"])  # "凉雨"
+print(lyrics.metadata["ar"])  # "COP,洛天依"
 
 # 遍历歌词行
 for line in lyrics:
@@ -94,9 +81,9 @@ for line in lyrics:
 output = llp.dumps(lyrics)
 ```
 
-### OOP Interface
+### 面向对象接口
 
-`Lyrics` 类提供面向对象的解析和序列化入口, 也推荐使用面向对象接口:
+`Lyrics` 类提供面向对象的解析和序列化入口, 推荐优先使用:
 
 ```python
 from lemony_lrc_parser import Lyrics
@@ -114,77 +101,109 @@ first_three = lyrics[0:3]
 # 序列化
 lrc_output = lyrics.dumps()
 
+# 行时长 (毫秒); end 未知时为 None
+print(lyrics[0].duration)
+
 # __str__ 等价于 dumps()
 print(lyrics)
 ```
 
-### Word-level Lyrics
+`Lyrics` 的相等性比**行序列 + metadata**: 两份只有 `[ti:]` 不同的歌词不相等, 所以
+`Lyrics.loads(lyrics.dumps()) == lyrics` 可以直接当往返检查用. 与普通列表比较时
+只比行 (列表没有 metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部
+条目, 因此同名 key 的重复项与标签顺序都算数.
+
+`repr()` 是给调试看的紧凑形式 (`Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))`,
+不铺开行与词元), `str()` 仍等价于 `dumps()`.
+
+### 逐字歌词
 
 解析逐字 (Enhanced LRC / SPL) 歌词:
 
 ```python
-lrc_text = "[00:01.00]<00:01.00>Never <00:01.50>gonna <00:02.00>give <00:02.50>you <00:03.00>up[00:03.50]"
+lrc_text = "[00:00.000]<00:00.249>风<00:00.467>透<00:00.617>过<00:00.689>人<00:01.078>潮<00:01.217>渐<00:01.408>渐<00:01.556>停<00:01.716>歇<00:01.867>的<00:02.016>下<00:02.339>雨<00:02.459>天[00:02.740]"
 
 lyrics = llp.loads(lrc_text)
 line = lyrics[0]
 
 for word in line.content:
     print(f"  [{word.start} -> {word.end}] {word.content!r}")
-    # [1000 -> 1500] 'Never '
-    # [1500 -> 2000] 'gonna '
-    # [2000 -> 2500] 'give '
-    # [2500 -> 3000] 'you '
-    # [3000 -> 3500] 'up'
+    # [249 -> 467] '风'
+    # [467 -> 617] '透'
+    # [617 -> 689] '过'
+    # [689 -> 1078] '人'
+    # [1078 -> 1217] '潮'
+    # [1217 -> 1408] '渐'
+    # [1408 -> 1556] '渐'
+    # [1556 -> 1716] '停'
+    # [1716 -> 1867] '歇'
+    # [1867 -> 2016] '的'
+    # [2016 -> 2339] '下'
+    # [2339 -> 2459] '雨'
+    # [2459 -> 2740] '天'
 
-# 行级时间: line.start=1000, line.end=3500
-# (行尾的 [00:03.50] 会被当作该行的结束时间, 并反写到最后一个词元的 end)
+# 行级时间: line.start=0, line.end=2740
+# (行尾的 [00:02.740] 会被当作该行的结束时间, 并反写到最后一个词元的 end)
 ```
 
-### Search (contains_text / find_text)
+### 内容搜索 (contains_text / find_text / find_regex)
 
-按文本查找请使用显式方法 —— `in` 在四个模型上的历史语义各不相同
+按文本查找请使用显式方法: `in` 在四个模型上的历史语义各不相同
 (`LyricToken` / `BasicLyricLine` 是子串, `LyricLine` 是词元相等, `Lyrics` 是行相等),
-所以 `"xxx" in <模型>` 保留旧行为但会发 `DeprecationWarning`:
+`"xxx" in <模型>` 保留旧行为但会发 `DeprecationWarning`, 0.6.0 起改为抛 `TypeError`:
 
 ```python
 from lemony_lrc_parser import Lyrics
 
 lyrics = Lyrics.loads(lrc_text)
 
-lyrics.contains_text("strangers")  # 任一行 (含参考行) 是否包含该子串
-matching = lyrics.find_text("strangers")  # 命中的行对象列表
+lyrics.contains_text("雨")  # 任一行 (含参考行) 是否包含该子串
+matching = lyrics.find_text("雨")  # 命中的行对象列表
 line = lyrics[0]
-line.contains_text("strangers")  # 只搜主行
-line.contains_text("情场老手", include_reference_lines=True)  # 连参考行一起搜
+line.contains_text("雨")  # 只搜主行
+line.contains_text("积雨云", include_reference_lines=True)  # 连参考行一起搜
 ```
 
-子串判定区分大小写; 需要忽略大小写时请自行 `casefold()` 后再比较.
+子串判定区分大小写. 需要正则或忽略大小写时用 `find_regex` / `contains_regex`
+(默认也搜参考行):
 
-### Reference Lines (Translation / Transliteration)
+```python
+import re
+
+lyrics.find_regex(re.compile("love", re.IGNORECASE))  # 忽略大小写
+lyrics.find_regex(r"^\[.+\]$")  # 正则; str 会被 re.compile
+lyrics.contains_regex("love")  # 布尔版
+```
+
+正则匹配是**逐行**做的: pattern 里的 `\n` 永远匹配不到 (LRC 的换行是行边界). 返回的是
+行对象本身, 需要行号时自己 `enumerate(lyrics)`.
+
+### 参考行 (Translation / Transliteration)
 
 LRC 文件中, 紧跟在带时间标签行后面的无标签行, 或与主行的时间戳相同的行, 会被解析为参考行, 常用于存放翻译或音译:
 
 ```python
-lrc_text = """[00:01.00]Hello
-    你好
-[00:02.00]World
-[00:02.00]世界
+lrc_text = """
+[00:01.910]歌に形はないけれど
+[00:01.910]虽然歌声无形
 """
 
 lyrics = llp.loads(lrc_text)
 
 line = lyrics[0]
-print(line.text)  # "Hello"
-print(line.reference_lines[0][0].content)  # "你好"
+print(line.text)  # "歌に形はないけれど"
+print(line.reference_lines[0][0].content)  # "虽然歌声无形"
 ```
 
-### Combining Lyrics
+### 合并歌词
 
 将两份歌词 (如原文和翻译) 按时间标签合并:
 
 ```python
-main = llp.loads("[00:01.00]Hello\n[00:02.00]World\n")
-translation = llp.loads("[00:01.00]你好\n[00:02.00]世界\n")
+main = llp.loads("[00:33.810]帰り道は夕日を背に\n[00:39.580]君の少し後ろを歩く\n")
+translation = llp.loads(
+    "[00:33.810]背着夕阳走在返家的路上\n[00:39.580]跟在你的后面一起走着\n"
+)
 
 # combine 方法: 翻译行挂到同时间点的 reference_lines 中
 combined = main.combine(translation)
@@ -203,7 +222,7 @@ for line in combined:
 combined = main.combine(translation, other_as_refline_only=False)
 ```
 
-### Dict Serialization (to_dict / from_dict)
+### 字典序列化 (to_dict / from_dict)
 
 所有数据模型都支持字典序列化, 方便 JSON 传输和 API 对接:
 
@@ -226,7 +245,11 @@ line_dict = line.to_dict()
 token_dict = line.content[0].to_dict()
 ```
 
-### Copy
+`to_dict()` 里的 `metadata` 是**有损**的 dict 视角 (同名 key 只留最后一次出现的
+值); 需要无损导出时用 `lyrics.metadata.to_pairs()`, 见
+[同名 key 与三种读法](#同名-key-与三种读法).
+
+### 拷贝
 
 所有数据模型都提供 `.copy()` 深拷贝方法, 返回独立的副本:
 
@@ -243,9 +266,28 @@ clone.metadata["ti"] = "New Title"
 print(lyrics.metadata.get("ti"))  # None
 ```
 
-### Options
+### 安全变更
 
-#### Parsing Options
+`Lyrics` 继承 `UserList`, 直接 `append` / `insert` / 下标赋值不会排序, 也不会校验;
+而 `lyrics.sort()` 又用不了 (`LyricLine` 不可比较). 需要按时间顺序维护时用这三个:
+
+```python
+from lemony_lrc_parser import Lyrics, LyricLine
+
+lyrics = Lyrics()
+
+lyrics.add_line(line)  # 追加并保持按 start 有序 (与 append 一样存引用)
+lyrics.add_line(line, sort=False)  # 批量构建时先攒着, 最后统一排一次
+lyrics.sort_inplace()  # 原地按 start 稳定排序
+ordered = lyrics.sorted()  # 返回排好序的副本, 原对象不动
+```
+
+`sort_inplace()` 是**稳定**排序: 同一时间戳的多行 (对唱、重复副歌) 保持原有相对
+顺序.
+
+### 选项
+
+#### 解析选项
 
 ```python
 import re
@@ -272,7 +314,23 @@ lyrics = Lyrics.loads(
 过滤只按**主行**文本判定: 与主行同一时间戳的参考行 (翻译/音译) 会随主行一起被
 丢弃, 即使它自身的文本并不匹配.
 
-#### Serialization Options
+`strict=True` 打开严格模式: 解析器不得不丢掉文件里的正文或逐字时间时, 当场
+抛 `InvalidLyricsError` (带 `line_no` / `raw_line`):
+
+```python
+from lemony_lrc_parser import Lyrics, ParseOptions
+
+# 无锚点的行、越界或乱序的逐字标记、被丢弃的行尾推断, 都会抛
+Lyrics.loads(lrc_text, options=ParseOptions(strict=True))
+```
+
+默认是 `False`, 因为真实世界的 LRC 很野, 默认宽松才兼容. 三类刻意不抛:
+`line_filter` 丢掉的行 (那是调用方自己要求的); 补不上的结束标记 (只有时间戳的行,
+丢掉的只是一个时间点, 真实曲库里约一成的文件有); metadata key / `offset` 的问题
+(它们不影响解析结果, 交给 `validate()` 报). 触发的具体代码见
+[解析报告](#解析报告) 里的 `STRICT_ERROR_CODES`.
+
+#### 序列化选项
 
 通过 `SerializationOptions` 控制序列化行为:
 
@@ -286,46 +344,87 @@ output = lyrics.dumps(
         line_tag_decimal_length=3,  # 行标签毫秒位数 (默认 3)
         word_tag_decimal_length=3,  # 逐字标签毫秒位数 (默认 3)
         line_separator="\n",  # 行间分隔字符串 (默认 "\n", 设为 "" 可省去空行)
+        line_ending="lf",  # 行尾: "lf" (默认) 或 "crlf", 与平台无关
     ),
 )
 ```
 
-#### Length of Decimal Part
+#### 行尾
 
-默认 `line_tag_decimal_length=3`、`word_tag_decimal_length=3`, 输出格式如 `[00:01.000]`、`<00:01.050>`, 保留完整的毫秒精度.
-若设为 `2`, 小数部分表示百分秒 (如 `[00:01.00]`), 属于**有损截断** (例如 555ms 会被截断为 55, 解析回来变成 550ms), 需要按需权衡 (部分老软件可能只支持百分秒).
+`dumps()` 的行尾只由 `line_ending` 决定, 同一份歌词在任何系统上都得到同一个字符串.
+解析时不记录、也不沿用源文件的行尾; 要保留, 先探测再显式传回去:
+
+```python
+from pathlib import Path
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+path = Path("song.lrc")
+with path.open(encoding="utf-8-sig", newline="") as fp:  # newline="": 不转换行尾
+    lyrics, report = llp.parse_with_report(fp.read())
+
+ending = report.line_ending  # "lf" / "crlf" / "mixed" / None (没有换行)
+options = SerializationOptions(line_ending="crlf" if ending == "crlf" else "lf")
+with path.open("w", encoding="utf-8", newline="") as fp:
+    fp.write(lyrics.dumps(options=options))
+```
+
+不解析也能探测: `llp.detect_line_ending(text)`. 两点要注意:
+
+- Python 默认的文本模式读文件 (`open(path)`, `Path.read_text()`) 会把 `\r\n` 转成
+  `\n`, 探测到的永远是 `"lf"`. 读的时候要传 `newline=""`.
+- 选 `"crlf"` 时写文件同样要 `newline=""` (或二进制模式). 文本模式在 Windows 上会把
+  每个 `\n` 再转成 `\r\n`, 结果是 `\r\r\n`. 反过来, 默认的 `"lf"` 配默认的文本模式,
+  在 Windows 上写出的就是 CRLF.
+
+#### 小数位长
+
+默认 `line_tag_decimal_length=3`、`word_tag_decimal_length=3`, 输出格式如
+`[00:01.000]`、`<00:01.050>`, 保留完整的毫秒精度.
+若设为 `2`, 小数部分表示百分秒 (如 `[00:01.00]`), 属于**有损截断** (例如 555ms
+会被截断为 55, 解析回来变成 550ms), 需要按需权衡 (部分老软件可能只支持百分秒).
 
 #### 往返保真度
 
-`dumps()` 的输出在重新解析后应当还原原对象. 唯一的已知有损写法是选项自身的代价,
-本库采取"照常写出 + warning"的策略 (与 metadata 的处理一致), 不会静默丢弃数据:
+`dumps()` 的输出在重新解析后应当还原原对象. 已知例外见下表: 属于选项自身代价的照常
+写出, 确实无法用 LRC 表达的跳过. 每一种都有日志, 也都会出现在
+[序列化报告](#序列化报告)里 (表中最后一列是事件代码).
 
-| 情形 | 写出的文本 | 重新解析的结果 |
-| --- | --- | --- |
-| `use_bracket_for_byword_tag=True` 且首词元晚于行首 | `[00:01.000][00:01.500]hello` | 两行, 文本重复 |
-| 无正文的参考行 (逐字时间也一起丢) | 不写出, 只有 debug 日志 | 该参考行消失 |
+| 情形 | 写出的文本 | 重新解析的结果 | 事件 |
+| --- | --- | --- | --- |
+| `use_bracket_for_byword_tag=True` 且首词元晚于行首, 后面没有别的标签 | `[00:01.000][00:01.500]hello` | 两行, 文本重复 (warning) | `bracket-first-tag-splits-line` |
+| 同上, 但后面还有逐字标签或行尾标签 | `[00:01.000][00:01.500]hello[00:03.000]` | 一行, 行首多一个零文本词元 `''@1000..1500` (debug) | `bracket-first-tag-adds-token` |
+| 逐字标记落在行的时间范围之外 | 不写出该标记 (warning) | 该时间点消失 | `byword-out-of-range-omitted` |
+| 无正文的参考行 (逐字时间也一起丢) | 不写出 (debug) | 该参考行消失 | `textless-reference-skipped` |
+| 空正文行带参考行 (0.4.0 及更早读出的形状) | 空 cue + 同时间戳的歌词行 (warning) | 第一条参考行升为正文 | `empty-line-references` |
+| metadata 的 key 或 value 无法往返 | 照常写出 (warning) | 见 [元数据语法](#元数据语法) | `metadata-*` |
+
+方括号写法下 `[行首][首字]正文` 与重复行简写同形, 解析端靠"正文里还有没有别的时间
+标签、整行是否非递减"区分两者, 所以只有第一种真的会拆行. 第二种正文与时间都不丢,
+只是首个词元前面多出一段空白.
 
 `dumps` 的输出是"最多一轮之后的不动点": `d2 = dumps(loads(d1))` 与
 `d3 = dumps(loads(d2))` 必定相等. 当前实现下 (含 2 万份随机语料与 6622 份真实
-文件) 首轮就已经是定点.
+文件) 首轮就已经是不动点.
 
 另外, 行尾时间若由逐字标签推断而来且与行首时间矛盾 (`end <= start`), 该推断会被
 丢弃 (`line.end` 置回 `None`) 并产生 warning —— 解析器不会产出 `validate()` 判为
 error 的行.
 
-### 与 SPL 的一致性
+### 关于 SPL
 
 [SPL (Salt Player Lyrics)](https://moriafly.com/standards/spl.html) 是目前唯一把
 "LRC 家族多年踩到的兼容性问题"写成条文的文档, 本库把它当作 LRC 语义的参照物.
 逐条对照的用例在 [`tests/test_spl_conformance.py`](tests/test_spl_conformance.py),
-语料统计与调研过程在 [`docs/research.md`](docs/research.md).
+语料统计与调研过程在 [`docs/research/spl.md`](docs/research/spl.md).
 
 解析端完全按 SPL 的地方:
 
 - 时间戳数字规范 (分 1-3 位 / 秒 1-2 位 / 毫秒 1-6 位; 不足 3 位视为在后位省略 `0`,
   即 `[00:01.5]` 是 1.5 秒、`[00:01.02]` 是 1.02 秒).
 - 显式行尾: 同行内的 `[start]text[end]`, 以及独立的空标记行 `[end]`.
-- **空正文行是"纯结束标记"**: 它不产生歌词行, 也不参与翻译识别, 只给上一行补 `end`.
+- 空正文行是"纯结束标记": 它不产生歌词行, 也不参与翻译识别, 只给上一行补 `end`.
   因此 `[00:20.82]` + `[00:20.82]lyrics` 得到的是"上一行在 20.82s 结束"加"一句正常
   歌词", 而不是"一条空行 + 它的翻译".
 - 重复行简写 `[t1][t2]text`; 翻译的同时间戳识别 (可不紧挨) 与省略时间戳写法 (可多行).
@@ -341,14 +440,16 @@ error 的行.
   按标准的字面读成 450000 毫秒. 标准内部对这两种读法有歧义, 真实语料里 4-6 位出现
   0 次.
 - 标签之后只剩空白算正文 (见上面的往返保真度), 标准只说了"不接任何文本内容".
-- `[行标签][首字标签]文本` 且标签非递减时按"首字延迟"读成一行 (标准"局限性"一节
-  按重复行读). 真实语料里 199 行这种写法有 197 行的两个标签只差 0.1-1.3 秒.
+- `[行标签][首字标签]文本` 在整行标签非递减、且正文里还有其它时间标签时, 按"首字延迟"
+  读成一行 (如 `[00:05.650][00:05.730]徘[00:06.130]徊[00:06.450]`; 标准"局限性"一节
+  按重复行读); 正文里没有其它时间标签的 `[t1][t2]text` 仍按重复行简写读成两行.
+  真实语料里 199 行这种写法有 197 行的两个标签只差 0.1-1.3 秒.
 - 整行只有尖括号标签 (如 `<00:01.000><00:02.000>`) 保留为一条空正文行, 用于承载
   空字幕 cue; `dumps` 也用同一形式写回.
 - 默认不填充隐式行尾 (`end=None` 表示"未知"), 需要 SPL 的"持续到下一行开始"语义时
   用 `ParseOptions(fill_implicit_line_end=True)`; 字幕导出默认就是这种语义.
 
-### Metadata 语法
+### 元数据语法
 
 `[key: value]` 只有**整行**都由该形式构成时才算 metadata: 正文中间的
 `[key: value]` 不会把整行吞掉 (例如 `Return [to: sender] now` 仍是一行歌词或参考行).
@@ -359,27 +460,63 @@ value 里的方括号必须**配对**:
 import lemony_lrc_parser as llp
 
 llp.loads("[al: Album [Deluxe]]\n[00:01.000]x\n").metadata
-# {'al': 'Album [Deluxe]'}   ← 原样保留 (取"配对的第一个 ]"作为边界)
+# Metadata({'al': 'Album [Deluxe]'})   ← 原样保留 (取"配对的第一个 ]"作为边界)
 ```
 
 不平衡的写法 (如 `[ti: 50% ]off]`、`[ti: a [b]`) 无法确定 value 边界, 整行按普通
-正文处理, 写出这类 value 时也会 warning. 本库**不**采用反斜杠转义: LRC 家族没有
-标准转义语法, 转义会自造方言并破坏含反斜杠的既有 value (调研结论见
-[`docs/risks.md`](docs/risks.md) 的"已关闭 / 不计划").
+正文处理, 写出这类 value 时也会 warning.
 
 常见 key 的类型提示见 `MetadataKey` / `MetadataDict` / `COMMON_METADATA_KEYS` ——
-它们只是提示, 库既不校验也不限制其它 key (真实语料里常见 `ly`、`mu`、`total`、`tool`).
+它们只是提示: 库不限制 key 的取值集合 (真实语料里常见 `ly`、`mu`、`total`、`tool`),
+只有 `validate()` 会按 `[A-Za-z][A-Za-z0-9]{0,15}` 检查 key 格式.
 
-### Offset
+#### 同名 key 与三种读法
+
+同名 key 重复出现是合法的 (`[ti: A]` 与 `[ti: B]` 都能留下), 所以
+`lyrics.metadata` 是 `Metadata` 而不是裸 `dict`: 它有序、可重复, 三种读法各有
+明确口径, 不靠参数开关切换.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics = llp.loads("[ti: A]\n[ti: B]\n[00:01.000]x\n")
+meta = lyrics.metadata
+
+# dict 视角 (有损): Mapping 协议, 同名取最后一次出现的值, 与旧版的裸 dict 一致
+meta["ti"]  # 'B'
+dict(meta)  # {'ti': 'B'}
+list(meta.items())  # [('ti', 'B')]
+lyrics.to_dict()["metadata"]  # {'ti': 'B'}
+
+# 无损视角: 全部条目, 含重复
+meta.getlist("ti")  # ['A', 'B']
+meta.to_pairs()  # [('ti', 'A'), ('ti', 'B')]
+
+# 写入: add 追加, set / meta[k] = v 替换 (位置取首次出现处)
+meta.add("ti", "C")  # 变成 A, B, C
+meta.set("ti", "D")  # 合并成一条 D
+```
+
+`dumps()` 按无损视角写出, 所以重复 tag 也能往返. `Mapping` 协议的方法 (`keys()` /
+`values()` / `items()` / `len()`) 都只算**不同**的 key, 无损读取只有 `to_pairs()` 与
+`getlist()` 两个入口; 要数全部条目用 `len(meta.to_pairs())`.
+需要无损导出时用 `meta.to_pairs()`, 需要 JSON 友好时用 `meta.to_dict()`.
+
+`Metadata` 不是 `dict` 子类, 所以 `isinstance(meta, dict)` 是 `False`,
+`json.dumps(meta)` 要改成 `json.dumps(meta.to_dict())` (或直接
+`json.dumps(lyrics.to_dict())`).
+
+### 偏移
 
 使用 `Lyrics.apply_delta(ms)` 应用时间偏移, ms 会*直接加到*每个标签的时间戳上,
 这意味着传入*正数*偏移值会导致歌词整体*延后*出现, 反之同理.
 
-也可以使用重载的 `>>` / `<<` 运算, 私以为这样会更好理解一些.
+也可以使用重载的 `>>` / `<<` 运算对歌词进行偏移.
 
-如果应用 offset 会导致时间戳变为负数, 将抛出 `TimestampUnderflowError`, 由调用方自行处理.
+如果应用 offset 会导致任意时间戳变为负数, 将抛出 `TimestampUnderflowError`, 由调用方自行处理.
+时间戳超过 LRC 能写出的上限 `[9999:59.999]` 时, `dumps()` 抛 `TimestampOverflowError`.
 
-#### Applying Offset
+#### 应用偏移
 
 通过 `Lyrics.apply_delta(ms)` 对时间戳应用偏移, 返回一个新对象:
 
@@ -401,18 +538,16 @@ shifted = lyrics << 500  # 提前 500ms
 # shifted 的时间戳已被整体偏移, 原始 lyrics 不受影响
 ```
 
-如果偏移会导致时间戳变为负数, 将抛出 `TimestampUnderflowError`.
-
 如需在序列化前偏移时间戳, 请先调用 `apply_delta()` 再序列化返回的副本.
 如果你的偏移量来自歌词文件元数据, 你可能还需要记得手动清理 `lyrics.metadata` 中的偏移值.
 
-#### 与 LRC `[offset:...]` 的符号差异
+#### 与 LRC offset 元数据的符号差异
 
-**注意两者符号相反**, 混用会让歌词往反方向跑:
+LRC 没有一个标准的符号语义, 但:
 
-- LRC 的 `[offset: +N]` 按社区文档与主流实现是"歌词整体**提前** N 毫秒",
-  即时间戳 `-= N`（[调研](docs/research.md)）；
-- 本库的 `apply_delta(+ms)` 是"时间戳 `+= ms`", 即歌词**延后**。
+- LRC 的 `[offset: +N]` 按社区文档与*主流*实现是"歌词整体**提前** N 毫秒",
+  即时间戳 `-= N` ([调研](docs/research/offset.md));
+- 本库的 `apply_delta(+ms)` 是"时间戳 `+= ms`", 即歌词**延后**.
 
 所以从 metadata 应用 offset 的正确写法是取负号:
 
@@ -424,8 +559,7 @@ shifted = lyrics.apply_delta(-int(lyrics.metadata["offset"]))
 print(shifted[0].start)  # 9500 —— 提前了 500ms
 ```
 
-本库**不会**自动应用 offset（显式优于隐式, 而且有播放器完全忽略它）；
-上面这条换算关系有专门的回归测试 (`tests/test_offset.py::TestLrcOffsetConvention`).
+本库不会自动应用 offset (显式优于隐式), 需要由使用者自行处理.
 
 也可以通过 `min_timestamp` / `max_timestamp` 快速检查歌词的时间范围:
 
@@ -437,7 +571,103 @@ print(min_timestamp(lyrics))  # 最小时间戳 (ms), 无时间戳时为 None
 print(max_timestamp(lyrics))  # 最大时间戳 (ms), 无时间戳时为 None
 ```
 
-### Validation
+### 解析报告
+
+`parse_lrc` 之外还有 `parse_with_report`: 除歌词外再给一份结构化报告, 说明这次
+解析"丢了什么 / 忽略了什么". 与 `validate()` 互补 —— 报告是事后审计, 校验是查
+结果数据本身是否自相矛盾.
+
+```python
+import lemony_lrc_parser as llp
+
+lyrics, report = llp.parse_with_report("[00:01.000]a\n\norphan\n[00:02.000]\n")
+
+if report:  # 干净文件的报告是空的
+    for event in report:
+        print(f"[{event.code}] line {event.line_no}: {event.message}")
+
+report.dropped_lines  # 整行没进结果的 (孤儿行 / 被 line_filter 丢掉的行)
+report.of_code("byword-unordered")  # 按事件代码筛选
+report.reference_lines_attached, report.end_markers_applied  # 正常操作只计数
+report.end_markers_redundant  # 与上一行结尾重合的结束标记, 也只计数
+```
+
+事件代码: `orphaned-line`、`line-filtered`、`byword-before-line-start`、
+`byword-after-line-end`、`byword-unordered`、`end-marker-ignored`、
+`inferred-end-discarded`.
+
+报告只收值得调用方知道的事件, 正常操作 (挂参考行、结束标记正常收尾、与上一行结尾
+重合的冗余结束标记) 只进上面三个计数, 所以干净文件的 `report` 为空 (`bool(report)`
+是 `False`). `end-marker-ignored` 的消息里写明了原因: 前面没有歌词行、不晚于上一行
+的开头, 或上一行已在别的时刻结束. 日志行为不变:
+逐字标记那几条仍按原格式打印, 只是报告里会补上行号.
+
+`STRICT_ERROR_CODES` 是其中"严格模式下会直接抛异常"的子集 (少了 `line-filtered`
+与 `end-marker-ignored`), 见 [解析选项](#解析选项) 里的 `strict`.
+
+#### 从看日志改成读报告
+
+库的日志是逐行的内部动作, 批量处理时太吵, 消费方常常整个静音; 但静音之后"这份输入
+丢了什么"也一起看不见了. 报告把同样的信息变成数据, 可以只在需要时汇总:
+
+```python
+import logging
+from collections import Counter
+
+import lemony_lrc_parser as llp
+from lemony_lrc_parser.report import STRICT_ERROR_CODES
+
+# 之前: 要么忍受刷屏, 要么静音后什么都看不到
+logging.getLogger("lemony_lrc_parser").setLevel(logging.ERROR)
+
+# 之后: 日志照样静音, 问题按需从报告里取
+lyrics, report = llp.parse_with_report(
+    "[00:01.000]a<00:00.500>b\n\norphan\n[00:02.000]c\n"
+)
+
+Counter(event.code for event in report)
+# Counter({'byword-before-line-start': 1, 'orphaned-line': 1})
+
+for event in report:
+    if event.code in STRICT_ERROR_CODES:  # 文件里的正文或逐字时间被丢掉
+        print(f"line {event.line_no}: [{event.code}] {event.raw_line!r}")
+# line 1: [byword-before-line-start] '[00:01.000]a<00:00.500>b'
+# line 3: [orphaned-line] 'orphan'
+```
+
+报告里的 `line_no` 是源文件行号, `raw_line` 是原文, 可以直接写进产物旁边的审计文件.
+
+### 序列化报告
+
+`dump_with_report` 是写出那一侧的对应物: 文本与 `dumps()` 一字不差, 另给一份报告,
+列出 [往返保真度](#往返保真度) 表里那些情形. 位置是 `lyrics` 里的行下标
+(`line_index`) 与参考行下标 (`reference_index`), metadata 事件带 `metadata_key`.
+
+```python
+import lemony_lrc_parser as llp
+from lemony_lrc_parser import SerializationOptions
+
+lyrics = llp.loads(
+    "[00:01.000]<00:01.500>Feel <00:02.000>it[00:03.000]\n[00:04.000]<00:04.500>gone\n"
+)
+text, report = llp.dump_with_report(
+    lyrics, options=SerializationOptions(use_bracket_for_byword_tag=True)
+)
+for event in report:
+    print(f"lyrics[{event.line_index}]: [{event.code}]")
+# lyrics[0]: [bracket-first-tag-adds-token]
+# lyrics[1]: [bracket-first-tag-splits-line]
+
+report.lossy  # 重新解析读不回原数据的那些, 这里只有 lyrics[1]
+```
+
+事件代码: `bracket-first-tag-splits-line`、`bracket-first-tag-adds-token`、
+`byword-out-of-range-omitted`、`textless-reference-skipped`、`empty-line-references`、
+`metadata-key-unparsable`、`metadata-value-unbalanced`、`metadata-value-newline`.
+`report.lossy` 是除 `bracket-first-tag-adds-token` 以外的全部: 那一种改变了词元
+结构, 但正文与时间都还在. 能无损写出的歌词报告为空.
+
+### 校验
 
 使用 `lyrics.validate()` 检查歌词数据一致性:
 
@@ -470,27 +700,36 @@ issues = lyrics.validate(options=ValidationOptions(strict=True))
 (见 `tests/test_roundtrip_matrix.py` 的不变量测试), 因此出现 `error` 通常意味着
 调用方手工构造了自相矛盾的对象.
 
-### CLI Usage
+### 命令行
 
-安装后可通过命令行直接使用:
+本库不注册 console script, 用 `python -m lemony_lrc_parser` 调用 (与
+`python -m json.tool` 同样的形态):
 
 ```bash
-# 验证 LRC 文件数据一致性
-lemonyrics validate song.lrc
-lemonyrics validate --strict song.lrc    # 有 error 时退出码为 1
+# 报告解析时丢弃 / 忽略的内容, 并验证数据一致性
+python -m lemony_lrc_parser validate song.lrc
+python -m lemony_lrc_parser validate --fail-on-error song.lrc    # 有 error 时退出码为 1
 
 # 整体时间偏移 (毫秒)
-lemonyrics offset --delta 500 song.lrc           # 输出到 stdout
-lemonyrics offset --delta -200 song.lrc -o out.lrc  # 输出到文件
+python -m lemony_lrc_parser offset --delta 500 song.lrc           # 输出到 stdout
+python -m lemony_lrc_parser offset --delta -200 song.lrc -o out.lrc  # 输出到文件
+python -m lemony_lrc_parser offset --delta 500 --line-ending crlf song.lrc  # 指定行尾
 
 # 转换为字幕格式
-lemonyrics to-srt song.lrc
-lemonyrics to-webvtt song.lrc -o song.vtt
+python -m lemony_lrc_parser to-srt song.lrc
+python -m lemony_lrc_parser to-webvtt song.lrc -o song.vtt
 ```
 
-也可以使用 `python -m lemony_lrc_parser` 作为入口.
+CLI 读写都不做换行转换. `offset` 默认 (`--line-ending keep`) 沿用输入文件的行尾,
+输入混用两种行尾或没有换行时用 LF; 也可以显式指定 `lf` / `crlf`.
 
-### Subtitle Conversion (SRT / WebVTT)
+`validate` 先输出解析报告里的事件 (位置是源文件行号, 如 `line 3`), 再输出一致性校验
+的问题 (位置是解析后的行下标, 如 `lyrics[2]`). 属于 `STRICT_ERROR_CODES` 的解析事件
+与校验的 error 级问题都算 error. `--fail-on-error` 只影响退出码, 与 API 的
+`ParseOptions(strict=True)` (解析时当场抛异常) 不是一回事; 旧名 `--strict` 在
+0.5.x 里仍可用, 0.6.0 移除.
+
+### 字幕格式转换 (SRT / WebVTT)
 
 `Lyrics` 可与常见的简单字幕格式互相转换, 便于把歌词用于视频字幕制作,
 或把已有字幕导入为歌词:
@@ -539,14 +778,12 @@ srt_text = lyrics.to_srt(options=options)
   解析时 cue 首行作为主行, 其余行作为参考行.
 - 解析会自动跳过 WebVTT 的 `WEBVTT` 头部以及 `NOTE` / `STYLE` / `REGION` 块.
 
-## References
+## 参考资料
 
 - [CHANGELOG](CHANGELOG.md) —— 版本变更历史.
-- 开发笔记（[索引](docs/feature-ideas.md)）：
-  [路线图](docs/roadmap.md) ·
-  [设计与取舍](docs/design.md) ·
-  [风险与不计划](docs/risks.md) ·
-  [调研与语料数据](docs/research.md)
+- [开发文档](docs/README.md): [路线图](docs/roadmap.md) ·
+  [语义取舍](docs/design/semantics.md) ·
+  [调研与语料数据](docs/research/)
 - [LRC Wikipedia](https://en.wikipedia.org/wiki/LRC_%28file_format%29)
 - [SPL Specification](https://moriafly.com/standards/spl.html)
 

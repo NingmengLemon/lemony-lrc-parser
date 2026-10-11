@@ -37,6 +37,7 @@ REQUIRED_PARTS: tuple[str, ...] = (
     "/src/lemony_lrc_parser/py.typed",
     "/pyproject.toml",
     "/README.md",
+    "/README.en.md",
     "/CHANGELOG.md",
     "/LICENSE",
 )

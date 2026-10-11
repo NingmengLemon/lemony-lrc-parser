@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from lemony_lrc_parser import Lyrics
+from lemony_lrc_parser import Lyrics, ParseReport
 from lemony_lrc_parser.cli import main
 
 SAMPLE_LRC = """[ti:Test Song]
@@ -60,7 +63,7 @@ class TestCLIValidate:
         def _failing_loads(*args: object, **kwargs: object) -> object:
             raise InvalidLyricsError("test parse error")
 
-        monkeypatch.setattr("lemony_lrc_parser.cli.Lyrics.loads", _failing_loads)
+        monkeypatch.setattr("lemony_lrc_parser.cli.parse_with_report", _failing_loads)
         path = _write_temp_lrc()
         try:
             rc = main(["validate", path])
@@ -70,13 +73,13 @@ class TestCLIValidate:
         finally:
             Path(path).unlink(missing_ok=True)
 
-    def test_validate_strict_flag_accepted_clean(
+    def test_validate_fail_on_error_accepted_clean(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--strict 标记在干净数据上不影响结果."""
+        """--fail-on-error 在干净数据上不影响结果."""
         path = _write_temp_lrc()
         try:
-            rc = main(["validate", "--strict", path])
+            rc = main(["validate", "--fail-on-error", path])
             captured = capsys.readouterr()
             assert rc == 0
             assert "OK" in captured.out
@@ -99,6 +102,89 @@ class TestCLIValidate:
             assert "offset-not-int" in captured.err
         finally:
             Path(path).unlink(missing_ok=True)
+
+    def test_validate_reports_parse_events_with_source_line_numbers(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """解析时丢掉 / 忽略的内容也要报, 位置是源文件行号."""
+        path = tmp_path / "events.lrc"
+        path.write_text("[00:01.000]a<00:00.500>b\n\norphan\n", encoding="utf-8")
+        rc = main(["validate", str(path)])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "OK" not in captured.out
+        assert "[ERROR] [byword-before-line-start] line 1:" in captured.err
+        assert "[ERROR] [orphaned-line] line 3:" in captured.err
+
+    def test_validate_does_not_duplicate_library_logs(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """事件只按结构化格式打一遍, 库的 warning 不再经 last-resort handler 重复输出."""
+        path = tmp_path / "orphan.lrc"
+        path.write_text("[00:01.000]a\n\norphan\n", encoding="utf-8")
+        # 必须起子进程: pytest 的 logging 插件会在 root 上挂 handler, 进程内跑
+        # main() 根本走不到 last-resort handler, 测不出重复输出.
+        result = subprocess.run(
+            [sys.executable, "-m", "lemony_lrc_parser", "validate", str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+        )
+        lines = result.stderr.splitlines()
+        assert lines == [line for line in lines if line.startswith("[")], lines
+        assert len(lines) == 1, lines
+
+    def test_validate_keeps_caller_log_handlers(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """屏蔽的只是 last-resort 输出, 调用方自己的 handler 仍收得到日志."""
+        path = tmp_path / "orphan.lrc"
+        path.write_text("[00:01.000]a\n\norphan\n", encoding="utf-8")
+        with caplog.at_level("WARNING", logger="lemony_lrc_parser"):
+            main(["validate", str(path)])
+        assert any("orphaned" in record.getMessage() for record in caplog.records)
+
+    def test_parse_events_fail_with_fail_on_error(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """严格模式会拒绝的解析事件算 error, --fail-on-error 时退出码为 1."""
+        path = tmp_path / "orphan.lrc"
+        path.write_text("[00:01.000]a\n\norphan\n", encoding="utf-8")
+        assert main(["validate", "--fail-on-error", str(path)]) == 1
+        capsys.readouterr()
+
+    def test_line_filtered_is_only_a_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """不在 STRICT_ERROR_CODES 里的事件按 warning 输出, 不影响退出码."""
+        from lemony_lrc_parser.report import ParseEvent
+
+        lyrics = Lyrics.loads("[00:01.000]a\n")
+        report = ParseReport(events=(ParseEvent("line-filtered", "dropped"),))
+        monkeypatch.setattr(
+            "lemony_lrc_parser.cli.parse_with_report", lambda *a, **k: (lyrics, report)
+        )
+        path = _write_temp_lrc()
+        try:
+            rc = main(["validate", "--fail-on-error", path])
+            captured = capsys.readouterr()
+            assert rc == 0
+            assert "[WARNING] [line-filtered] -: dropped" in captured.err
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    def test_deprecated_strict_flag_still_works(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--strict 是 --fail-on-error 的旧名: 仍然生效, 但提示改名."""
+        path = tmp_path / "orphan.lrc"
+        path.write_text("[00:01.000]a\n\norphan\n", encoding="utf-8")
+        rc = main(["validate", "--strict", str(path)])
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "--strict is deprecated" in captured.err
+        assert "--fail-on-error" in captured.err
 
 
 class TestCLIOffset:
@@ -233,11 +319,12 @@ class TestCLIEdgeCases:
     ) -> None:
         """读取文件时发生 OSError 应友好报错并返回退出码 1."""
 
-        def _failing_read_text(*args: object, **kwargs: object) -> object:
+        path = _write_temp_lrc()
+
+        def _failing_open(*args: object, **kwargs: object) -> object:
             raise OSError("permission denied")
 
-        monkeypatch.setattr("pathlib.Path.read_text", _failing_read_text)
-        path = _write_temp_lrc()
+        monkeypatch.setattr("pathlib.Path.open", _failing_open)
         try:
             rc = main(["validate", path])
             captured = capsys.readouterr()
@@ -249,7 +336,7 @@ class TestCLIEdgeCases:
     def test_validate_with_errors_no_strict_exit_zero(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """有 error 但不带 --strict 时退出码仍为 0."""
+        """有 error 但不带 --fail-on-error 时退出码仍为 0."""
         from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
 
         lyrics = Lyrics()
@@ -266,15 +353,15 @@ class TestCLIEdgeCases:
             )
         )
 
-        def _fake_loads(*args: object, **kwargs: object) -> Lyrics:
-            return lyrics
+        def _fake_parse(*args: object, **kwargs: object) -> tuple[Lyrics, ParseReport]:
+            return lyrics, ParseReport()
 
-        monkeypatch.setattr(Lyrics, "loads", _fake_loads)
+        monkeypatch.setattr("lemony_lrc_parser.cli.parse_with_report", _fake_parse)
         path = _write_temp_lrc()
         try:
             rc = main(["validate", path])
             captured = capsys.readouterr()
-            # 不带 --strict, 有 error 但退出码仍为 0
+            # 不带 --fail-on-error, 有 error 但退出码仍为 0
             assert rc == 0
             assert "[ERROR]" in captured.err
             assert "unsorted" in captured.err
@@ -284,7 +371,7 @@ class TestCLIEdgeCases:
     def test_validate_with_errors_strict_exit_one(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """有 error 且带 --strict 时退出码为 1."""
+        """有 error 且带 --fail-on-error 时退出码为 1."""
         from lemony_lrc_parser.models import BasicLyricLine, LyricLine, LyricToken
 
         lyrics = Lyrics()
@@ -301,16 +388,18 @@ class TestCLIEdgeCases:
             )
         )
 
-        def _fake_loads(*args: object, **kwargs: object) -> Lyrics:
-            return lyrics
+        def _fake_parse(*args: object, **kwargs: object) -> tuple[Lyrics, ParseReport]:
+            return lyrics, ParseReport()
 
-        monkeypatch.setattr(Lyrics, "loads", _fake_loads)
+        monkeypatch.setattr("lemony_lrc_parser.cli.parse_with_report", _fake_parse)
         path = _write_temp_lrc()
         try:
-            rc = main(["validate", "--strict", path])
+            rc = main(["validate", "--fail-on-error", path])
             captured = capsys.readouterr()
             assert rc == 1
             assert "[ERROR]" in captured.err
+            # 一致性问题的位置是解析后的行下标, 不是源文件行号
+            assert "lyrics[1]" in captured.err
         finally:
             Path(path).unlink(missing_ok=True)
 
@@ -350,11 +439,15 @@ class TestCLIEdgeCases:
     ) -> None:
         """转换命令写入输出文件失败时应报错并返回退出码 1."""
 
-        def _failing_write_text(*args: object, **kwargs: object) -> int:
-            raise OSError("permission denied")
-
-        monkeypatch.setattr(Path, "write_text", _failing_write_text)
         path = _write_temp_lrc()
+        real_open = Path.open
+
+        def _failing_open(self: Path, mode: str = "r", **kwargs: str) -> object:
+            if "w" in mode:
+                raise OSError("permission denied")
+            return real_open(self, mode, **kwargs)  # ty: ignore[no-matching-overload]
+
+        monkeypatch.setattr(Path, "open", _failing_open)
         try:
             rc = main([*args, path, "--output", "unwritable-output.lrc"])
             captured = capsys.readouterr()
@@ -373,3 +466,32 @@ class TestCLIEdgeCases:
         captured = capsys.readouterr()
         # argparse 会将用法打印到 stderr
         assert "usage:" in captured.err or "error:" in captured.err
+
+
+class TestModuleEntryPoint:
+    """``python -m lemony_lrc_parser`` 是本库唯一的 CLI 入口 (没有 console script).
+
+    其余用例都直接调 :func:`main`, 覆盖不到 ``__main__.py`` 与 ``-m`` 的接线,
+    而这条接线正是"去掉 console script"之后用户唯一的入口, 因此单独钉一个用例.
+    """
+
+    def test_dash_m_runs_the_cli(self) -> None:
+        """``python -m`` 能跑通, 且 usage 里的 prog 不是 ``__main__.py``."""
+        result = subprocess.run(
+            [sys.executable, "-m", "lemony_lrc_parser", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0
+        assert result.stdout.startswith("usage: python -m lemony_lrc_parser")
+        assert "__main__.py" not in result.stdout
+
+    def test_no_console_script_is_declared(self) -> None:
+        """``pyproject.toml`` 里不应再声明 ``[project.scripts]``.
+
+        用行首锚定的正则而不是子串判定, 免得注释里提一句就误报.
+        """
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        text = pyproject.read_text(encoding="utf-8")
+        assert re.search(r"^\[project\.scripts\]", text, re.MULTILINE) is None
