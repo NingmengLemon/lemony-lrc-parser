@@ -12,6 +12,11 @@
 
 ## [Unreleased]
 
+## [0.5.0rc1] — 2026-10-11
+
+0.5.0 的候选版本. 公开接口从这一版起冻结, 到 0.5.0 之间只修 bug. 相对 0.5.0b3 有
+一处不兼容: `strict=True` 接受的文件变多了 (见下).
+
 ### Changed
 
 - **相对 b3 不兼容**: `ParseOptions(strict=True)` 不再因结束标记报错,
@@ -663,7 +668,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0rc1...HEAD
+[0.5.0rc1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...v0.5.0rc1
 [0.5.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...v0.5.0b3
 [0.5.0b2]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...v0.5.0b2
 [0.5.0b1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0b1
