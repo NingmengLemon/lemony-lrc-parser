@@ -1,13 +1,13 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.5.0rc1"
+version = "0.5.0"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."
 readme = "README.md"
 keywords = ["LRC", "lyrics", "parser", "serializer", "SPL", "Enhanced LRC"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",

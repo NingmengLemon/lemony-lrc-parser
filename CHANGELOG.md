@@ -12,6 +12,58 @@
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-11
+
+结构化的读写报告、可重复的 metadata、严格模式与行尾控制. 与 0.5.0rc1 的代码相同.
+从 0.4.x 升级先看下面的「从 0.4.x 迁移」; 各项的来龙去脉在后面 rc1 到 b1 的条目里.
+
+### 从 0.4.x 迁移
+
+会当场报错的改动:
+
+- `lyrics.metadata` 不再是 `dict`, 而是 `Metadata` (有序、同名可重复).
+  `isinstance(meta, dict)` 为 `False`, `json.dumps(lyrics.metadata)` 抛
+  `TypeError`; 改用 `json.dumps(lyrics.metadata.to_dict())`, 或者直接
+  `json.dumps(lyrics.to_dict())`. 读写的常用写法不变: `meta["ti"]`、`.get()`、
+  `.items()`、`dict(meta)`、`== dict`、`lyrics.metadata = {...}`, 同名取最后一次
+  出现的值, 与 0.4.x 一致. 要拿全部条目 (含重复) 用 `to_pairs()` / `getlist()`.
+- `lemonyrics` 命令移除, 改用 `python -m lemony_lrc_parser`.
+- 超过 `[9999:59.999]` 的时间戳, `dumps()` 抛 `TimestampOverflowError`. 0.4.x 会
+  写出解析器读不回来的 5 位分钟标签.
+
+不报错但结果会变的改动:
+
+- `Lyrics == Lyrics` 也比较 metadata. 只有 metadata 不同的两份歌词不再相等.
+- `python -m lemony_lrc_parser validate` 先输出解析报告 (孤儿行、被忽略的逐字标记
+  等, 位置写成源文件行号 `line N`), 再输出校验问题 (位置写成 `lyrics[N]`, 0.4.x
+  里同样写成 `line N`). 解析报告里会丢正文的事件算 error, 所以带孤儿行的文件在
+  `--fail-on-error` 下会以退出码 1 返回, 0.4.x 返回 0.
+- `validate --strict` 改名 `--fail-on-error`. 旧名仍可用并提示改名, 0.6.0 移除.
+- CLI 读写都不做换行转换. 在 Windows 上 `to-srt` / `to-webvtt` 写 LF (0.4.x 经
+  文本模式写成 CRLF), `offset` 默认沿用输入文件的行尾.
+- 尖括号写的空 cue (`<00:02.000>`) 不再把后面的行挂成自己的翻译. 0.4.x 用户很少
+  遇到: 真实文件里几乎没有这种写法, 它来自本库自己的输出.
+
+即将移除:
+
+- `"xxx" in <模型>` (`LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics`) 的
+  `DeprecationWarning` 写明 0.6.0 起抛 `TypeError`. 按文本查找用
+  `contains_text()` / `find_text()` / `find_regex()`.
+
+### 新功能一览
+
+- 解析报告 `parse_with_report()` 与序列化报告 `dump_with_report()`: 把"读入或写出
+  时丢了什么"从日志变成数据. 前者的位置是源文件行号, 后者是行下标. README「解析
+  报告」「序列化报告」两节有示例.
+- 严格模式 `ParseOptions(strict=True)`: 解析时会丢掉正文或逐字时间就当场抛
+  `InvalidLyricsError`. 补不上的结束标记不算.
+- 行尾 `SerializationOptions(line_ending="lf" | "crlf")`, 默认 `"lf"`, 输出与平台
+  无关; 源文件的行尾用 `detect_line_ending()` 或 `ParseReport.line_ending` 探测,
+  不自动沿用.
+- 安全变更 `add_line()` / `sort_inplace()` / `sorted()`, 正则搜索 `find_regex()` /
+  `contains_regex()`, `LyricLine.duration`, 紧凑的调试 repr.
+- CLI `offset --line-ending {keep,lf,crlf}`.
+
 ## [0.5.0rc1] — 2026-10-11
 
 0.5.0 的候选版本. 公开接口从这一版起冻结, 到 0.5.0 之间只修 bug. 相对 0.5.0b3 有
@@ -668,7 +720,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0rc1...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0
 [0.5.0rc1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...v0.5.0rc1
 [0.5.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...v0.5.0b3
 [0.5.0b2]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b1...v0.5.0b2
