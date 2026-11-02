@@ -24,7 +24,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-requires-python = ">=3.9,<3.17"
+# 只设下界, 故意不设上界: 本库是纯 Python, 没有 ABI 依赖, 而 Requires-Python
+# 的上界会让更新的解释器在 pip 里回退到更老的发行版. "测过哪些版本"由 Classifier
+# 表达. 依据与兜底见 docs/research/python-version-support.md.
+requires-python = ">=3.9"
 dependencies = [
     # typing-extensions 的下限按 Python 版本分档, 每一档都是实测出来的
     # (逐版本跑全量测试, 见 docs/research/typing-extensions.md 的"下限实测"):

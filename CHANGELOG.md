@@ -14,12 +14,18 @@
 
 ### Added
 
-- 支持 Python 3.16 (目前是 3.16.0a1): `requires-python` 上界放宽到 `<3.17`,
-  classifier、CI 矩阵与 tox 的 `env_list` 同步加上. 锁定的开发依赖在 3.16 上都有
-  现成 wheel, 不需要为 alpha 降级任何东西; 全量测试在 `-W error` 下通过.
-  `typing-extensions` 沿用 `python_version >= '3.15'` 那一档, 因为 3.16 与 3.15 的
-  下限表现完全一致 (见
+- 支持 Python 3.16 (目前是 3.16.0a1): classifier、CI 矩阵与 tox 的 `env_list`
+  同步加上. 锁定的开发依赖在 3.16 上都有现成 wheel, 不需要为 alpha 降级任何
+  东西; 全量测试在 `-W error` 下通过. `typing-extensions` 沿用
+  `python_version >= '3.15'` 那一档, 因为 3.16 与 3.15 的下限表现完全一致 (见
   [`docs/research/typing-extensions.md`](docs/research/typing-extensions.md)).
+
+### Changed
+
+- `requires-python` 去掉版本上界, 现在是 `>=3.9`. 本库是纯 Python, 上界换不到
+  什么: 在超出上界的新解释器上, pip 会回退到更老的发行版, 而历史版本都带着当时
+  的上界, 实际结果是直接装不上. "测过哪些版本"改由 classifier 表达, 依据与兜底见
+  [`docs/research/python-version-support.md`](docs/research/python-version-support.md).
 
 ### Tooling
 

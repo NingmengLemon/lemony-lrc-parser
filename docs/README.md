@@ -20,6 +20,8 @@ research 目录下按主题分文件：
 - [offset.md](research/offset.md)：`[offset:]` 的正负语义。
 - [timetags.md](research/timetags.md)：时间标签的宽松写法。
 - [typing-extensions.md](research/typing-extensions.md)：依赖下限实测。
+- [python-version-support.md](research/python-version-support.md)：版本支持策略，
+  为什么只设下界。
 
 ## 约定
 
