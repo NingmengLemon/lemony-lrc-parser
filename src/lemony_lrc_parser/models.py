@@ -568,9 +568,9 @@ class Lyrics(UserList[LyricLine]):
         ``"xxx" in lyrics`` 保留旧的**行相等**语义 (对 ``str`` 恒为 ``False``)
         并发 :class:`DeprecationWarning`.
         """
-        from . import query
+        from .query import contains_text as query_contains_text
 
-        return query.contains_text(self, needle)
+        return query_contains_text(self, needle)
 
     def find_text(self, needle: str) -> list[LyricLine]:
         """返回所有"主行或参考行文本包含 ``needle``"的行.
@@ -582,9 +582,9 @@ class Lyrics(UserList[LyricLine]):
             命中的行 (行对象本身, 不是文本), 按现有顺序; 未命中时为 ``[]``.
             用于替换 ``[line for line in lyrics if "xxx" in line.text]`` 这类写法.
         """
-        from . import query
+        from .query import find_text as query_find_text
 
-        return query.find_text(self, needle)
+        return query_find_text(self, needle)
 
     def find_regex(
         self,
@@ -617,9 +617,9 @@ class Lyrics(UserList[LyricLine]):
             忽略大小写不是单独的参数, 传 ``re.compile(..., re.IGNORECASE)`` 即可 ——
             这样也避免了"同一个方法参数越加越多".
         """
-        from . import query
+        from .query import find_regex as query_find_regex
 
-        return query.find_regex(
+        return query_find_regex(
             self, pattern, include_reference_lines=include_reference_lines
         )
 
@@ -630,10 +630,8 @@ class Lyrics(UserList[LyricLine]):
         include_reference_lines: bool = True,
     ) -> bool:
         """是否有任意一行匹配 ``pattern``; 参数语义见 :meth:`find_regex`."""
-        from . import query
-
-        return query.contains_regex(
-            self, pattern, include_reference_lines=include_reference_lines
+        return bool(
+            self.find_regex(pattern, include_reference_lines=include_reference_lines)
         )
 
     def lines_in_range(self, start_ms: int, end_ms: int) -> list[LyricLine]:
@@ -650,9 +648,9 @@ class Lyrics(UserList[LyricLine]):
         Raises:
             ProgrammingError: ``end_ms < start_ms``.
         """
-        from . import query
+        from .query import lines_in_range as query_lines_in_range
 
-        return query.lines_in_range(self, start_ms, end_ms)
+        return query_lines_in_range(self, start_ms, end_ms)
 
     def __contains__(self, item: object) -> bool:
         """成员判定: 按**行相等**判定 (与 ``UserList`` 的历史行为一致).

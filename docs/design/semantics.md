@@ -31,11 +31,18 @@ LRC 没有官方规范，下面每一条都是在"保真 / 易用 / 与其它实
 
 ## 时间范围查询
 
-`lines_in_range(start_ms, end_ms)` 只做交集：行的有效区间与闭区间
-`[start_ms, end_ms]` 有重叠就算命中，边界点也算。`end is None` 的行按下一个
-`start` 更大的行推断；最后一行没有 `end` 时视为延伸到区间终点。参考行不单独
-返回，它们跟随主行。输入不要求有序，返回顺序沿现有行序；`end_ms < start_ms` 抛
-`ProgrammingError`。
+- 现象：播放或编辑时经常要按时间范围取行；行的 `end` 可能未知，输入也不保证
+  有序。
+- 选择：`lines_in_range(start_ms, end_ms)` 只做交集，闭区间，边界点也算。
+  `end is None` 的行按下一个严格更大的 `start` 推断；最后一行没有 `end` 时视为
+  延伸到区间终点。参考行不单独返回，返回顺序沿现有行序；`end_ms < start_ms` 抛
+  `ProgrammingError`。
+- 理由：查询是只读视图，不改变数据。用严格更大的 `start` 推断，重复时间戳的行
+  不会被压成零长度，和"行持续到下一句真正开始"的播放语义一致。解析端的
+  `fill_implicit_line_end` 按排序后的下一项处理，字幕导出在末行用
+  `default_duration_ms` 兜底；三者用途不同，不能简单统一。
+- 要改的话先动什么：先定重复时间戳和末行 `end is None` 的归属，再改
+  `query.py` 的推断与 README 的说明。
 
 ## 乱序与负时间戳
 
