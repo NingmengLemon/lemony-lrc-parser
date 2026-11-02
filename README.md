@@ -15,7 +15,7 @@
 - 支持 metadata 标签 (同名 key 可重复, 不丢重复项)
 - 支持折叠时间标签
 - 支持参考行
-- 支持歌词合并
+- 支持歌词合并 (精确匹配与毫秒级容差)
 - 与简单字幕格式 (SRT / WebVTT) 互转
 - 时间偏移 (`apply_delta` / `<<` / `>>` 运算符)
 - 字典序列化 (`to_dict()` / `from_dict()`)
@@ -230,7 +230,16 @@ for line in combined:
 
 # other_as_refline_only=False 时, 翻译中找不到对应时间点的行会作为新行保留
 combined = main.combine(translation, other_as_refline_only=False)
+
+# 时间轴有几毫秒偏差时, 用 MergeOptions 开启容差
+merged, report = main.merge_with_report(
+    translation, options=llp.MergeOptions(tolerance_ms=10)
+)
+print(report.exact_matches, report.fuzzy_matches, report.unmatched_other)
 ```
+
+`merge_with_report` 返回合并结果和 `MergeReport`; 默认 `tolerance_ms=0` 只做精确匹配,
+几毫秒的偏差可以传 10 一类的值, 模糊匹配对在报告里可查.
 
 `+` / `+=` 在 0.5.x 仍可用, 但会发 `DeprecationWarning`; 0.6.0 移除. 需要合并时
 用 `combine(other, other_as_refline_only=False)` 或

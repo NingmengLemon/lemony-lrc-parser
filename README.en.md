@@ -15,7 +15,7 @@ Lemon-flavored LRC Parser for Python.
 - Metadata tags (duplicate keys are kept)
 - Folded time tags
 - Reference lines
-- Lyrics merging
+- Lyrics merging (exact and millisecond-tolerance matching)
 - Conversion to/from simple subtitle formats (SRT / WebVTT)
 - Time offset (`apply_delta` / `<<` / `>>` operators)
 - Dict serialization (`to_dict()` / `from_dict()`)
@@ -238,7 +238,17 @@ for line in combined:
 
 # With other_as_refline_only=False, lines in the translation without a matching timestamp are kept as new lines
 combined = main.combine(translation, other_as_refline_only=False)
+
+# When the timelines differ by a few milliseconds, enable the tolerance
+merged, report = main.merge_with_report(
+    translation, options=llp.MergeOptions(tolerance_ms=10)
+)
+print(report.exact_matches, report.fuzzy_matches, report.unmatched_other)
 ```
+
+`merge_with_report` returns the merged result and a `MergeReport`. The default
+`tolerance_ms=0` is exact matching only; a value such as 10 covers a few
+milliseconds of drift, and the fuzzy pairs are visible in the report.
 
 `+` / `+=` still work in 0.5.x but emit a `DeprecationWarning`; they are removed
 in 0.6.0. Use `combine(other, other_as_refline_only=False)` or
