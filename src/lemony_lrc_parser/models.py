@@ -567,9 +567,9 @@ class Lyrics(UserList[LyricLine]):
         ``"xxx" in lyrics`` 保留旧的**行相等**语义 (对 ``str`` 恒为 ``False``)
         并发 :class:`DeprecationWarning`.
         """
-        return any(
-            line.contains_text(needle, include_reference_lines=True) for line in self
-        )
+        from . import query
+
+        return query.contains_text(self, needle)
 
     def find_text(self, needle: str) -> list[LyricLine]:
         """返回所有"主行或参考行文本包含 ``needle``"的行.
@@ -581,11 +581,9 @@ class Lyrics(UserList[LyricLine]):
             命中的行 (行对象本身, 不是文本), 按现有顺序; 未命中时为 ``[]``.
             用于替换 ``[line for line in lyrics if "xxx" in line.text]`` 这类写法.
         """
-        return [
-            line
-            for line in self
-            if line.contains_text(needle, include_reference_lines=True)
-        ]
+        from . import query
+
+        return query.find_text(self, needle)
 
     def find_regex(
         self,
@@ -618,16 +616,11 @@ class Lyrics(UserList[LyricLine]):
             忽略大小写不是单独的参数, 传 ``re.compile(..., re.IGNORECASE)`` 即可 ——
             这样也避免了"同一个方法参数越加越多".
         """
-        compiled = re.compile(pattern)
-        return [
-            line
-            for line in self
-            if compiled.search(line.text)
-            or (
-                include_reference_lines
-                and any(compiled.search(ref.text) for ref in line.reference_lines)
-            )
-        ]
+        from . import query
+
+        return query.find_regex(
+            self, pattern, include_reference_lines=include_reference_lines
+        )
 
     def contains_regex(
         self,
@@ -636,9 +629,29 @@ class Lyrics(UserList[LyricLine]):
         include_reference_lines: bool = True,
     ) -> bool:
         """是否有任意一行匹配 ``pattern``; 参数语义见 :meth:`find_regex`."""
-        return bool(
-            self.find_regex(pattern, include_reference_lines=include_reference_lines)
+        from . import query
+
+        return query.contains_regex(
+            self, pattern, include_reference_lines=include_reference_lines
         )
+
+    def lines_in_range(self, start_ms: int, end_ms: int) -> list[LyricLine]:
+        """返回与 ``[start_ms, end_ms]`` 有交集的行.
+
+        Args:
+            start_ms: 区间起点 (毫秒, 闭区间).
+            end_ms: 区间终点 (毫秒, 闭区间).
+
+        Returns:
+            命中的主行, 按现有顺序; 参考行不单独返回. 行的 ``end`` 未知时按下一个
+            ``start`` 更大的行推断, 最后一行没有 ``end`` 时视为延伸到区间终点.
+
+        Raises:
+            ProgrammingError: ``end_ms < start_ms``.
+        """
+        from . import query
+
+        return query.lines_in_range(self, start_ms, end_ms)
 
     def __contains__(self, item: object) -> bool:
         """成员判定: 按**行相等**判定 (与 ``UserList`` 的历史行为一致).

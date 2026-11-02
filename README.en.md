@@ -23,6 +23,7 @@ Lemon-flavored LRC Parser for Python.
 - Configurable parse and serialization options
 - Data consistency validation API (`validate_lyrics` / `Lyrics.validate()`)
 - Text lookup (`contains_text()` / `find_text()` / `find_regex()`)
+- Time-range lookup (`lines_in_range()`)
 - Round-trip fidelity invariant tests (`parser output always validates` /
   `dumps converges in one round` / `line structure is stable`)
 - CLI tool (`python -m lemony_lrc_parser`)
@@ -185,6 +186,19 @@ lyrics.contains_regex("love")  # boolean form
 Regex matching is **line-scoped**: a `\n` in the pattern can never match (in LRC
 a newline is a line boundary). The lines themselves are returned; use
 `enumerate(lyrics)` when you need the index.
+
+### Lines in a Time Range
+
+`lines_in_range(start_ms, end_ms)` returns the main lines whose effective
+interval overlaps the closed range `[start_ms, end_ms]`. A line without `end`
+is inferred to end at the next larger `start`; the last such line extends to
+the end of the query. Reference lines travel with their main line and are not
+returned separately.
+
+```python
+for line in lyrics.lines_in_range(30_000, 60_000):
+    print(line.start, line.text)
+```
 
 ### Reference Lines (Translation / Transliteration)
 

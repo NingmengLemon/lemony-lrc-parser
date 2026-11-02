@@ -7,7 +7,6 @@
 | 代号 | 内容 |
 | --- | --- |
 | DOC-1 | 新增语料统计与可复跑脚本；记录采集日期和处理步骤；旧统计标为历史快照 |
-| QUERY-1 | 新增 `query.py`，收拢 `contains_text` / `find_text` / `find_regex` / `contains_regex` 并加 `lines_in_range(start_ms, end_ms)`；只做交集，`end is None` 的行按下一行 `start` 推断，最后一行延伸到区间终点 |
 | MERGE-1 | 精确匹配后按毫秒级容差找最近行，附合并报告；同时拆出 `merge.py` |
 
 ## 0.6.0（暂缓，等主要使用方完成升级准备）

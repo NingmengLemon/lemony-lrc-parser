@@ -20,6 +20,9 @@
   `python_version >= '3.15'` 那一档, 因为 3.16 与 3.15 的下限表现完全一致 (见
   [`docs/research/typing-extensions.md`](docs/research/typing-extensions.md)).
 
+- `Lyrics.lines_in_range(start_ms, end_ms)`: 按闭区间取有交集的主行. `end` 未知的
+  行按下一行 `start` 推断, 最后一行延伸到区间终点; 参考行不单独返回.
+
 ### Changed
 
 - `requires-python` 去掉版本上界, 现在是 `>=3.9`. 本库是纯 Python, 上界换不到
@@ -31,6 +34,8 @@
   `DeprecationWarning`, 0.6.0 移除. 改用
   `combine(other, other_as_refline_only=False)` /
   `combine_inplace(other, other_as_refline_only=False)`.
+
+- `Lyrics` 的搜索方法实现迁到 `query.py`, 公开 API 不变.
 
 ### Tooling
 

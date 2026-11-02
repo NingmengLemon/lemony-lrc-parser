@@ -23,6 +23,7 @@
 - 可配置解析与序列化选项
 - 数据一致性验证 API (`validate_lyrics` / `Lyrics.validate()`)
 - 文本查找 (`contains_text()` / `find_text()` / `find_regex()`)
+- 按时间范围取行 (`lines_in_range()`)
 - 往返保真度不变量测试 (`解析结果必过校验` / `dumps 一轮收敛` / `行结构稳定`)
 - CLI 命令行工具 (`python -m lemony_lrc_parser`)
 - 解析错误附带行号与原始行 (`InvalidLyricsError.line_no` / `.raw_line`)
@@ -179,6 +180,17 @@ lyrics.contains_regex("love")  # 布尔版
 
 正则匹配是**逐行**做的: pattern 里的 `\n` 永远匹配不到 (LRC 的换行是行边界). 返回的是
 行对象本身, 需要行号时自己 `enumerate(lyrics)`.
+
+### 按时间范围取行
+
+`lines_in_range(start_ms, end_ms)` 返回与闭区间 `[start_ms, end_ms]` 有交集的
+主行. `end` 未知的行按下一个更大的 `start` 推断; 最后一行没有 `end` 时视为
+延伸到区间终点. 参考行跟随主行, 不单独返回.
+
+```python
+for line in lyrics.lines_in_range(30_000, 60_000):
+    print(line.start, line.text)
+```
 
 ### 参考行 (Translation / Transliteration)
 
