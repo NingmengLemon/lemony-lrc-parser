@@ -108,10 +108,12 @@ print(lyrics[0].duration)
 print(lyrics)
 ```
 
-`Lyrics` 的相等性比**行序列 + metadata**: 两份只有 `[ti:]` 不同的歌词不相等, 所以
-`Lyrics.loads(lyrics.dumps()) == lyrics` 可以直接当往返检查用. 与普通列表比较时
-只比行 (列表没有 metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部
-条目, 因此同名 key 的重复项与标签顺序都算数.
+`Lyrics` 的相等性比**行序列 + metadata**: 两份只有 `[ti:]` 不同的歌词不相等.
+它比较的是数据对象, 不承诺跨写法不变: 从源文本解析后再写回, token 时间可能因为
+省略冗余标签而归一化, 所以往返检查请按行级视图比较 (`start` / `end` / `text` /
+`reference_lines`), 而不是直接比 `Lyrics` 对象. 与普通列表比较时只比行 (列表没有
+metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部条目, 因此同名 key
+的重复项与标签顺序都算数.
 
 `repr()` 是给调试看的紧凑形式 (`Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))`,
 不铺开行与词元), `str()` 仍等价于 `dumps()`.

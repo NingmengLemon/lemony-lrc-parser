@@ -112,8 +112,11 @@ print(lyrics)
 ```
 
 `Lyrics` equality compares the **line sequence plus metadata**: two lyrics
-differing only in `[ti:]` are not equal, so
-`Lyrics.loads(lyrics.dumps()) == lyrics` works as a round-trip check. Compared
+differing only in `[ti:]` are not equal. It compares data objects and does not
+guarantee stability across source spellings: after parsing source text and
+dumping it, token times may normalize because redundant tags are omitted, so
+compare line-level views (`start` / `end` / `text` / `reference_lines`) for
+round-trip checks instead of comparing `Lyrics` objects directly. Compared
 against a plain list only the lines count (a list has no metadata). Metadata
 equality follows `Metadata`: every entry counts, so duplicated keys and tag
 order both matter.

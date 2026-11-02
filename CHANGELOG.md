@@ -32,6 +32,13 @@
 - `ty check` 在 3.16 上仍按 3.15 语义执行: ty 0.0.80 的 `--python-version` 最高
   只到 3.15, 这一点等上游跟进, 不影响本库的运行时支持.
 
+### Docs
+
+- 补充序列化输出规范与往返契约: `dumps()` 写出固定的规范形式; `loads(dumps(x))`
+  在默认写法下的相等保证到行级 (已知有损写法除外), token 时间可能因省略冗余
+  标签而归一化. 见
+  [`docs/design/semantics.md`](docs/design/semantics.md#序列化输出).
+
 ## [0.5.0] — 2026-10-11
 
 结构化的读写报告、可重复的 metadata、严格模式与行尾控制. 与 0.5.0rc1 的代码相同.
@@ -139,7 +146,7 @@
   `metadata-key-unparsable` / `metadata-value-unbalanced` / `metadata-value-newline`.
   `DumpReport.lossy` 取 `LOSSY_DUMP_CODES` 里的那些, 即除
   `bracket-first-tag-adds-token` 外的全部. 每个事件同时照旧打日志, 所以把库的日志
-  静音的消费方 (例如 karakara) 也能拿到同样的信息.
+  静音的消费方也能拿到同样的信息.
 
 - **行尾风格** (WRITE-1 的一部分): `SerializationOptions(line_ending="lf" | "crlf")`,
   默认 `"lf"`, 默认输出不变. 写出的行尾只由它决定, 与平台无关. 另有
