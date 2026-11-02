@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
+    Literal,
     SupportsIndex,
     TextIO,
     TypedDict,
@@ -77,7 +78,7 @@ def _warn_ambiguous_contains(owner: str, method: str) -> None:
     )
 
 
-def _warn_deprecated_merge_operator(operator: str) -> None:
+def _warn_deprecated_merge_operator(operator: Literal["+", "+="]) -> None:
     """提示 ``+`` / ``+=`` 已弃用.
 
     这两个运算符把"按时间戳合并"写成列表运算的样子, 且固定

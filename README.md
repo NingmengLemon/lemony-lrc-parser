@@ -221,7 +221,9 @@ combined = main.combine(translation, other_as_refline_only=False)
 ```
 
 `+` / `+=` 在 0.5.x 仍可用, 但会发 `DeprecationWarning`; 0.6.0 移除. 需要合并时
-用 `combine` / `combine_inplace`, 并显式选择 `other_as_refline_only`.
+用 `combine(other, other_as_refline_only=False)` 或
+`combine_inplace(other, other_as_refline_only=False)`; `combine` 的默认值会丢掉
+对不上的行.
 
 ### 字典序列化 (to_dict / from_dict)
 

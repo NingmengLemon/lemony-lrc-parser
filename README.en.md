@@ -227,8 +227,9 @@ combined = main.combine(translation, other_as_refline_only=False)
 ```
 
 `+` / `+=` still work in 0.5.x but emit a `DeprecationWarning`; they are removed
-in 0.6.0. Use `combine` / `combine_inplace` and choose `other_as_refline_only`
-explicitly.
+in 0.6.0. Use `combine(other, other_as_refline_only=False)` or
+`combine_inplace(other, other_as_refline_only=False)`; the default `combine`
+drops lines that do not match.
 
 ### Dict Serialization (to_dict / from_dict)
 
