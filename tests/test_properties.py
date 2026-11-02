@@ -33,6 +33,9 @@ from lemony_lrc_parser.timetag import MAX_TIMESTAMP_MS
 #: 写出时不带行间空行: 空行会重置参考行锚点, 与这里的生成器无关, 只会制造噪音.
 DUMPS = SerializationOptions(line_separator="")
 
+#: 带行间空行的写出选项: 覆盖 line_separator="\n" 的收敛性.
+DUMPS_BLANK = SerializationOptions(line_separator="\n")
+
 #: 时间范围: 0 到 99 分钟. 更大的分钟数也合法, 但对性质没有额外信息量.
 MAX_MS = 99 * 60_000
 
@@ -252,6 +255,14 @@ def test_dumps_converges_on_arbitrary_input(text: str) -> None:
     d1 = Lyrics.loads(text).dumps(options=DUMPS)
     d2 = Lyrics.loads(d1).dumps(options=DUMPS)
     assert Lyrics.loads(d2).dumps(options=DUMPS) == d2
+
+
+@given(lrc_texts)
+def test_dumps_converges_with_blank_line_separator(text: str) -> None:
+    """带空行分隔的输出同样最多一轮收敛 (原固定语料矩阵的覆盖)."""
+    d1 = Lyrics.loads(text).dumps(options=DUMPS_BLANK)
+    d2 = Lyrics.loads(d1).dumps(options=DUMPS_BLANK)
+    assert Lyrics.loads(d2).dumps(options=DUMPS_BLANK) == d2
 
 
 # ---------------------------------------------------------------------------

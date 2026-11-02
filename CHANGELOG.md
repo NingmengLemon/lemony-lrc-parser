@@ -42,6 +42,9 @@
 - `ty check` 在 3.16 上仍按 3.15 语义执行: ty 0.0.80 的 `--python-version` 最高
   只到 3.15, 这一点等上游跟进, 不影响本库的运行时支持.
 
+- `test_roundtrip_matrix.py` 的固定种子随机语料移除; 解析器输出合法性与 dumps
+  收敛不变量由 `tests/test_properties.py` 的 hypothesis 策略覆盖.
+
 ### Docs
 
 - 补充序列化输出规范与往返契约: `dumps()` 写出固定的规范形式; `loads(dumps(x))`
