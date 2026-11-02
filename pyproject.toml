@@ -19,17 +19,18 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: 3.16",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-requires-python = ">=3.9,<3.16"
+requires-python = ">=3.9,<3.17"
 dependencies = [
     # typing-extensions 的下限按 Python 版本分档, 每一档都是实测出来的
-    # (逐版本跑全量测试, 见 docs/research.md 的"typing-extensions 下限实测"):
+    # (逐版本跑全量测试, 见 docs/research/typing-extensions.md 的"下限实测"):
     #   3.9–3.11: 4.4.0  (Self 需 4.0+, override 需 4.4+)
     #   3.12–3.14: 4.6.0  (4.4/4.5 在 3.12+ 上会 TypeError: TypeVar 不能作基类)
-    #   >=3.15:   4.14.0  (4.10–4.13 在 3.15 上 AttributeError; 区间不连续,
+    #   >=3.15:   4.14.0  (4.10–4.13 在 3.15/3.16 上 AttributeError; 区间不连续,
     #                      所以只能写成 >=4.14.0 而不是沿用 4.6.0)
     "typing-extensions>=4.4.0; python_version < '3.12'",
     "typing-extensions>=4.6.0; python_version >= '3.12' and python_version < '3.15'",
@@ -101,7 +102,7 @@ dev = [
 ]
 
 [tool.tox]
-env_list = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+env_list = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.16"]
 
 [tool.tox.env_run_base]
 description = "Run tests under {base_python}"

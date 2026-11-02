@@ -8,18 +8,21 @@
 | 3.9 / 3.10 / 3.11 | ✅ | — | — | — | — | — | — | 4.4.0 |
 | 3.12 / 3.13 / 3.14 | ❌ | ❌ | ✅ | — | — | — | — | 4.6.0 |
 | 3.15（rc1、rc2） | ❌ | — | ✅ | ❌ | ❌ | ❌ | ✅ | 4.14.0 |
+| 3.16（3.16.0a1） | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | 4.14.0 |
 
 4.3.0 及更早没有 `override`，直接 `ImportError`。
 
 失败模式：
 
-- 3.12-3.14 配 4.4 / 4.5：`TypeError: type 'typing.TypeVar' is not an acceptable
+- 3.12 起配 4.4 / 4.5：`TypeError: type 'typing.TypeVar' is not an acceptable
   base type`，旧版不认识新解释器的 typing 内部结构。
-- 3.15 配 4.10-4.13：`AttributeError: module 'typing' has no attribute …`，
-  这几个版本引用了 3.15 里改名或移除的属性，4.14.0 修好。
+- 3.15 起配 4.10-4.13：`AttributeError: module 'typing' has no attribute
+  'no_type_check_decorator'`，这几个版本引用了 3.15 里移除的属性，4.14.0 修好。
 
 3.15 那一档是区间断裂而不是下限更高：4.6.0 能跑通，但 4.10-4.13 会炸，写成
-`>=4.6.0` 会放进断裂区间，所以只能写 `>=4.14.0`。
+`>=4.6.0` 会放进断裂区间，所以只能写 `>=4.14.0`。3.16 的实测结果与 3.15 完全一致
+（同样 4.6.0 可、4.10-4.13 不可、4.14.0 可），因此上面 `python_version >= '3.15'`
+那一档同时覆盖 3.16，不需要为 3.16 单开一条依赖声明。
 
 `pyproject.toml` 的分档依赖与 CI 的 `lowest-typing-extensions` 矩阵都以这张表
 为准。

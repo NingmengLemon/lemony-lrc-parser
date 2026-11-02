@@ -12,6 +12,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- 支持 Python 3.16 (目前是 3.16.0a1): `requires-python` 上界放宽到 `<3.17`,
+  classifier、CI 矩阵与 tox 的 `env_list` 同步加上. 锁定的开发依赖在 3.16 上都有
+  现成 wheel, 不需要为 alpha 降级任何东西; 全量测试在 `-W error` 下通过.
+  `typing-extensions` 沿用 `python_version >= '3.15'` 那一档, 因为 3.16 与 3.15 的
+  下限表现完全一致 (见
+  [`docs/research/typing-extensions.md`](docs/research/typing-extensions.md)).
+
+### Tooling
+
+- `ty check` 在 3.16 上仍按 3.15 语义执行: ty 0.0.80 的 `--python-version` 最高
+  只到 3.15, 这一点等上游跟进, 不影响本库的运行时支持.
+
 ## [0.5.0] — 2026-10-11
 
 结构化的读写报告、可重复的 metadata、严格模式与行尾控制. 与 0.5.0rc1 的代码相同.
