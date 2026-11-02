@@ -49,7 +49,8 @@ class MergeReport:
     Attributes:
         exact_matches: 按 ``start`` 精确匹配到的 ``other`` 行数.
         fuzzy_matches: 按容差模糊匹配到的 ``other`` 行数.
-        unmatched_main: 没有被匹配的主行 ``start``, 按主行顺序.
+        unmatched_main: 没有被匹配的主行 ``start``, 按主行顺序. 同一 ``start``
+            有多行时, 未匹配的后行会让同一个 ``start`` 重复出现.
         unmatched_other: 没有被匹配的 ``other`` 行 ``start``, 按 ``other`` 行顺序.
         fuzzy_pairs: 模糊匹配的 ``(主行 start, other 行 start)``, 按处理顺序.
     """
@@ -98,7 +99,8 @@ def merge_inplace(
     1. 先按 ``start`` 精确匹配; 命中多个 ``other`` 行时全部挂到同一主行.
     2. 剩下的 ``other`` 行在未匹配的主行里找 ``abs(delta) <= tolerance_ms``
        的最近一行; 每个主行最多被模糊匹配一次, 距离相同取更早的主行.
-    3. 仍未匹配的 ``other`` 行按 ``other_as_refline_only`` 丢弃或保留为新行.
+    3. 仍未匹配的 ``other`` 行按 ``other_as_refline_only`` 丢弃或保留为新行;
+       保留时, 同一 ``start`` 的后续行挂到第一条新行上, 与旧的合并行为一致.
 
     Args:
         main: 主歌词; 会被修改.
@@ -147,24 +149,32 @@ def merge_inplace(
     fuzzy_matches = 0
     unmatched_other: list[int] = []
     fuzzy_pairs: list[tuple[int, int]] = []
+    appended: dict[int, LyricLine] = {}
 
     for line in pending_other:
-        best: tuple[int, int] | None = None
+        appended_anchor = appended.get(line.start)
+        if appended_anchor is not None:
+            _attach_reference(appended_anchor, line)
+            unmatched_other.append(line.start)
+            continue
+        best: tuple[int, int, int] | None = None
         for index, anchor in enumerate(main_lines):
             if index in matched_main:
                 continue
             delta = abs(anchor.start - line.start)
             if delta > opts.tolerance_ms:
                 continue
-            candidate = (delta, index)
+            candidate = (delta, anchor.start, index)
             if best is None or candidate < best:
                 best = candidate
         if best is None:
             unmatched_other.append(line.start)
             if not opts.other_as_refline_only:
-                main.data.append(line.copy())
+                new_line = line.copy()
+                appended[line.start] = new_line
+                main.data.append(new_line)
             continue
-        _, index = best
+        _, _, index = best
         anchor = main_lines[index]
         _attach_reference(anchor, line)
         matched_main.add(index)

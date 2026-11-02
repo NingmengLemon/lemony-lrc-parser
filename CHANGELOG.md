@@ -23,9 +23,10 @@
 - `Lyrics.lines_in_range(start_ms, end_ms)`: 按闭区间取有交集的主行. `end` 未知的
   行按下一个严格更大的 `start` 推断, 最后一行延伸到区间终点; 参考行不单独返回.
 
-- `Lyrics.merge` / `merge_with_report` / `merge_inplace` 与 `MergeOptions` /
-  `MergeReport`: 先按 `start` 精确匹配, 再按毫秒级容差找最近的未匹配主行;
-  默认 `tolerance_ms=0`, 报告区分精确/模糊/未匹配.
+- `Lyrics.merge` / `merge_with_report` / `merge_inplace`、顶层 `merge_lyrics` /
+  `merge_with_report` / `merge_inplace` 与 `MergeOptions` / `MergeReport`: 先按
+  `start` 精确匹配, 再按毫秒级容差找最近的未匹配主行; 默认 `tolerance_ms=0`,
+  报告区分精确/模糊/未匹配.
 
 ### Changed
 

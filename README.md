@@ -232,8 +232,11 @@ for line in combined:
 combined = main.combine(translation, other_as_refline_only=False)
 
 # 时间轴有几毫秒偏差时, 用 MergeOptions 开启容差
+shifted = llp.loads(
+    "[00:33.815]背着夕阳走在返家的路上\n[00:39.585]跟在你的后面一起走着\n"
+)
 merged, report = main.merge_with_report(
-    translation, options=llp.MergeOptions(tolerance_ms=10)
+    shifted, options=llp.MergeOptions(tolerance_ms=10)
 )
 print(report.exact_matches, report.fuzzy_matches, report.unmatched_other)
 ```

@@ -39,7 +39,15 @@ from .exceptions import (
     TimestampOverflowError,
     TimestampUnderflowError,
 )
-from .merge import MergeOptions, MergeReport, merge, merge_inplace, merge_with_report
+from .merge import (
+    MergeOptions,
+    MergeReport,
+    merge_inplace,
+    merge_with_report,
+)
+from .merge import (
+    merge as merge_lyrics,
+)
 from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
 from .models import (
     BasicLyricLine,
@@ -113,7 +121,7 @@ __all__ = [
     "parse_lrc",
     "parse_with_report",
     "dump_with_report",
-    "merge",
+    "merge_lyrics",
     "merge_with_report",
     "merge_inplace",
     "detect_line_ending",

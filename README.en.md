@@ -240,8 +240,9 @@ for line in combined:
 combined = main.combine(translation, other_as_refline_only=False)
 
 # When the timelines differ by a few milliseconds, enable the tolerance
+shifted = llp.loads("[00:01.005]你好\n[00:02.005]世界\n")
 merged, report = main.merge_with_report(
-    translation, options=llp.MergeOptions(tolerance_ms=10)
+    shifted, options=llp.MergeOptions(tolerance_ms=10)
 )
 print(report.exact_matches, report.fuzzy_matches, report.unmatched_other)
 ```

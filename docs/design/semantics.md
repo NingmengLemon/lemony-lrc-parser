@@ -134,7 +134,8 @@ LRC 没有官方规范，下面每一条都是在"保真 / 易用 / 与其它实
 - `other_as_refline_only=False` 时，仍未匹配的 `other` 行保留为新行；默认丢弃。
 - `MergeReport` 记录精确/模糊匹配数、未匹配的主行与 `other` 行 `start`，以及
   模糊匹配对。模糊匹配必须可审计。
-- metadata 以主歌词为准，`other` 独有的 key 追加；输入对象不被修改。
+- metadata 以主歌词为准，`other` 独有的 key 追加。`merge` / `merge_with_report`
+  不修改输入；`merge_inplace` / `combine_inplace` 原地修改主歌词。
 - `combine` / `combine_inplace` 固定精确匹配；`+` / `+=` 已弃用，也是精确匹配。
 
 ## metadata
