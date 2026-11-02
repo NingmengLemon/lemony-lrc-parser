@@ -456,8 +456,8 @@ gets an empty gap in front of it.
 
 `dumps` output is a fixed point "after at most one round": `d2 = dumps(loads(d1))`
 and `d3 = dumps(loads(d2))` are guaranteed equal. Under the current
-implementation (including 20k random corpora and 6622 real files) the first round
-is already a fixed point.
+implementation (random corpora and the real-corpus snapshots) the first round is
+already a fixed point.
 
 Additionally, if a line end time was inferred from word tags and contradicts the
 line start (`end <= start`), the inference is discarded (`line.end` set back to
@@ -508,8 +508,8 @@ Intentional deviations / areas the standard does not cover:
   time tags (e.g. `[00:05.650][00:05.730]徘[00:06.130]徊[00:06.450]`; the standard's
   "limitations" section reads it as a repeated line); `[t1][t2]text` with no other
   time tag in the body is still read as the folded repeated-line shorthand, i.e.
-  two lines. In the real corpus, 199 lines use this form, 197 of which have
-  the two tags only 0.1-1.3s apart.
+  two lines. In the historical corpus snapshot, 199 lines use this form, 197 of
+  which have the two tags only 0.1-1.3s apart.
 - A line with only angle-bracket tags (e.g. `<00:01.000><00:02.000>`) is kept
   as an empty-text line to carry an empty subtitle cue; `dumps` writes it back
   in the same form.

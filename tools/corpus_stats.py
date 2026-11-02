@@ -2,9 +2,10 @@
 
 用法::
 
-    uv run python tools/corpus_stats.py <corpus-dir>
+    uv run python tools/corpus_stats.py <corpus-dir> [--recursive]
 
-输出 Markdown 表格, 便于贴进 ``docs/research/``. 语料本身不进仓库.
+默认只扫描目录第一层, ``--recursive`` 递归子目录. 输出 Markdown 表格, 便于贴进
+``docs/research/``. 语料本身不进仓库; 目录为空时返回非 0.
 """
 
 from __future__ import annotations
@@ -12,16 +13,20 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
 from lemony_lrc_parser import Lyrics, parse_with_report
+from lemony_lrc_parser.regex import METATAG_KEY_REGEX
 
 __all__ = ["main"]
 
+# 下面的正则只用于统计"出现了哪些形态", 不是解析器的语法定义; 语法以
+# lemony_lrc_parser.regex 为准.
 TAG_ANY = re.compile(r"\[\d{1,4}:\d{1,2}")
 TAG_ONLY = re.compile(r"^\s*\[\d{1,4}:\d{1,2}(?:[.:]\d{1,6})?\]\s*$")
-METADATA = re.compile(r"^\s*\[([A-Za-z][A-Za-z0-9]{0,15}):")
+METADATA = re.compile(rf"^\s*\[({METATAG_KEY_REGEX}):")
 MULTI_LEADING = re.compile(r"^\s*(?:\[\d{1,4}:\d{1,2}(?:[.:]\d{1,6})?\]){2,}")
 FRACTION = re.compile(r"\[\d{1,4}:\d{1,2}[.:](\d{1,6})\]")
 THREE_PART = re.compile(r"\[\d{1,4}:\d{1,2}:\d{1,2}\]")
@@ -33,18 +38,18 @@ CATEGORIES = ("original", "translated", "single")
 #: 输出到 Markdown 表的指标, 按阅读顺序.
 METRICS = (
     ("files", "文件"),
-    ("lrc_files", "LRC 文件"),
-    ("non_lrc_files", "无时间标签的文件"),
+    ("tagged_files", "含时间标签的文件"),
+    ("untagged_files", "无时间标签的文件"),
     ("lines", "行数"),
     ("byword_files", "含逐字标签的文件"),
     ("tag_only_lines", "只有时间标签的行"),
     ("blank_lines", "空行"),
     ("metadata_files", "含 metadata 的文件"),
     ("metadata_lines", "metadata 行"),
-    ("digits_pure2", "行标签纯 2 位尾数"),
-    ("digits_pure3", "行标签纯 3 位尾数"),
-    ("digits_mixed", "行标签 2/3 位混用"),
-    ("digits_none", "没有行标签尾数"),
+    ("digits_pure2", "行标签纯 2 位尾数的文件"),
+    ("digits_pure3", "行标签纯 3 位尾数的文件"),
+    ("digits_mixed", "行标签 2/3 位混用的文件"),
+    ("digits_none", "没有行标签尾数的文件"),
     ("frac2", "2 位尾数标签"),
     ("frac3", "3 位尾数标签"),
     ("frac_other", "其它位数尾数标签"),
@@ -96,10 +101,10 @@ def scan_file(path: Path) -> tuple[str, Counter[str], list[str], list[int]]:
         stats["crlf_files"] = 1
 
     if not TAG_ANY.search(text):
-        stats["non_lrc_files"] = 1
+        stats["untagged_files"] = 1
         return cat, stats, [], []
 
-    stats["lrc_files"] = 1
+    stats["tagged_files"] = 1
     lines = text.splitlines()
     stats["lines"] = len(lines)
 
@@ -166,11 +171,19 @@ def scan_file(path: Path) -> tuple[str, Counter[str], list[str], list[int]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("corpus", type=Path, help="包含 .lrc 文件的目录")
+    parser.add_argument("--recursive", action="store_true", help="递归扫描子目录")
     args = parser.parse_args()
 
     logging.getLogger("lemony_lrc_parser").setLevel(logging.ERROR)
 
-    files = sorted(path for path in args.corpus.iterdir() if path.is_file())
+    if not args.corpus.is_dir():
+        print(f"not a directory: {args.corpus}", file=sys.stderr)
+        return 1
+    paths = args.corpus.rglob("*") if args.recursive else args.corpus.iterdir()
+    files = sorted(path for path in paths if path.is_file())
+    if not files:
+        print(f"no files found under {args.corpus}", file=sys.stderr)
+        return 1
     stats = {cat: Counter() for cat in CATEGORIES}
     codes: Counter[str] = Counter()
     code_files: Counter[str] = Counter()

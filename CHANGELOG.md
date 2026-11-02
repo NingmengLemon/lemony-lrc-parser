@@ -52,11 +52,12 @@
 - `test_roundtrip_matrix.py` 的固定种子随机语料移除; 解析器输出合法性与 dumps
   收敛不变量由 `tests/test_properties.py` 的 hypothesis 策略覆盖.
 
+- 新增 [`tools/corpus_stats.py`](tools/corpus_stats.py), 用于复跑语料统计.
+
 ### Docs
 
-- 新增 [`tools/corpus_stats.py`](tools/corpus_stats.py)，并用 2026-11 的原始快照
-  重做 [`docs/research/corpus.md`](docs/research/corpus.md)；旧统计在
-  `spl.md` / `blank-lines.md` / `semantics.md` 标为历史快照.
+- 用 2026-11 的原始快照重做 [`docs/research/corpus.md`](docs/research/corpus.md);
+  旧统计在 `spl.md` / `blank-lines.md` / `semantics.md` 标为历史快照.
 
 - 补充序列化输出规范与往返契约: `dumps()` 写出固定的规范形式; `loads(dumps(x))`
   在默认写法下的相等保证到行级 (已知有损写法除外), token 时间可能因省略冗余
