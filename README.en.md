@@ -216,11 +216,6 @@ translation = llp.loads("[00:01.00]你好\n[00:02.00]世界\n")
 # combine method: translation lines are attached to reference_lines at the same timestamp
 combined = main.combine(translation)
 
-# The + operator also works; note that + always uses other_as_refline_only=False,
-# i.e. lines from the other side whose timestamps do not match are kept as new lines,
-# not dropped
-combined = main + translation
-
 for line in combined:
     print(line.text)  # main lyrics
     for ref in line.reference_lines:
@@ -230,6 +225,10 @@ for line in combined:
 # With other_as_refline_only=False, lines in the translation without a matching timestamp are kept as new lines
 combined = main.combine(translation, other_as_refline_only=False)
 ```
+
+`+` / `+=` still work in 0.5.x but emit a `DeprecationWarning`; they are removed
+in 0.6.0. Use `combine` / `combine_inplace` and choose `other_as_refline_only`
+explicitly.
 
 ### Dict Serialization (to_dict / from_dict)
 

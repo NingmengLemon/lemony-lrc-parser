@@ -281,7 +281,8 @@ def test_combine_does_not_mutate_inputs(main: Lyrics, other: Lyrics) -> None:
     main_before, other_before = main.copy(), other.copy()
     main.combine(other)
     main.combine(other, other_as_refline_only=False)
-    _ = main + other
+    with pytest.warns(DeprecationWarning):
+        _ = main + other
     assert main == main_before
     assert other == other_before
 

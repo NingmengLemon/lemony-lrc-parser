@@ -27,6 +27,11 @@
   的上界, 实际结果是直接装不上. "测过哪些版本"改由 classifier 表达, 依据与兜底见
   [`docs/research/python-version-support.md`](docs/research/python-version-support.md).
 
+- `Lyrics.__add__` / `__iadd__` (`+` / `+=`) 弃用: 仍按原来的合并不丢行, 但发
+  `DeprecationWarning`, 0.6.0 移除. 改用
+  `combine(other, other_as_refline_only=False)` /
+  `combine_inplace(other, other_as_refline_only=False)`.
+
 ### Tooling
 
 - `ty check` 在 3.16 上仍按 3.15 语义执行: ty 0.0.80 的 `--python-version` 最高

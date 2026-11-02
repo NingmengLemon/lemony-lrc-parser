@@ -11,7 +11,6 @@
 | TEST-2 | `test_roundtrip_matrix.py` 的固定种子随机语料迁到 hypothesis |
 | DOC-1 | 新增语料统计与可复跑脚本；记录采集日期和处理步骤；旧统计标为历史快照 |
 | DOC-2 | 写清输出规范与行级往返契约；修正 README 的往返检查表述与 `Lyrics.__eq__` 的 docstring |
-| DEPRECATE-1 | 弃用 `+` / `+=`：保留行为并发 `DeprecationWarning`，文档与测试改用 `combine` / `combine_inplace` |
 | QUERY-1 | 新增 `query.py`，收拢 `contains_text` / `find_text` / `find_regex` / `contains_regex` 并加 `lines_in_range(start_ms, end_ms)`；只做交集，`end is None` 的行按下一行 `start` 推断，最后一行延伸到区间终点 |
 | MERGE-1 | 精确匹配后按毫秒级容差找最近行，附合并报告；同时拆出 `merge.py` |
 

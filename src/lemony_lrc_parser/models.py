@@ -77,6 +77,23 @@ def _warn_ambiguous_contains(owner: str, method: str) -> None:
     )
 
 
+def _warn_deprecated_merge_operator(operator: str) -> None:
+    """提示 ``+`` / ``+=`` 已弃用.
+
+    这两个运算符把"按时间戳合并"写成列表运算的样子, 且固定
+    ``other_as_refline_only=False``, 与 :meth:`Lyrics.combine` 的默认行为不同.
+    0.5.x 保留行为并发 ``DeprecationWarning``, 0.6.0 移除.
+    """
+    replacement = "combine" if operator == "+" else "combine_inplace"
+    warnings.warn(
+        f"`Lyrics {operator}` is deprecated; use "
+        f"`{replacement}(..., other_as_refline_only=False)` instead. "
+        f"It will be removed in 0.6.0.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
 class LyricTokenDict(TypedDict):
     """:meth:`LyricToken.to_dict` 的返回结构."""
 
@@ -657,20 +674,28 @@ class Lyrics(UserList[LyricLine]):
     def __add__(self, other: Lyrics) -> Lyrics:
         """``a + b``: 按时间戳合并两份歌词, 返回新实例, **不丢弃任何行**.
 
-        与 :meth:`combine` 的区别: 这里固定使用 ``other_as_refline_only=False``,
-        即 ``other`` 中在 ``self`` 里找不到同 ``start`` 的行会作为新行保留,
-        而不是被静默丢弃 (符合 ``+`` 的直觉语义). 需要"仅作为参考行合并"的
-        翻译合并场景, 请直接使用 :meth:`combine`.
+        Deprecated:
+            0.5.x 保留行为并发 ``DeprecationWarning``, 0.6.0 移除. ``+`` 容易与
+            列表拼接混淆, 且固定 ``other_as_refline_only=False``, 与
+            :meth:`combine` 的默认行为不同. 改用
+            ``combine(other, other_as_refline_only=False)``.
         """
         if not isinstance(other, Lyrics):
             return NotImplemented
+        _warn_deprecated_merge_operator("+")
         return self.combine(other, other_as_refline_only=False)
 
     @override
     def __iadd__(self, value: Lyrics) -> Self:
-        """``a += b``: 原地按时间戳合并, 语义与 :meth:`__add__` 一致 (不丢行)."""
+        """``a += b``: 原地按时间戳合并, 语义与 :meth:`__add__` 一致 (不丢行).
+
+        Deprecated:
+            同 :meth:`__add__`. 0.6.0 移除; 改用
+            ``combine_inplace(value, other_as_refline_only=False)``.
+        """
         if not isinstance(value, Lyrics):
             return NotImplemented
+        _warn_deprecated_merge_operator("+=")
         self.combine_inplace(value, other_as_refline_only=False)
         return self
 

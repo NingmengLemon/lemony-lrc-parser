@@ -210,10 +210,6 @@ translation = llp.loads(
 # combine 方法: 翻译行挂到同时间点的 reference_lines 中
 combined = main.combine(translation)
 
-# 也可以用 + 运算符; 注意 + 固定使用 other_as_refline_only=False,
-# 即另一方中时间戳对不上的行会作为新行保留, 不会被丢弃
-combined = main + translation
-
 for line in combined:
     print(line.text)  # 主歌词
     for ref in line.reference_lines:
@@ -223,6 +219,9 @@ for line in combined:
 # other_as_refline_only=False 时, 翻译中找不到对应时间点的行会作为新行保留
 combined = main.combine(translation, other_as_refline_only=False)
 ```
+
+`+` / `+=` 在 0.5.x 仍可用, 但会发 `DeprecationWarning`; 0.6.0 移除. 需要合并时
+用 `combine` / `combine_inplace`, 并显式选择 `other_as_refline_only`.
 
 ### 字典序列化 (to_dict / from_dict)
 
