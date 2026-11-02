@@ -658,8 +658,9 @@ class Lyrics(UserList[LyricLine]):
 
         Note:
             ``UserList`` 只看行序列, 于是"仅 metadata 不同"的两份歌词会被判为
-            相等; 这里把 metadata 一并纳入, ``loads(dumps(x)) == x`` 才真的能当
-            往返检查用. 与普通列表 / 其它 ``UserList`` 比较时仍只比行, 因为它们
+            相等; 这里把 metadata 一并纳入, 相等性才覆盖完整的数据对象. 跨写法的
+            往返检查按行级视图比较, 见 ``docs/design/semantics.md`` 的「往返
+            保真度」. 与普通列表 / 其它 ``UserList`` 比较时仍只比行, 因为它们
             没有 metadata 可比.
 
         Note:
