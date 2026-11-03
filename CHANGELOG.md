@@ -12,6 +12,11 @@
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-03
+
+非破坏性功能版本: 新增时间范围查询、毫秒级容差合并与 Python 3.16 支持;
+`+` / `+=` 进入弃用期, 0.6.0 移除.
+
 ### Added
 
 - 支持 Python 3.16 (目前是 3.16.0a1): classifier、CI 矩阵与 tox 的 `env_list`
@@ -775,7 +780,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0
 [0.5.0rc1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...v0.5.0rc1
 [0.5.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...v0.5.0b3
