@@ -12,6 +12,66 @@
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-03
+
+非破坏性功能版本: 新增时间范围查询、毫秒级容差合并与 Python 3.16 支持;
+`+` / `+=` 进入弃用期, 0.6.0 移除.
+
+### Added
+
+- 支持 Python 3.16 (目前是 3.16.0a1): classifier、CI 矩阵与 tox 的 `env_list`
+  同步加上. 锁定的开发依赖在 3.16 上都有现成 wheel, 不需要为 alpha 降级任何
+  东西; 全量测试在 `-W error` 下通过. `typing-extensions` 沿用
+  `python_version >= '3.15'` 那一档, 因为 3.16 与 3.15 的下限表现完全一致 (见
+  [`docs/research/typing-extensions.md`](docs/research/typing-extensions.md)).
+
+- `Lyrics.lines_in_range(start_ms, end_ms)`: 按闭区间取有交集的主行. `end` 未知的
+  行按下一个严格更大的 `start` 推断, 最后一行延伸到区间终点; 参考行不单独返回.
+
+- `Lyrics.merge` / `merge_with_report` / `merge_inplace`、顶层 `merge_lyrics` /
+  `merge_with_report` / `merge_inplace` 与 `MergeOptions` / `MergeReport`: 先按
+  `start` 精确匹配, 再按毫秒级容差找最近的未匹配主行; 默认 `tolerance_ms=0`,
+  报告区分精确/模糊/未匹配.
+
+### Changed
+
+- `requires-python` 去掉版本上界, 现在是 `>=3.9`. 本库是纯 Python, 上界换不到
+  什么: 在超出上界的新解释器上, pip 会回退到更老的发行版, 而历史版本都带着当时
+  的上界, 实际结果是直接装不上. "测过哪些版本"改由 classifier 表达, 依据与兜底见
+  [`docs/research/python-version-support.md`](docs/research/python-version-support.md).
+
+- `Lyrics.__add__` / `__iadd__` (`+` / `+=`) 弃用: 仍按原来的合并不丢行, 但发
+  `DeprecationWarning`, 0.6.0 移除. 改用
+  `combine(other, other_as_refline_only=False)` /
+  `combine_inplace(other, other_as_refline_only=False)`.
+
+- `Lyrics` 的搜索方法实现迁到 `query.py`, 公开 API 不变.
+
+- `combine` / `combine_inplace` 的实现迁到 `merge.py`, 行为不变.
+
+### Tooling
+
+- `ty check` 在 3.16 上仍按 3.15 语义执行: ty 0.0.80 的 `--python-version` 最高
+  只到 3.15, 这一点等上游跟进, 不影响本库的运行时支持.
+
+- `test_roundtrip_matrix.py` 的固定种子随机语料移除; 解析器输出合法性与 dumps
+  收敛不变量由 `tests/test_properties.py` 的 hypothesis 策略覆盖.
+
+- 新增 [`tools/corpus_stats.py`](tools/corpus_stats.py), 用于复跑语料统计.
+
+- tox 的 `deps` 补上 `hypothesis`; `python -m` 入口测试把子进程输出固定为
+  UTF-8, 本地 tox 环境可以直接跑完整测试.
+
+### Docs
+
+- 用 2026-11 的原始快照重做 [`docs/research/corpus.md`](docs/research/corpus.md);
+  旧统计在 `spl.md` / `blank-lines.md` / `semantics.md` 标为历史快照.
+
+- 补充序列化输出规范与往返契约: `dumps()` 写出固定的规范形式; `loads(dumps(x))`
+  在默认写法下的相等保证到行级 (已知有损写法除外), token 时间可能因省略冗余
+  标签而归一化. 见
+  [`docs/design/semantics.md`](docs/design/semantics.md#序列化输出).
+
 ## [0.5.0] — 2026-10-11
 
 结构化的读写报告、可重复的 metadata、严格模式与行尾控制. 与 0.5.0rc1 的代码相同.
@@ -119,7 +179,7 @@
   `metadata-key-unparsable` / `metadata-value-unbalanced` / `metadata-value-newline`.
   `DumpReport.lossy` 取 `LOSSY_DUMP_CODES` 里的那些, 即除
   `bracket-first-tag-adds-token` 外的全部. 每个事件同时照旧打日志, 所以把库的日志
-  静音的消费方 (例如 karakara) 也能拿到同样的信息.
+  静音的消费方也能拿到同样的信息.
 
 - **行尾风格** (WRITE-1 的一部分): `SerializationOptions(line_ending="lf" | "crlf")`,
   默认 `"lf"`, 默认输出不变. 写出的行尾只由它决定, 与平台无关. 另有
@@ -720,7 +780,8 @@
 
 - 项目初始版本: LRC 解析与序列化, 时间标签工具, tox 配置.
 
-[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.4.1...v0.5.0
 [0.5.0rc1]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b3...v0.5.0rc1
 [0.5.0b3]: https://github.com/NingmengLemon/lemony-lrc-parser/compare/v0.5.0b2...v0.5.0b3

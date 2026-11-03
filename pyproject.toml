@@ -1,6 +1,6 @@
 [project]
 name = "lemony-lrc-parser"
-version = "0.5.0"
+version = "0.5.1"
 authors = [{ name = "LemonekoUwU", email = "lemoneko233uwu@gmail.com" }]
 license = "MIT"
 description = "A simple LRC parser for Python."
@@ -19,17 +19,21 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: 3.16",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-requires-python = ">=3.9,<3.16"
+# 只设下界, 故意不设上界: 本库是纯 Python, 没有 ABI 依赖, 而 Requires-Python
+# 的上界会让更新的解释器在 pip 里回退到更老的发行版. "测过哪些版本"由 Classifier
+# 表达. 依据与兜底见 docs/research/python-version-support.md.
+requires-python = ">=3.9"
 dependencies = [
     # typing-extensions 的下限按 Python 版本分档, 每一档都是实测出来的
-    # (逐版本跑全量测试, 见 docs/research.md 的"typing-extensions 下限实测"):
+    # (逐版本跑全量测试, 见 docs/research/typing-extensions.md 的"下限实测"):
     #   3.9–3.11: 4.4.0  (Self 需 4.0+, override 需 4.4+)
     #   3.12–3.14: 4.6.0  (4.4/4.5 在 3.12+ 上会 TypeError: TypeVar 不能作基类)
-    #   >=3.15:   4.14.0  (4.10–4.13 在 3.15 上 AttributeError; 区间不连续,
+    #   >=3.15:   4.14.0  (4.10–4.13 在 3.15/3.16 上 AttributeError; 区间不连续,
     #                      所以只能写成 >=4.14.0 而不是沿用 4.6.0)
     "typing-extensions>=4.4.0; python_version < '3.12'",
     "typing-extensions>=4.6.0; python_version >= '3.12' and python_version < '3.15'",
@@ -101,11 +105,11 @@ dev = [
 ]
 
 [tool.tox]
-env_list = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+env_list = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.16"]
 
 [tool.tox.env_run_base]
 description = "Run tests under {base_python}"
-deps = "pytest"
+deps = ["pytest>=8.4.2", "hypothesis>=6.114.0"]
 commands = [
     [
         "pytest",

@@ -10,10 +10,8 @@
 3. ``semantic-stability``: 对格式良好的语料, ``loads(dumps(x))`` 的行数、
    start / end、正文与参考行文本必须与首次解析结果一致.
 
-语料由两部分组成: 手写用例 (可读、失败时能直接定位) 与固定种子的随机语料
-(覆盖手写用例想不到的组合). 随机语料刻意包含病态构造 (1-4 位分钟、秒数 >= 60、
-纯空白正文、重复/乱序标签), 因此只能当作问题的**上界**, 不代表真实文件里的
-发生率.
+语料是手写用例 (可读、失败时能直接定位); 随机与病态组合由
+``tests/test_properties.py`` 的 hypothesis 策略覆盖.
 
 已知有损场景 (不算 bug, 见各用例的 docstring 与 ``docs/design/``):
 纯空白行、空正文 + 显式区间、方括号形式的逐字标签, 这三类不纳入不变量 3.
@@ -22,7 +20,6 @@
 from __future__ import annotations
 
 import logging
-import random
 from pathlib import Path
 
 import pytest
@@ -30,7 +27,7 @@ import pytest
 from lemony_lrc_parser import Lyrics, ParseOptions, SerializationOptions
 from lemony_lrc_parser.cli import main
 
-#: 逐字/行标签毫秒位数固定, 行间不留空行, 便于比对文本.
+#: 逐字/行标签毫秒位数固定, 行间用空行分隔, 便于比对文本.
 DUMPS_OPTS = SerializationOptions(with_metadata=True, line_separator="\n")
 
 #: 格式良好的语料: 既要不变量 1 / 2 成立, 也要不变量 3 (行结构稳定) 成立.
@@ -99,47 +96,6 @@ DEGENERATE_CORPUS: list[str] = [
 ALL_CORPUS = WELL_FORMED_CORPUS + DEGENERATE_CORPUS
 
 
-# ---------------------------------------------------------------------------
-# 随机语料
-# ---------------------------------------------------------------------------
-
-_RANDOM_ATOMS = [
-    "[00:01.000]",
-    "[00:02.000]",
-    "[00:05.000]",
-    "[00:10.000]",
-    "<00:01.000>",
-    "<00:02.000>",
-    "<00:05.000>",
-    "<00:10.000>",
-    "",
-    " ",
-    "  ",
-    "a",
-    "b",
-    "hello",
-    "歌词",
-    "[ti: T]",
-]
-
-
-def _random_documents(count: int = 400, seed: int = 20240607) -> list[str]:
-    """生成固定种子的随机语料 (可复现, 覆盖手写用例想不到的组合)."""
-    rng = random.Random(seed)
-    docs: list[str] = []
-    for _ in range(count):
-        lines = []
-        for _ in range(rng.randint(1, 3)):
-            lines.append(
-                "".join(rng.choice(_RANDOM_ATOMS) for _ in range(rng.randint(1, 5)))
-            )
-        docs.append("\n".join(lines))
-    return docs
-
-
-RANDOM_CORPUS = _random_documents()
-
-
 def _semantic_view(lyrics: Lyrics) -> list[tuple[object, ...]]:
     """只看"用户可见"的结构: 行时间范围、正文、参考行文本."""
     return [
@@ -162,9 +118,7 @@ def _ids(corpus: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "doc", ALL_CORPUS + RANDOM_CORPUS, ids=_ids(ALL_CORPUS + RANDOM_CORPUS)
-)
+@pytest.mark.parametrize("doc", ALL_CORPUS, ids=_ids(ALL_CORPUS))
 def test_parser_output_passes_its_own_validator(doc: str) -> None:
     """解析器产出的数据不应出现 error 级问题 (自己的校验器即规格)."""
     lyrics = Lyrics.loads(doc)
@@ -177,9 +131,7 @@ def test_parser_output_passes_its_own_validator(doc: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "doc", ALL_CORPUS + RANDOM_CORPUS, ids=_ids(ALL_CORPUS + RANDOM_CORPUS)
-)
+@pytest.mark.parametrize("doc", ALL_CORPUS, ids=_ids(ALL_CORPUS))
 def test_dumps_converges_after_one_round(doc: str) -> None:
     """``dumps`` 必须是 (最多一轮之后的) 不动点, 否则解析↔序列化会持续漂移."""
     d1 = Lyrics.loads(doc).dumps(options=DUMPS_OPTS)
@@ -338,7 +290,7 @@ class TestKnownLossyBehaviors:
     ) -> None:
         """有行尾标签时同一写法读回一行, 只多一个零文本词元, 因此不告警.
 
-        这是 karakara 的产物形态 (行尾总是显式的): 一首歌里每一行都命中, 若仍按
+        这是显式行尾逐字行的常见形态 (每行都带行尾标签): 一首歌里每一行都命中, 若仍按
         "会拆行"告警, 日志会被并未发生的后果刷满.
         """
         lyrics = Lyrics.loads("[00:01.000]<00:01.500>hello[00:03.000]")

@@ -15,7 +15,7 @@
 - 支持 metadata 标签 (同名 key 可重复, 不丢重复项)
 - 支持折叠时间标签
 - 支持参考行
-- 支持歌词合并
+- 支持歌词合并 (精确匹配与毫秒级容差)
 - 与简单字幕格式 (SRT / WebVTT) 互转
 - 时间偏移 (`apply_delta` / `<<` / `>>` 运算符)
 - 字典序列化 (`to_dict()` / `from_dict()`)
@@ -23,6 +23,7 @@
 - 可配置解析与序列化选项
 - 数据一致性验证 API (`validate_lyrics` / `Lyrics.validate()`)
 - 文本查找 (`contains_text()` / `find_text()` / `find_regex()`)
+- 按时间范围取行 (`lines_in_range()`)
 - 往返保真度不变量测试 (`解析结果必过校验` / `dumps 一轮收敛` / `行结构稳定`)
 - CLI 命令行工具 (`python -m lemony_lrc_parser`)
 - 解析错误附带行号与原始行 (`InvalidLyricsError.line_no` / `.raw_line`)
@@ -108,10 +109,12 @@ print(lyrics[0].duration)
 print(lyrics)
 ```
 
-`Lyrics` 的相等性比**行序列 + metadata**: 两份只有 `[ti:]` 不同的歌词不相等, 所以
-`Lyrics.loads(lyrics.dumps()) == lyrics` 可以直接当往返检查用. 与普通列表比较时
-只比行 (列表没有 metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部
-条目, 因此同名 key 的重复项与标签顺序都算数.
+`Lyrics` 的相等性比**行序列 + metadata**: 两份只有 `[ti:]` 不同的歌词不相等.
+它比较的是数据对象, 不承诺跨写法不变: 从源文本解析后再写回, token 时间可能因为
+省略冗余标签而归一化, 所以往返检查请按行级视图比较 (`start` / `end` / `text` /
+`reference_lines`), 而不是直接比 `Lyrics` 对象. 与普通列表比较时只比行 (列表没有
+metadata 可比). metadata 的相等性沿用 `Metadata` 的口径, 比全部条目, 因此同名 key
+的重复项与标签顺序都算数.
 
 `repr()` 是给调试看的紧凑形式 (`Lyrics(lines=2, metadata=Metadata({'ti': 'A'}))`,
 不铺开行与词元), `str()` 仍等价于 `dumps()`.
@@ -178,6 +181,17 @@ lyrics.contains_regex("love")  # 布尔版
 正则匹配是**逐行**做的: pattern 里的 `\n` 永远匹配不到 (LRC 的换行是行边界). 返回的是
 行对象本身, 需要行号时自己 `enumerate(lyrics)`.
 
+### 按时间范围取行
+
+`lines_in_range(start_ms, end_ms)` 返回与闭区间 `[start_ms, end_ms]` 有交集的
+主行. `end` 未知的行按下一个更大的 `start` 推断; 最后一行没有 `end` 时视为
+延伸到区间终点. 参考行跟随主行, 不单独返回.
+
+```python
+for line in lyrics.lines_in_range(30_000, 60_000):
+    print(line.start, line.text)
+```
+
 ### 参考行 (Translation / Transliteration)
 
 LRC 文件中, 紧跟在带时间标签行后面的无标签行, 或与主行的时间戳相同的行, 会被解析为参考行, 常用于存放翻译或音译:
@@ -208,10 +222,6 @@ translation = llp.loads(
 # combine 方法: 翻译行挂到同时间点的 reference_lines 中
 combined = main.combine(translation)
 
-# 也可以用 + 运算符; 注意 + 固定使用 other_as_refline_only=False,
-# 即另一方中时间戳对不上的行会作为新行保留, 不会被丢弃
-combined = main + translation
-
 for line in combined:
     print(line.text)  # 主歌词
     for ref in line.reference_lines:
@@ -220,7 +230,24 @@ for line in combined:
 
 # other_as_refline_only=False 时, 翻译中找不到对应时间点的行会作为新行保留
 combined = main.combine(translation, other_as_refline_only=False)
+
+# 时间轴有几毫秒偏差时, 用 MergeOptions 开启容差
+shifted = llp.loads(
+    "[00:33.815]背着夕阳走在返家的路上\n[00:39.585]跟在你的后面一起走着\n"
+)
+merged, report = main.merge_with_report(
+    shifted, options=llp.MergeOptions(tolerance_ms=10)
+)
+print(report.exact_matches, report.fuzzy_matches, report.unmatched_other)
 ```
+
+`merge_with_report` 返回合并结果和 `MergeReport`; 默认 `tolerance_ms=0` 只做精确匹配,
+几毫秒的偏差可以传 10 一类的值, 模糊匹配对在报告里可查.
+
+`+` / `+=` 在 0.5.x 仍可用, 但会发 `DeprecationWarning`; 0.6.0 移除. 需要合并时
+用 `combine(other, other_as_refline_only=False)` 或
+`combine_inplace(other, other_as_refline_only=False)`; `combine` 的默认值会丢掉
+对不上的行.
 
 ### 字典序列化 (to_dict / from_dict)
 
@@ -405,8 +432,8 @@ with path.open("w", encoding="utf-8", newline="") as fp:
 只是首个词元前面多出一段空白.
 
 `dumps` 的输出是"最多一轮之后的不动点": `d2 = dumps(loads(d1))` 与
-`d3 = dumps(loads(d2))` 必定相等. 当前实现下 (含 2 万份随机语料与 6622 份真实
-文件) 首轮就已经是不动点.
+`d3 = dumps(loads(d2))` 必定相等. 当前实现下 (随机语料与真实语料快照) 首轮
+就已经是不动点.
 
 另外, 行尾时间若由逐字标签推断而来且与行首时间矛盾 (`end <= start`), 该推断会被
 丢弃 (`line.end` 置回 `None`) 并产生 warning —— 解析器不会产出 `validate()` 判为
@@ -443,7 +470,7 @@ error 的行.
 - `[行标签][首字标签]文本` 在整行标签非递减、且正文里还有其它时间标签时, 按"首字延迟"
   读成一行 (如 `[00:05.650][00:05.730]徘[00:06.130]徊[00:06.450]`; 标准"局限性"一节
   按重复行读); 正文里没有其它时间标签的 `[t1][t2]text` 仍按重复行简写读成两行.
-  真实语料里 199 行这种写法有 197 行的两个标签只差 0.1-1.3 秒.
+  历史快照里 199 行这种写法有 197 行的两个标签只差 0.1-1.3 秒.
 - 整行只有尖括号标签 (如 `<00:01.000><00:02.000>`) 保留为一条空正文行, 用于承载
   空字幕 cue; `dumps` 也用同一形式写回.
 - 默认不填充隐式行尾 (`end=None` 表示"未知"), 需要 SPL 的"持续到下一行开始"语义时

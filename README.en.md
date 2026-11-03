@@ -15,7 +15,7 @@ Lemon-flavored LRC Parser for Python.
 - Metadata tags (duplicate keys are kept)
 - Folded time tags
 - Reference lines
-- Lyrics merging
+- Lyrics merging (exact and millisecond-tolerance matching)
 - Conversion to/from simple subtitle formats (SRT / WebVTT)
 - Time offset (`apply_delta` / `<<` / `>>` operators)
 - Dict serialization (`to_dict()` / `from_dict()`)
@@ -23,6 +23,7 @@ Lemon-flavored LRC Parser for Python.
 - Configurable parse and serialization options
 - Data consistency validation API (`validate_lyrics` / `Lyrics.validate()`)
 - Text lookup (`contains_text()` / `find_text()` / `find_regex()`)
+- Time-range lookup (`lines_in_range()`)
 - Round-trip fidelity invariant tests (`parser output always validates` /
   `dumps converges in one round` / `line structure is stable`)
 - CLI tool (`python -m lemony_lrc_parser`)
@@ -112,8 +113,11 @@ print(lyrics)
 ```
 
 `Lyrics` equality compares the **line sequence plus metadata**: two lyrics
-differing only in `[ti:]` are not equal, so
-`Lyrics.loads(lyrics.dumps()) == lyrics` works as a round-trip check. Compared
+differing only in `[ti:]` are not equal. It compares data objects and does not
+guarantee stability across source spellings: after parsing source text and
+dumping it, token times may normalize because redundant tags are omitted, so
+compare line-level views (`start` / `end` / `text` / `reference_lines`) for
+round-trip checks instead of comparing `Lyrics` objects directly. Compared
 against a plain list only the lines count (a list has no metadata). Metadata
 equality follows `Metadata`: every entry counts, so duplicated keys and tag
 order both matter.
@@ -183,6 +187,19 @@ Regex matching is **line-scoped**: a `\n` in the pattern can never match (in LRC
 a newline is a line boundary). The lines themselves are returned; use
 `enumerate(lyrics)` when you need the index.
 
+### Lines in a Time Range
+
+`lines_in_range(start_ms, end_ms)` returns the main lines whose effective
+interval overlaps the closed range `[start_ms, end_ms]`. A line without `end`
+is inferred to end at the next larger `start`; the last such line extends to
+the end of the query. Reference lines travel with their main line and are not
+returned separately.
+
+```python
+for line in lyrics.lines_in_range(30_000, 60_000):
+    print(line.start, line.text)
+```
+
 ### Reference Lines (Translation / Transliteration)
 
 In an LRC file, an untagged line immediately following a tagged line, or a line
@@ -213,11 +230,6 @@ translation = llp.loads("[00:01.00]你好\n[00:02.00]世界\n")
 # combine method: translation lines are attached to reference_lines at the same timestamp
 combined = main.combine(translation)
 
-# The + operator also works; note that + always uses other_as_refline_only=False,
-# i.e. lines from the other side whose timestamps do not match are kept as new lines,
-# not dropped
-combined = main + translation
-
 for line in combined:
     print(line.text)  # main lyrics
     for ref in line.reference_lines:
@@ -226,7 +238,23 @@ for line in combined:
 
 # With other_as_refline_only=False, lines in the translation without a matching timestamp are kept as new lines
 combined = main.combine(translation, other_as_refline_only=False)
+
+# When the timelines differ by a few milliseconds, enable the tolerance
+shifted = llp.loads("[00:01.005]你好\n[00:02.005]世界\n")
+merged, report = main.merge_with_report(
+    shifted, options=llp.MergeOptions(tolerance_ms=10)
+)
+print(report.exact_matches, report.fuzzy_matches, report.unmatched_other)
 ```
+
+`merge_with_report` returns the merged result and a `MergeReport`. The default
+`tolerance_ms=0` is exact matching only; a value such as 10 covers a few
+milliseconds of drift, and the fuzzy pairs are visible in the report.
+
+`+` / `+=` still work in 0.5.x but emit a `DeprecationWarning`; they are removed
+in 0.6.0. Use `combine(other, other_as_refline_only=False)` or
+`combine_inplace(other, other_as_refline_only=False)`; the default `combine`
+drops lines that do not match.
 
 ### Dict Serialization (to_dict / from_dict)
 
@@ -428,8 +456,8 @@ gets an empty gap in front of it.
 
 `dumps` output is a fixed point "after at most one round": `d2 = dumps(loads(d1))`
 and `d3 = dumps(loads(d2))` are guaranteed equal. Under the current
-implementation (including 20k random corpora and 6622 real files) the first round
-is already a fixed point.
+implementation (random corpora and the real-corpus snapshots) the first round is
+already a fixed point.
 
 Additionally, if a line end time was inferred from word tags and contradicts the
 line start (`end <= start`), the inference is discarded (`line.end` set back to
@@ -480,8 +508,8 @@ Intentional deviations / areas the standard does not cover:
   time tags (e.g. `[00:05.650][00:05.730]徘[00:06.130]徊[00:06.450]`; the standard's
   "limitations" section reads it as a repeated line); `[t1][t2]text` with no other
   time tag in the body is still read as the folded repeated-line shorthand, i.e.
-  two lines. In the real corpus, 199 lines use this form, 197 of which have
-  the two tags only 0.1-1.3s apart.
+  two lines. In the historical corpus snapshot, 199 lines use this form, 197 of
+  which have the two tags only 0.1-1.3s apart.
 - A line with only angle-bracket tags (e.g. `<00:01.000><00:02.000>`) is kept
   as an empty-text line to carry an empty subtitle cue; `dumps` writes it back
   in the same form.

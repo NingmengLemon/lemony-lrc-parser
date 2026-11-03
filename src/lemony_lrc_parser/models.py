@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
+    Literal,
     SupportsIndex,
     TextIO,
     TypedDict,
@@ -35,6 +36,7 @@ from .metadata import COMMON_METADATA_KEYS, Metadata, MetadataDict, MetadataKey
 from .style import LineEnding
 
 if TYPE_CHECKING:
+    from .merge import MergeOptions, MergeReport
     from .validation import ValidationIssue, ValidationOptions
 
 if sys.version_info >= (3, 10):
@@ -72,6 +74,23 @@ def _warn_ambiguous_contains(owner: str, method: str) -> None:
         f"`str in {owner}` is ambiguous (substring? token equality? line "
         f"equality?); use `{method}()` for text lookup. Behavior is unchanged "
         f"for now; starting with 0.6.0 it raises TypeError.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+def _warn_deprecated_merge_operator(operator: Literal["+", "+="]) -> None:
+    """提示 ``+`` / ``+=`` 已弃用.
+
+    这两个运算符把"按时间戳合并"写成列表运算的样子, 且固定
+    ``other_as_refline_only=False``, 与 :meth:`Lyrics.combine` 的默认行为不同.
+    0.5.x 保留行为并发 ``DeprecationWarning``, 0.6.0 移除.
+    """
+    replacement = "combine" if operator == "+" else "combine_inplace"
+    warnings.warn(
+        f"`Lyrics {operator}` is deprecated; use "
+        f"`{replacement}(..., other_as_refline_only=False)` instead. "
+        f"It will be removed in 0.6.0.",
         DeprecationWarning,
         stacklevel=3,
     )
@@ -549,9 +568,9 @@ class Lyrics(UserList[LyricLine]):
         ``"xxx" in lyrics`` 保留旧的**行相等**语义 (对 ``str`` 恒为 ``False``)
         并发 :class:`DeprecationWarning`.
         """
-        return any(
-            line.contains_text(needle, include_reference_lines=True) for line in self
-        )
+        from .query import contains_text as query_contains_text
+
+        return query_contains_text(self, needle)
 
     def find_text(self, needle: str) -> list[LyricLine]:
         """返回所有"主行或参考行文本包含 ``needle``"的行.
@@ -563,11 +582,9 @@ class Lyrics(UserList[LyricLine]):
             命中的行 (行对象本身, 不是文本), 按现有顺序; 未命中时为 ``[]``.
             用于替换 ``[line for line in lyrics if "xxx" in line.text]`` 这类写法.
         """
-        return [
-            line
-            for line in self
-            if line.contains_text(needle, include_reference_lines=True)
-        ]
+        from .query import find_text as query_find_text
+
+        return query_find_text(self, needle)
 
     def find_regex(
         self,
@@ -600,16 +617,11 @@ class Lyrics(UserList[LyricLine]):
             忽略大小写不是单独的参数, 传 ``re.compile(..., re.IGNORECASE)`` 即可 ——
             这样也避免了"同一个方法参数越加越多".
         """
-        compiled = re.compile(pattern)
-        return [
-            line
-            for line in self
-            if compiled.search(line.text)
-            or (
-                include_reference_lines
-                and any(compiled.search(ref.text) for ref in line.reference_lines)
-            )
-        ]
+        from .query import find_regex as query_find_regex
+
+        return query_find_regex(
+            self, pattern, include_reference_lines=include_reference_lines
+        )
 
     def contains_regex(
         self,
@@ -621,6 +633,24 @@ class Lyrics(UserList[LyricLine]):
         return bool(
             self.find_regex(pattern, include_reference_lines=include_reference_lines)
         )
+
+    def lines_in_range(self, start_ms: int, end_ms: int) -> list[LyricLine]:
+        """返回与 ``[start_ms, end_ms]`` 有交集的行.
+
+        Args:
+            start_ms: 区间起点 (毫秒, 闭区间).
+            end_ms: 区间终点 (毫秒, 闭区间).
+
+        Returns:
+            命中的主行, 按现有顺序; 参考行不单独返回. 行的 ``end`` 未知时按下一个
+            ``start`` 更大的行推断, 最后一行没有 ``end`` 时视为延伸到区间终点.
+
+        Raises:
+            ProgrammingError: ``end_ms < start_ms``.
+        """
+        from .query import lines_in_range as query_lines_in_range
+
+        return query_lines_in_range(self, start_ms, end_ms)
 
     def __contains__(self, item: object) -> bool:
         """成员判定: 按**行相等**判定 (与 ``UserList`` 的历史行为一致).
@@ -640,8 +670,9 @@ class Lyrics(UserList[LyricLine]):
 
         Note:
             ``UserList`` 只看行序列, 于是"仅 metadata 不同"的两份歌词会被判为
-            相等; 这里把 metadata 一并纳入, ``loads(dumps(x)) == x`` 才真的能当
-            往返检查用. 与普通列表 / 其它 ``UserList`` 比较时仍只比行, 因为它们
+            相等; 这里把 metadata 一并纳入, 相等性才覆盖完整的数据对象. 跨写法的
+            往返检查按行级视图比较, 见 ``docs/design/semantics.md`` 的「往返
+            保真度」. 与普通列表 / 其它 ``UserList`` 比较时仍只比行, 因为它们
             没有 metadata 可比.
 
         Note:
@@ -657,20 +688,28 @@ class Lyrics(UserList[LyricLine]):
     def __add__(self, other: Lyrics) -> Lyrics:
         """``a + b``: 按时间戳合并两份歌词, 返回新实例, **不丢弃任何行**.
 
-        与 :meth:`combine` 的区别: 这里固定使用 ``other_as_refline_only=False``,
-        即 ``other`` 中在 ``self`` 里找不到同 ``start`` 的行会作为新行保留,
-        而不是被静默丢弃 (符合 ``+`` 的直觉语义). 需要"仅作为参考行合并"的
-        翻译合并场景, 请直接使用 :meth:`combine`.
+        Deprecated:
+            0.5.x 保留行为并发 ``DeprecationWarning``, 0.6.0 移除. ``+`` 容易与
+            列表拼接混淆, 且固定 ``other_as_refline_only=False``, 与
+            :meth:`combine` 的默认行为不同. 改用
+            ``combine(other, other_as_refline_only=False)``.
         """
         if not isinstance(other, Lyrics):
             return NotImplemented
+        _warn_deprecated_merge_operator("+")
         return self.combine(other, other_as_refline_only=False)
 
     @override
     def __iadd__(self, value: Lyrics) -> Self:
-        """``a += b``: 原地按时间戳合并, 语义与 :meth:`__add__` 一致 (不丢行)."""
+        """``a += b``: 原地按时间戳合并, 语义与 :meth:`__add__` 一致 (不丢行).
+
+        Deprecated:
+            同 :meth:`__add__`. 0.6.0 移除; 改用
+            ``combine_inplace(value, other_as_refline_only=False)``.
+        """
         if not isinstance(value, Lyrics):
             return NotImplemented
+        _warn_deprecated_merge_operator("+=")
         self.combine_inplace(value, other_as_refline_only=False)
         return self
 
@@ -704,60 +743,13 @@ class Lyrics(UserList[LyricLine]):
                 (例如传入了 ``dict`` / ``bytes`` 这类"可迭代但元素类型不对"
                 的对象, 此前会被静默当成空集) .
         """
-        # 先做入参校验再改动 self: 否则 metadata 可能已被合并而随后的
-        # TypeError 把调用方留在"改了一半"的状态.
-        if isinstance(other, LyricLine):
-            # LyricLine 自身可迭代 (迭代出词元), 不拦会静默 no-op
-            raise TypeError(
-                "combine expects Lyrics or an iterable of LyricLine, "
-                "not a single LyricLine (did you mean [lyric_line]?)"
-            )
-        if isinstance(other, str):
-            raise TypeError(
-                "combine expects Lyrics or an iterable of LyricLine, not str"
-            )
-        if not isinstance(other, Iterable):
-            raise TypeError(
-                "Lyrics or Iterable[LyricLine] is expected as combine argument",
-            )
-        raw_items = list(other)
-        other_lines = [item for item in raw_items if isinstance(item, LyricLine)]
-        if raw_items and not other_lines:
-            kinds = sorted({type(item).__name__ for item in raw_items})
-            raise TypeError(
-                "combine expects an iterable of LyricLine; "
-                f"got {len(raw_items)} item(s) of type {kinds}"
-            )
+        from .merge import MergeOptions, merge_inplace
 
-        # metadata 以 self 为准, other 作为补充. 按 key 判存在与否 (而不是
-        # 逐条 setdefault): self 里没有的 key 要把 other 的**全部**同名取值
-        # 都搬过来, 否则 other 里的重复项会在合并这一步被悄悄折叠.
-        if isinstance(other, Lyrics):
-            for k in other.metadata:
-                if k not in self.metadata:
-                    for v in other.metadata.getlist(k):
-                        self.metadata.add(k, v)
-
-        # self 中同一 start 可能存在多行 (手工构造 / from_srt 等来源),
-        # 全部保留, 不能用 dict 按 start 覆盖 (会丢行); other 的行按 start
-        # 匹配时挂到该时间点**首次出现**的主行上, 与 parser 对重复
-        # 时间戳的折叠语义一致.
-        anchors: dict[int, LyricLine] = {}
-        for line in self:
-            anchors.setdefault(line.start, line)
-
-        for line in other_lines:
-            anchor = anchors.get(line.start)
-            if anchor is not None:
-                anchor.reference_lines.append(line.content.copy())
-                anchor.reference_lines.extend(rl.copy() for rl in line.reference_lines)
-            elif not other_as_refline_only:
-                new_line = line.copy()
-                anchors[line.start] = new_line
-                self.data.append(new_line)
-
-        # 稳定排序: self 内同 start 的多行保持原有相对顺序
-        self.data.sort(key=lambda line: line.start)
+        merge_inplace(
+            self,
+            other,
+            options=MergeOptions(other_as_refline_only=other_as_refline_only),
+        )
 
     def combine(
         self, other: Lyrics | Iterable[LyricLine], *, other_as_refline_only: bool = True
@@ -786,9 +778,61 @@ class Lyrics(UserList[LyricLine]):
             TypeError: ``other`` 不是 :class:`Lyrics` 或 ``LyricLine``
                 可迭代对象 (如传入单个 ``LyricLine`` / 字符串 / ``dict``) .
         """
-        new = self.copy()
-        new.combine_inplace(other, other_as_refline_only=other_as_refline_only)
-        return new
+        from .merge import MergeOptions
+        from .merge import merge as merge_lyrics
+
+        return merge_lyrics(
+            self,
+            other,
+            options=MergeOptions(other_as_refline_only=other_as_refline_only),
+        )
+
+    def merge(
+        self,
+        other: Lyrics | Iterable[LyricLine],
+        *,
+        options: MergeOptions | None = None,
+    ) -> Lyrics:
+        """按时间戳合并两份歌词, 可选毫秒级容差, 返回新实例.
+
+        Args:
+            other: 要合并进来的另一份 :class:`Lyrics` 或
+                :class:`LyricLine` 可迭代对象.
+            options: 合并策略; ``None`` 使用 :class:`MergeOptions` 的默认值
+                (精确匹配, 对不上的行丢弃). 需要容差时传
+                ``MergeOptions(tolerance_ms=10)``.
+
+        Returns:
+            合并后的新 :class:`Lyrics`; ``self`` 与 ``other`` 均不受影响.
+
+        Note:
+            需要精确/模糊匹配统计时用 :meth:`merge_with_report`.
+        """
+        from .merge import merge as merge_lyrics
+
+        return merge_lyrics(self, other, options=options)
+
+    def merge_with_report(
+        self,
+        other: Lyrics | Iterable[LyricLine],
+        *,
+        options: MergeOptions | None = None,
+    ) -> tuple[Lyrics, MergeReport]:
+        """同 :meth:`merge`, 同时返回 :class:`MergeReport`."""
+        from .merge import merge_with_report as merge_with_report_fn
+
+        return merge_with_report_fn(self, other, options=options)
+
+    def merge_inplace(
+        self,
+        other: Lyrics | Iterable[LyricLine],
+        *,
+        options: MergeOptions | None = None,
+    ) -> MergeReport:
+        """原地版 :meth:`merge`, 返回合并报告."""
+        from .merge import merge_inplace as merge_inplace_fn
+
+        return merge_inplace_fn(self, other, options=options)
 
     def copy(self) -> Lyrics:
         return Lyrics(self, metadata=self.metadata)

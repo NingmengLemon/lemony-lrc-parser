@@ -20,6 +20,8 @@ research 目录下按主题分文件：
 - [offset.md](research/offset.md)：`[offset:]` 的正负语义。
 - [timetags.md](research/timetags.md)：时间标签的宽松写法。
 - [typing-extensions.md](research/typing-extensions.md)：依赖下限实测。
+- [python-version-support.md](research/python-version-support.md)：版本支持策略，
+  为什么只设下界。
 
 ## 约定
 
@@ -29,7 +31,7 @@ research 目录下按主题分文件：
   如果它带来了值得长期记住的取舍，写进 `design/`。
 - 条目代号形如 `WRITE-1`：前缀是主题，序号在主题内递增，不复用。代码注释
   可以引用未完成条目的代号，条目落地时要一并改成描述性文字（用
-  `rg '\b[A-Z]+-[0-9]+\b' src tests` 检查）。
+  `rg '\b[A-Z]+-[0-9]+\b' src tests` 检查；`N-1` 这类数学写法是误报）。
 - 调研结论一律带出处。LRC 没有官方规范，很多"常识"其实只是某个实现的
   行为，见下一节。
 

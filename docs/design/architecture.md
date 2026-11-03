@@ -4,7 +4,9 @@
 
 | 模块 | 职责 |
 | --- | --- |
-| `models.py` | 数据模型 `LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics`，以及各种选项 dataclass |
+| `models.py` | 数据模型 `LyricToken` / `BasicLyricLine` / `LyricLine` / `Lyrics`，以及各种选项 dataclass；搜索与范围查询委托给 `query.py`，合并委托给 `merge.py` |
+| `query.py` | 文本与时间范围查询：`contains_text` / `find_text` / `find_regex` / `contains_regex` / `lines_in_range` |
+| `merge.py` | 歌词合并：精确/模糊匹配、`MergeOptions` / `MergeReport` |
 | `metadata.py` | `Metadata`：有序、同名可重复的 ID 标签容器 |
 | `parser.py` | LRC 文本 → `Lyrics`。公共入口 `parse_line` / `parse_lrc` / `parse_with_report`，内部是 `LrcParser` |
 | `report.py` | 解析报告 `ParseReport` / `ParseEvent` 与 strict 的触发集合 `STRICT_ERROR_CODES`；序列化报告 `DumpReport` / `DumpEvent` 与 `LOSSY_DUMP_CODES` |
@@ -87,8 +89,8 @@ CLI 的 `validate` 把前后两者都输出：先是解析报告（位置是源�
 
 ## 演进方向
 
-- 有状态、策略、报告需求的功能做成独立模块：合并（`merge.py`，见 roadmap
-  ARCH-1）、统计与特征（`analysis.py`）、规范化、差异比较。
+- 有状态、策略、报告需求的功能做成独立模块：合并（`merge.py`）、统计与特征
+  （`analysis.py`）、规范化、差异比较。
 - 纯转换不硬拆：`timetag.py` / `regex.py` 保持纯函数；`subtitle.py` 在出现
   第三种字幕格式之前不拆成包。
 - 版本还在 0.x，内部边界整理趁现在做，避免稳定版之后再破坏兼容。

@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # 3.15 还是 rc 版; uv 在没有正式版时会解析到最新的预发布解释器.
+      # 3.16 还是 alpha 版 (3.16.0a1); uv 在没有正式版时会解析到最新的预发布解释器.
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.16"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

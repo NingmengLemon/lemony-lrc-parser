@@ -207,42 +207,64 @@ class TestLyricsCombine:
 
 
 class TestLyricsAdd:
-    """测试 Lyrics 的 __add__ 方法."""
+    """测试已弃用的 ``+`` / ``+=``: 行为保留, 但发 ``DeprecationWarning``."""
 
     def test_add_operator(self) -> None:
-        """测试 + 运算符."""
+        """``+`` 仍然合并, 并提示改用 ``combine``."""
         main = Lyrics([_line(1000, "Hello")])
         translation = Lyrics([_line(1000, "你好")])
 
-        combined = main + translation
+        with pytest.warns(
+            DeprecationWarning,
+            match=r"Lyrics \+.*combine\(.*other_as_refline_only=False",
+        ):
+            combined = main + translation
 
         assert len(combined) == 1
         assert combined[0].content[0].content == "Hello"
         assert len(combined[0].reference_lines) == 1
 
+    def test_add_merges_metadata(self) -> None:
+        """``+`` 合并 metadata: self 优先, other 独有的 key 追加."""
+        main = Lyrics([_line(1000, "A")], metadata={"ti": "Main"})
+        other = Lyrics([_line(1000, "B")], metadata={"ti": "Other", "ar": "Artist"})
+
+        with pytest.warns(DeprecationWarning):
+            combined = main + other
+
+        assert combined.metadata.get("ti") == "Main"
+        assert combined.metadata.get("ar") == "Artist"
+
     def test_add_with_non_lyrics(self) -> None:
-        """测试与非 Lyrics 对象相加应该返回 NotImplemented."""
+        """非 ``Lyrics`` 操作数仍然返回 ``NotImplemented``, 不发弃用警告."""
         lyrics = Lyrics()
         # 故意传错类型: 运行时会走 isinstance 分支返回 NotImplemented
-        result = lyrics.__add__("not lyrics")  # ty: ignore[invalid-argument-type]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = lyrics.__add__("not lyrics")  # ty: ignore[invalid-argument-type]
         assert result is NotImplemented
 
     def test_add_keeps_unmatched_lines(self) -> None:
-        """+ 运算符不丢弃时间戳对不上的行 (与 combine 默认行为不同) ."""
+        """``+`` 不丢弃时间戳对不上的行 (与 combine 默认行为不同) ."""
         main = Lyrics([_line(1000, "A")])
         other = Lyrics([_line(9000, "B")])
 
-        combined = main + other
+        with pytest.warns(DeprecationWarning):
+            combined = main + other
 
         assert [line.text for line in combined] == ["A", "B"]
         assert [line.start for line in combined] == [1000, 9000]
 
     def test_iadd_keeps_unmatched_lines(self) -> None:
-        """+= 运算符同样不丢行."""
+        """``+=`` 同样不丢行, 并提示改用 ``combine_inplace``."""
         main = Lyrics([_line(1000, "A")])
         other = Lyrics([_line(9000, "B")])
 
-        main += other
+        with pytest.warns(
+            DeprecationWarning,
+            match=r"Lyrics \+=.*combine_inplace\(.*other_as_refline_only=False",
+        ):
+            main += other
 
         assert [line.text for line in main] == ["A", "B"]
         assert [line.start for line in main] == [1000, 9000]
@@ -448,7 +470,8 @@ class TestLyricsCombineDuplicateStarts:
         main = Lyrics([_line(1000, "A"), _line(1000, "B")])
         other = Lyrics([_line(1000, "你好")])
 
-        combined = main + other
+        with pytest.warns(DeprecationWarning):
+            combined = main + other
 
         assert [line.text for line in combined] == ["A", "B"]
         assert [line.start for line in combined] == [1000, 1000]
@@ -468,7 +491,8 @@ class TestLyricsCombineDuplicateStarts:
     def test_iadd_preserves_duplicate_start_lines(self) -> None:
         """+= 同样保留 self 中同 start 的多行."""
         main = Lyrics([_line(1000, "A"), _line(1000, "B")])
-        main += Lyrics([_line(2000, "C")])
+        with pytest.warns(DeprecationWarning):
+            main += Lyrics([_line(2000, "C")])
 
         assert [line.text for line in main] == ["A", "B", "C"]
 
@@ -777,15 +801,19 @@ class TestUnsupportedOperators:
 
     def test_add_non_lyrics(self) -> None:
         lyrics = Lyrics([_line(0, "x")])
-        with pytest.raises(TypeError):
-            lyrics + [_line(1, "y")]  # ty: ignore[unsupported-operator]  # noqa: RUF005
-        with pytest.raises(TypeError):
-            [_line(1, "y")] + lyrics  # noqa: RUF005
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(TypeError):
+                lyrics + [_line(1, "y")]  # ty: ignore[unsupported-operator]  # noqa: RUF005
+            with pytest.raises(TypeError):
+                [_line(1, "y")] + lyrics  # noqa: RUF005
 
     def test_iadd_non_lyrics(self) -> None:
         lyrics = Lyrics([_line(0, "x")])
-        with pytest.raises(TypeError):
-            lyrics += 1  # ty: ignore[unsupported-operator]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(TypeError):
+                lyrics += 1  # ty: ignore[unsupported-operator]
 
     def test_multiplication_is_not_supported(self) -> None:
         """``UserList`` 的重复拼接对歌词没有意义 (会造出同时间戳的重复行)."""
