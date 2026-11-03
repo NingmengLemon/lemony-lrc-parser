@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -481,6 +482,8 @@ class TestModuleEntryPoint:
             [sys.executable, "-m", "lemony_lrc_parser", "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            env={**os.environ, "PYTHONUTF8": "1"},
             timeout=60,
         )
         assert result.returncode == 0

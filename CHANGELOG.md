@@ -54,6 +54,9 @@
 
 - 新增 [`tools/corpus_stats.py`](tools/corpus_stats.py), 用于复跑语料统计.
 
+- tox 的 `deps` 补上 `hypothesis`; `python -m` 入口测试把子进程输出固定为
+  UTF-8, 本地 tox 环境可以直接跑完整测试.
+
 ### Docs
 
 - 用 2026-11 的原始快照重做 [`docs/research/corpus.md`](docs/research/corpus.md);
